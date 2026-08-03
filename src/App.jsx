@@ -1,122 +1,173 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import React from 'react';
+import './App.css';
+
+const navItems = ['Today', 'Tasks', 'Projects', 'Calendar', 'Reminders', 'Settings'];
+
+const todayTasks = [
+  { title: 'Plan project structure', time: '09:00 AM', status: 'In progress' },
+  { title: 'Create dashboard UI', time: '11:00 AM', status: 'Pending' },
+  { title: 'Review Firebase setup', time: '03:00 PM', status: 'Pending' },
+];
+
+const boardColumns = [
+  {
+    name: 'To do',
+    count: 4,
+    items: ['Add auth screen', 'Build task card', 'Create calendar panel'],
+  },
+  {
+    name: 'In progress',
+    count: 2,
+    items: ['Design sidebar', 'Set up app layout'],
+  },
+  {
+    name: 'Completed',
+    count: 3,
+    items: ['Create React app', 'Initialize Git', 'Fix PowerShell issue'],
+  },
+];
+
+const calendarEvents = [
+  { day: 'Mon', label: 'Team planning' },
+  { day: 'Tue', label: 'UI build' },
+  { day: 'Wed', label: 'Firebase review' },
+  { day: 'Thu', label: 'Reminder logic' },
+  { day: 'Fri', label: 'Testing' },
+];
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
+    <div className="app-shell">
+      <aside className="sidebar">
         <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
+          <div className="brand">TaskFlow</div>
+          <p className="brand-subtitle">Your productivity workspace</p>
         </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
 
-      <div className="ticks"></div>
+        <nav className="nav-list">
+          {navItems.map((item) => (
+            <button key={item} className="nav-item">
+              {item}
+            </button>
+          ))}
+        </nav>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
+        <div className="sidebar-card">
+          <p className="sidebar-card-title">Project status</p>
+          <h3>Build phase 1</h3>
+          <p>UI shell, task flow, calendar, and reminders.</p>
         </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      </aside>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      <main className="main-content">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">Welcome back</p>
+            <h1>Today</h1>
+          </div>
+          <div className="topbar-actions">
+            <input className="search" placeholder="Search tasks, boards, reminders..." />
+            <button className="primary-btn">+ New Task</button>
+          </div>
+        </header>
+
+        <section className="hero-grid">
+          <article className="hero-card accent">
+            <p className="card-label">Focus</p>
+            <h2>Build the first version of your task app UI</h2>
+            <p>Keep the structure flexible so Firebase, collaboration, and AI agents can be added later.</p>
+          </article>
+
+          <article className="hero-card">
+            <p className="card-label">Reminders</p>
+            <h3>3 due today</h3>
+            <p>Task reminders and push notifications will live here later.</p>
+          </article>
+
+          <article className="hero-card">
+            <p className="card-label">Calendar</p>
+            <h3>Weekly view</h3>
+            <p>Tasks and events will share one calendar layer.</p>
+          </article>
+        </section>
+
+        <section className="content-grid">
+          <article className="panel panel-wide">
+            <div className="panel-header">
+              <h2>To-do list</h2>
+              <button className="ghost-btn">View all</button>
+            </div>
+            <div className="task-list">
+              {todayTasks.map((task) => (
+                <div key={task.title} className="task-row">
+                  <div>
+                    <h3>{task.title}</h3>
+                    <p>{task.time}</p>
+                  </div>
+                  <span className={`status ${task.status === 'In progress' ? 'active' : ''}`}>
+                    {task.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel panel-wide">
+            <div className="panel-header">
+              <h2>Project board</h2>
+              <button className="ghost-btn">Open board</button>
+            </div>
+            <div className="board-columns">
+              {boardColumns.map((column) => (
+                <div key={column.name} className="board-column">
+                  <div className="column-head">
+                    <h3>{column.name}</h3>
+                    <span>{column.count}</span>
+                  </div>
+                  {column.items.map((item) => (
+                    <div key={item} className="board-item">
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </article>
+        </section>
+
+        <section className="content-grid bottom-grid">
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Calendar</h2>
+              <button className="ghost-btn">Monthly</button>
+            </div>
+            <div className="calendar-list">
+              {calendarEvents.map((event) => (
+                <div key={event.day} className="calendar-item">
+                  <span className="calendar-day-label">{event.day}</span>
+                  <strong className="calendar-day-title">{event.label}</strong>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Account</h2>
+              <button className="ghost-btn">Sign in</button>
+            </div>
+            <div className="account-card">
+              <div className="avatar">IN</div>
+              <div>
+                <h3>Guest user</h3>
+                <p>Firebase authentication will connect here later.</p>
+              </div>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+  );
 }
 
-export default App
+export default App;
