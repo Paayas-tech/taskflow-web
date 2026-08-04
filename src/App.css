@@ -395,7 +395,7 @@ body {
 .board-columns {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: 18px;
 }
 
 .board-column {
@@ -407,6 +407,7 @@ body {
   border-radius: 20px;
   border: 1px solid #334155;
   background: rgba(15, 23, 42, 0.55);
+  min-width: 0;
 }
 
 .column-head {
@@ -437,6 +438,9 @@ body {
   border-radius: 16px;
   color: #e2e8f0;
   transition: 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .board-item:hover {
@@ -494,17 +498,188 @@ body {
   font-size: 0.82rem;
 }
 
+.task-board-grid {
+  grid-template-columns: 0.9fr 1.4fr;
+  align-items: start;
+}
+
+.todo-panel,
+.board-panel {
+  min-width: 0;
+}
+
+.reminders-section {
+  margin-top: 16px;
+}
+
+.reminder-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.reminder-card {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid #334155;
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.reminder-card p,
+.reminder-card span {
+  display: block;
+}
+
+.reminder-card p {
+  margin: 0;
+  color: #fff;
+  font-weight: 600;
+}
+
+.reminder-card span {
+  margin-top: 8px;
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(124, 58, 237, 0.12), transparent 28%),
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 24%),
+    #0f172a;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 32px;
+  border-radius: 28px;
+  border: 1px solid #1e293b;
+  background: rgba(30, 41, 59, 0.8);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(18px);
+}
+
+.auth-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(124, 58, 237, 0.16);
+  color: #c4b5fd;
+  border: 1px solid rgba(124, 58, 237, 0.25);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.auth-card h1 {
+  margin: 18px 0 0;
+  color: #fff;
+  font-size: 2rem;
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+}
+
+.auth-subtitle {
+  margin: 10px 0 0;
+  color: #94a3b8;
+  line-height: 1.6;
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.auth-label {
+  display: grid;
+  gap: 8px;
+  color: #cbd5e1;
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.auth-label input {
+  height: 48px;
+  padding: 0 14px;
+  border-radius: 16px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #fff;
+  outline: none;
+  transition: 0.2s ease;
+}
+
+.auth-label input::placeholder {
+  color: #64748b;
+}
+
+.auth-label input:focus {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18);
+}
+
+.auth-button {
+  margin-top: 8px;
+  height: 48px;
+  border: none;
+  border-radius: 16px;
+  background: #7c3aed;
+  color: #fff;
+  font-size: 0.98rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.auth-button:hover {
+  background: #6d28d9;
+}
+
+.auth-switch {
+  margin-top: 18px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: #c4b5fd;
+  font-size: 0.92rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+}
+
+.auth-switch:hover {
+  color: #ddd6fe;
+}
+
 @media (max-width: 1200px) {
   .hero-grid {
     grid-template-columns: 1fr;
   }
 
   .content-grid,
-  .bottom-grid {
+  .bottom-grid,
+  .task-board-grid {
     grid-template-columns: 1fr;
   }
 
   .board-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .board-item {
+    white-space: normal;
+  }
+
+  .reminder-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -567,75 +742,13 @@ body {
   .hero-card {
     padding: 18px;
   }
-}
-.task-board-grid {
-  grid-template-columns: 0.9fr 1.4fr;
-  align-items: start;
-}
 
-.todo-panel,
-.board-panel {
-  min-width: 0;
-}
-
-.board-columns {
-  gap: 18px;
-}
-
-.board-column {
-  min-width: 0;
-}
-
-.board-item {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.reminders-section {
-  margin-top: 16px;
-}
-
-.reminder-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.reminder-card {
-  padding: 16px;
-  border-radius: 18px;
-  border: 1px solid #334155;
-  background: rgba(15, 23, 42, 0.65);
-}
-
-.reminder-card p,
-.reminder-card span {
-  display: block;
-}
-
-.reminder-card p {
-  margin: 0;
-  color: #fff;
-  font-weight: 600;
-}
-
-.reminder-card span {
-  margin-top: 8px;
-  color: #94a3b8;
-  font-size: 0.9rem;
-}
-
-@media (max-width: 1200px) {
-  .task-board-grid {
-    grid-template-columns: 1fr;
+  .auth-card {
+    padding: 24px;
+    border-radius: 24px;
   }
 
-  .board-item {
-    white-space: normal;
-  }
-
-  .reminder-grid {
-    grid-template-columns: 1fr;
+  .auth-card h1 {
+    font-size: 1.7rem;
   }
 }
