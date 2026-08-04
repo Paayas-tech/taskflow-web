@@ -1,41 +1,65 @@
-import React from 'react';
-import './App.css';
+import React, { useEffect, useState } from "react";
+import "./App.css";
+import Login from "./Login";
+import { auth } from "./firebase";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 
-const navItems = ['Today', 'Tasks', 'Projects', 'Calendar', 'Reminders', 'Settings'];
+const navItems = ["Dashboard", "Today", "Tasks", "Projects", "Calendar", "Reminders", "Settings"];
 
 const todayTasks = [
-  { title: 'Plan project structure', time: '09:00 AM', status: 'In progress' },
-  { title: 'Create dashboard UI', time: '11:00 AM', status: 'Pending' },
-  { title: 'Review Firebase setup', time: '03:00 PM', status: 'Pending' },
+  { title: "Plan project structure", time: "09:00 AM", status: "In progress" },
+  { title: "Create dashboard UI", time: "11:00 AM", status: "Pending" },
+  { title: "Review Firebase setup", time: "03:00 PM", status: "Pending" },
 ];
 
 const boardColumns = [
   {
-    name: 'To do',
+    name: "To do",
     count: 4,
-    items: ['Add auth screen', 'Build task card', 'Create calendar panel'],
+    items: ["Add auth screen", "Build task card", "Create calendar panel"],
   },
   {
-    name: 'In progress',
+    name: "In progress",
     count: 2,
-    items: ['Design sidebar', 'Set up app layout'],
+    items: ["Design sidebar", "Set up app layout"],
   },
   {
-    name: 'Completed',
+    name: "Completed",
     count: 3,
-    items: ['Create React app', 'Initialize Git', 'Fix PowerShell issue'],
+    items: ["Create React app", "Initialize Git", "Fix PowerShell issue"],
   },
 ];
 
 const calendarEvents = [
-  { day: 'Mon', label: 'Team planning' },
-  { day: 'Tue', label: 'UI build' },
-  { day: 'Wed', label: 'Firebase review' },
-  { day: 'Thu', label: 'Reminder logic' },
-  { day: 'Fri', label: 'Testing' },
+  { day: "Mon", label: "Team planning" },
+  { day: "Tue", label: "UI build" },
+  { day: "Wed", label: "Firebase review" },
+  { day: "Thu", label: "Reminder logic" },
+  { day: "Fri", label: "Testing" },
+];
+
+const reminders = [
+  { title: "Send project update", meta: "Due today • 2:00 PM" },
+  { title: "Review task board", meta: "Due tomorrow • 10:00 AM" },
+  { title: "Prepare release notes", meta: "Friday • 4:30 PM" },
 ];
 
 function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  if (loading) return <div className="loading-screen">Loading...</div>;
+  if (!user) return <Login />;
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -45,8 +69,8 @@ function App() {
         </div>
 
         <nav className="nav-list">
-          {navItems.map((item) => (
-            <button key={item} className="nav-item">
+          {navItems.map((item, idx) => (
+            <button key={item} className={`nav-item ${idx === 0 ? "active" : ""}`}>
               {item}
             </button>
           ))}
@@ -61,13 +85,21 @@ function App() {
 
       <main className="main-content">
         <header className="topbar">
-          <div>
+          <div className="topbar-left">
             <p className="eyebrow">Welcome back</p>
             <h1>Today</h1>
+            <p className="topbar-date">Tuesday, August 4, 2026</p>
           </div>
-          <div className="topbar-actions">
+
+          <div className="topbar-center">
             <input className="search" placeholder="Search tasks, boards, reminders..." />
+          </div>
+
+          <div className="topbar-actions">
             <button className="primary-btn">+ New Task</button>
+            <button className="logout-btn" onClick={() => signOut(auth)}>
+              Log out
+            </button>
           </div>
         </header>
 
@@ -91,8 +123,8 @@ function App() {
           </article>
         </section>
 
-        <section className="content-grid">
-          <article className="panel panel-wide">
+        <section className="content-grid task-board-grid">
+          <article className="panel panel-wide todo-panel">
             <div className="panel-header">
               <h2>To-do list</h2>
               <button className="ghost-btn">View all</button>
@@ -104,7 +136,7 @@ function App() {
                     <h3>{task.title}</h3>
                     <p>{task.time}</p>
                   </div>
-                  <span className={`status ${task.status === 'In progress' ? 'active' : ''}`}>
+                  <span className={`status ${task.status === "In progress" ? "active" : ""}`}>
                     {task.status}
                   </span>
                 </div>
@@ -112,7 +144,7 @@ function App() {
             </div>
           </article>
 
-          <article className="panel panel-wide">
+          <article className="panel panel-wide board-panel">
             <div className="panel-header">
               <h2>Project board</h2>
               <button className="ghost-btn">Open board</button>
@@ -154,17 +186,38 @@ function App() {
           <article className="panel">
             <div className="panel-header">
               <h2>Account</h2>
-              <button className="ghost-btn">Sign in</button>
+              <button className="ghost-btn" onClick={() => signOut(auth)}>
+                Sign out
+              </button>
             </div>
             <div className="account-card">
-              <div className="avatar">IN</div>
+              <div className="avatar">{user.email?.[0]?.toUpperCase() || "U"}</div>
               <div>
-                <h3>Guest user</h3>
-                <p>Firebase authentication will connect here later.</p>
+                <h3>{user.email}</h3>
+                <p>Firebase authentication is connected.</p>
               </div>
             </div>
           </article>
         </section>
+
+        <section className="reminders-section">
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Reminders</h2>
+              <button className="ghost-btn">Manage</button>
+            </div>
+            <div className="reminder-grid">
+              {reminders.map((reminder) => (
+                <div key={reminder.title} className="reminder-card">
+                  <p>{reminder.title}</p>
+                  <span>{reminder.meta}</span>
+                </div>
+              ))}
+            </div>
+          </article>
+        </section>
+
+        <footer className="dashboard-footer">© 2026 TaskFlow. All rights reserved.</footer>
       </main>
     </div>
   );
