@@ -7,10 +7,16 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
+node_modules/
+dist/
 dist-ssr
 *.local
+
+# Local environment and Firebase CLI files
+.env
+.env.*
+!.env.example
+firebase-debug.log
 
 # Editor directories and files
 .vscode/*

@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import TaskForm from "./TaskForm";
+import TaskListsPanel from "./TaskListsPanel";
 
 const statusLabels = {
   todo: "To do",
@@ -13,7 +14,7 @@ const priorityLabels = {
   high: "High priority",
 };
 
-const valuesFromTask = (task) => ({
+const valuesFromTask = (task, knownListIds) => ({
   title: task.title || "",
   description: task.description || "",
   notes: task.notes || "",
@@ -21,6 +22,7 @@ const valuesFromTask = (task) => ({
   priority: task.priority || "medium",
   dueDate: task.dueDate || "",
   reminder: task.reminder === true,
+  listId: knownListIds.has(task.listId) ? task.listId : "",
 });
 
 export default function TasksPage({
@@ -30,7 +32,15 @@ export default function TasksPage({
   onRetry,
   onUpdateTask,
   onDeleteTask,
+  lists,
+  listsLoading,
+  listsError,
+  onRetryLists,
+  onCreateList,
+  onRenameList,
+  onDeleteList,
 }) {
+  const [selectedListKey, setSelectedListKey] = useState("all");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [editValues, setEditValues] = useState(null);
   const [savingTask, setSavingTask] = useState(false);
@@ -41,13 +51,50 @@ export default function TasksPage({
   const [deletingTask, setDeletingTask] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
+  const knownListIds = useMemo(
+    () => new Set(lists.map((list) => list.id)),
+    [lists]
+  );
   const selectedTask = tasks.find((task) => task.id === selectedTaskId);
+  const selectedList = lists.find((list) => list.id === selectedListKey);
+  const activeListTitle =
+    selectedListKey === "all"
+      ? "All tasks"
+      : selectedListKey === "inbox"
+        ? "Inbox"
+        : selectedList?.name || "All tasks";
+
+  const filteredTasks = tasks.filter((task) => {
+    if (selectedListKey === "all") return true;
+    if (selectedListKey === "inbox") {
+      return !task.listId || !knownListIds.has(task.listId);
+    }
+    return task.listId === selectedListKey;
+  });
+
+  useEffect(() => {
+    if (
+      selectedListKey !== "all" &&
+      selectedListKey !== "inbox" &&
+      !listsLoading &&
+      !knownListIds.has(selectedListKey)
+    ) {
+      setSelectedListKey("inbox");
+    }
+  }, [selectedListKey, listsLoading, knownListIds]);
 
   const openEditor = (task) => {
     setSelectedTaskId(task.id);
-    setEditValues(valuesFromTask(task));
+    setEditValues(valuesFromTask(task, knownListIds));
     setEditError("");
     setMutationError("");
+  };
+
+  const handleSelectList = (listKey) => {
+    setSelectedListKey(listKey);
+    setSelectedTaskId(null);
+    setEditValues(null);
+    setEditError("");
   };
 
   const closeEditor = () => {
@@ -59,7 +106,6 @@ export default function TasksPage({
 
   const handleEditChange = (event) => {
     const { name, value, type, checked } = event.target;
-
     setEditValues((previous) => ({
       ...previous,
       [name]: type === "checkbox" ? checked : value,
@@ -79,7 +125,6 @@ export default function TasksPage({
 
     try {
       const completed = editValues.status === "completed";
-
       await onUpdateTask(selectedTask.id, {
         title: editValues.title.trim(),
         description: editValues.description,
@@ -89,6 +134,7 @@ export default function TasksPage({
         priority: editValues.priority,
         dueDate: editValues.dueDate,
         reminder: editValues.reminder,
+        listId: editValues.listId || null,
       });
 
       setSelectedTaskId(null);
@@ -121,6 +167,11 @@ export default function TasksPage({
     } finally {
       setCompletionTaskId(null);
     }
+  };
+
+  const handleDeleteList = async (listId) => {
+    await onDeleteList(listId);
+    if (selectedListKey === listId) setSelectedListKey("inbox");
   };
 
   const requestDelete = () => {
@@ -158,201 +209,164 @@ export default function TasksPage({
 
   return (
     <section className="tasks-page" aria-labelledby="tasks-page-title">
-      <div className="tasks-page-header">
-        <div>
-          <p className="card-label">Core task workflow</p>
-          <h2 id="tasks-page-title">All tasks</h2>
-          <p>Complete tasks quickly or open one to update its details.</p>
-        </div>
-        {!tasksLoading && !tasksError && (
-          <span className="tasks-count">
-            {tasks.length} {tasks.length === 1 ? "task" : "tasks"}
-          </span>
-        )}
-      </div>
+      <div className="tasks-workspace">
+        <TaskListsPanel
+          lists={lists}
+          tasks={tasks}
+          selectedListKey={selectedListKey}
+          onSelectList={handleSelectList}
+          loading={listsLoading}
+          error={listsError}
+          onRetry={onRetryLists}
+          onCreateList={onCreateList}
+          onRenameList={onRenameList}
+          onDeleteList={handleDeleteList}
+        />
 
-      {mutationError && (
-        <div className="inline-error task-mutation-error" role="alert">
-          <p>{mutationError}</p>
-          <button
-            className="ghost-btn compact-btn"
-            onClick={() => setMutationError("")}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {selectedTask && editValues && (
-        <section
-          className="task-detail-panel"
-          aria-labelledby="task-detail-title"
-        >
-          <div className="task-detail-header">
+        <div className="tasks-content">
+          <div className="tasks-page-header">
             <div>
-              <p className="card-label">Task details</p>
-              <h3 id="task-detail-title">Edit task</h3>
+              <p className="card-label">Tasks and lists</p>
+              <h2 id="tasks-page-title">{activeListTitle}</h2>
+              <p>Complete tasks quickly or open one to update its details.</p>
             </div>
-            <button
-              className="danger-btn"
-              type="button"
-              onClick={requestDelete}
-              disabled={savingTask}
-            >
-              Delete task
-            </button>
+            {!tasksLoading && !tasksError && (
+              <span className="tasks-count">
+                {filteredTasks.length} {filteredTasks.length === 1 ? "task" : "tasks"}
+              </span>
+            )}
           </div>
 
-          <TaskForm
-            values={editValues}
-            onChange={handleEditChange}
-            onSubmit={handleEditSubmit}
-            onCancel={closeEditor}
-            submitLabel="Save changes"
-            busyLabel="Saving..."
-            busy={savingTask}
-            error={editError}
-          />
-        </section>
-      )}
+          {mutationError && (
+            <div className="inline-error task-mutation-error" role="alert">
+              <p>{mutationError}</p>
+              <button className="ghost-btn compact-btn" onClick={() => setMutationError("")}>
+                Dismiss
+              </button>
+            </div>
+          )}
 
-      {tasksLoading ? (
-        <div className="tasks-state" role="status" aria-live="polite">
-          <div className="state-spinner" aria-hidden="true" />
-          <h3>Loading tasks...</h3>
-          <p>Your saved tasks are being retrieved from Firestore.</p>
-        </div>
-      ) : tasksError ? (
-        <div className="tasks-state error-state" role="alert">
-          <h3>Tasks unavailable</h3>
-          <p>{tasksError}</p>
-          <button className="ghost-btn" onClick={onRetry}>
-            Try again
-          </button>
-        </div>
-      ) : tasks.length === 0 ? (
-        <div className="tasks-state">
-          <h3>No tasks yet</h3>
-          <p>Use New Task to create your first task.</p>
-        </div>
-      ) : (
-        <div className="tasks-page-list">
-          {tasks.map((task) => {
-            const completionBusy = completionTaskId === task.id;
-
-            return (
-              <article
-                key={task.id}
-                className={`tasks-page-row ${
-                  task.completed ? "task-row-completed" : ""
-                }`}
-                aria-busy={completionBusy}
-              >
-                <button
-                  type="button"
-                  className={`completion-control ${
-                    task.completed ? "is-complete" : ""
-                  }`}
-                  aria-label={
-                    task.completed
-                      ? `Mark ${task.title} incomplete`
-                      : `Mark ${task.title} complete`
-                  }
-                  aria-pressed={task.completed}
-                  onClick={() => handleCompletionChange(task)}
-                  disabled={completionBusy}
-                >
-                  {completionBusy ? (
-                    <span className="completion-spinner" />
-                  ) : (
-                    <span aria-hidden="true">{task.completed ? "✓" : ""}</span>
-                  )}
+          {selectedTask && editValues && (
+            <section className="task-detail-panel" aria-labelledby="task-detail-title">
+              <div className="task-detail-header">
+                <div>
+                  <p className="card-label">Task details</p>
+                  <h3 id="task-detail-title">Edit task</h3>
+                </div>
+                <button className="danger-btn" type="button" onClick={requestDelete} disabled={savingTask}>
+                  Delete task
                 </button>
+              </div>
 
-                <div className="tasks-page-copy">
-                  <button
-                    className="task-title-button"
-                    type="button"
-                    onClick={() => openEditor(task)}
+              <TaskForm
+                values={editValues}
+                onChange={handleEditChange}
+                onSubmit={handleEditSubmit}
+                onCancel={closeEditor}
+                submitLabel="Save changes"
+                busyLabel="Saving..."
+                busy={savingTask}
+                error={editError}
+                lists={lists}
+              />
+            </section>
+          )}
+
+          {tasksLoading ? (
+            <div className="tasks-state" role="status" aria-live="polite">
+              <div className="state-spinner" aria-hidden="true" />
+              <h3>Loading tasks...</h3>
+              <p>Your saved tasks are being retrieved from Firestore.</p>
+            </div>
+          ) : tasksError ? (
+            <div className="tasks-state error-state" role="alert">
+              <h3>Tasks unavailable</h3>
+              <p>{tasksError}</p>
+              <button className="ghost-btn" onClick={onRetry}>Try again</button>
+            </div>
+          ) : filteredTasks.length === 0 ? (
+            <div className="tasks-state">
+              <h3>{tasks.length === 0 ? "No tasks yet" : `No tasks in ${activeListTitle}`}</h3>
+              <p>
+                {tasks.length === 0
+                  ? "Use New Task to create your first task."
+                  : "Assign a task to this list or choose another list."}
+              </p>
+            </div>
+          ) : (
+            <div className="tasks-page-list">
+              {filteredTasks.map((task) => {
+                const completionBusy = completionTaskId === task.id;
+                const taskList = lists.find((list) => list.id === task.listId);
+
+                return (
+                  <article
+                    key={task.id}
+                    className={`tasks-page-row ${task.completed ? "task-row-completed" : ""}`}
+                    aria-busy={completionBusy}
                   >
-                    <span className="task-row-title">{task.title}</span>
-                  </button>
+                    <button
+                      type="button"
+                      className={`completion-control ${task.completed ? "is-complete" : ""}`}
+                      aria-label={task.completed ? `Mark ${task.title} incomplete` : `Mark ${task.title} complete`}
+                      aria-pressed={task.completed}
+                      onClick={() => handleCompletionChange(task)}
+                      disabled={completionBusy}
+                    >
+                      {completionBusy ? <span className="completion-spinner" /> : <span aria-hidden="true">{task.completed ? "✓" : ""}</span>}
+                    </button>
 
-                  {task.description && (
-                    <p className="task-description">{task.description}</p>
-                  )}
+                    <div className="tasks-page-copy">
+                      <button className="task-title-button" type="button" onClick={() => openEditor(task)}>
+                        <span className="task-row-title">{task.title}</span>
+                      </button>
+                      {task.description && <p className="task-description">{task.description}</p>}
+                      {task.notes && <p className="task-notes-preview"><strong>Notes:</strong> {task.notes}</p>}
+                      <div className="tasks-page-meta">
+                        <span className="task-list-badge">
+                          <span
+                            className="list-color-dot"
+                            style={{ backgroundColor: taskList?.color || "#64748b" }}
+                            aria-hidden="true"
+                          />
+                          {taskList?.name || "Inbox"}
+                        </span>
+                        <span>{task.dueDate || "No due date"}</span>
+                        <span className={`priority priority-${task.priority}`}>
+                          {priorityLabels[task.priority] || "Medium priority"}
+                        </span>
+                        {task.reminder && <span>Reminder set</span>}
+                      </div>
+                    </div>
 
-                  {task.notes && (
-                    <p className="task-notes-preview">
-                      <strong>Notes:</strong> {task.notes}
-                    </p>
-                  )}
-
-                  <div className="tasks-page-meta">
-                    <span>{task.dueDate || "No due date"}</span>
-                    <span className={`priority priority-${task.priority}`}>
-                      {priorityLabels[task.priority] || "Medium priority"}
-                    </span>
-                    {task.reminder && <span>Reminder set</span>}
-                  </div>
-                </div>
-
-                <div className="task-row-actions">
-                  <span className={`task-status task-status-${task.status}`}>
-                    {statusLabels[task.status] || "To do"}
-                  </span>
-                  <button
-                    className="ghost-btn compact-btn"
-                    type="button"
-                    onClick={() => openEditor(task)}
-                    disabled={completionBusy}
-                  >
-                    Edit
-                  </button>
-                </div>
-              </article>
-            );
-          })}
+                    <div className="task-row-actions">
+                      <span className={`task-status task-status-${task.status}`}>
+                        {statusLabels[task.status] || "To do"}
+                      </span>
+                      <button className="ghost-btn compact-btn" type="button" onClick={() => openEditor(task)} disabled={completionBusy}>
+                        Edit
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {deleteCandidate && (
         <div className="confirmation-backdrop">
-          <section
-            className="confirmation-dialog"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="delete-dialog-title"
-            aria-describedby="delete-dialog-description"
-          >
+          <section className="confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description">
             <p className="card-label">Permanent action</p>
             <h3 id="delete-dialog-title">Delete this task?</h3>
             <p id="delete-dialog-description">
-              “{deleteCandidate.title}” will be permanently removed from
-              TaskFlow. This cannot be undone.
+              “{deleteCandidate.title}” will be permanently removed from TaskFlow. This cannot be undone.
             </p>
-
-            {deleteError && (
-              <p className="form-error" role="alert">
-                {deleteError}
-              </p>
-            )}
-
+            {deleteError && <p className="form-error" role="alert">{deleteError}</p>}
             <div className="confirmation-actions">
-              <button
-                className="ghost-btn"
-                type="button"
-                onClick={cancelDelete}
-                disabled={deletingTask}
-              >
-                Cancel
-              </button>
-              <button
-                className="danger-btn"
-                type="button"
-                onClick={confirmDelete}
-                disabled={deletingTask}
-              >
+              <button className="ghost-btn" type="button" onClick={cancelDelete} disabled={deletingTask}>Cancel</button>
+              <button className="danger-btn" type="button" onClick={confirmDelete} disabled={deletingTask}>
                 {deletingTask ? "Deleting..." : "Delete task"}
               </button>
             </div>

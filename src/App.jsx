@@ -12,6 +12,12 @@ import {
   updateTask,
   deleteTask,
 } from "./services/taskService";
+import {
+  getLists,
+  createList,
+  updateList,
+  deleteList,
+} from "./services/listService";
 
 const navItems = [
   { label: "Dashboard", view: "dashboard", enabled: true },
@@ -31,6 +37,7 @@ const emptyTaskForm = {
   priority: "medium",
   dueDate: "",
   reminder: false,
+  listId: "",
 };
 
 function App() {
@@ -40,6 +47,9 @@ function App() {
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState("");
   const [tasks, setTasks] = useState([]);
+  const [listsLoading, setListsLoading] = useState(false);
+  const [listsError, setListsError] = useState("");
+  const [lists, setLists] = useState([]);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskFormSaving, setTaskFormSaving] = useState(false);
   const [taskFormError, setTaskFormError] = useState("");
@@ -65,6 +75,26 @@ function App() {
     }
   }, [user]);
 
+  const loadLists = useCallback(async () => {
+    if (!user) return;
+
+    setListsLoading(true);
+    setListsError("");
+
+    try {
+      const userLists = await getLists(user.uid);
+      setLists(userLists);
+    } catch (error) {
+      console.error("Error loading lists:", error);
+      setLists([]);
+      setListsError(
+        "We couldn't load your lists. Check your connection and try again."
+      );
+    } finally {
+      setListsLoading(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -77,8 +107,9 @@ function App() {
   useEffect(() => {
     if (user) {
       loadTasks();
+      loadLists();
     }
-  }, [user, loadTasks]);
+  }, [user, loadTasks, loadLists]);
 
   const handleTaskChange = (event) => {
     const { name, value, type, checked } = event.target;
@@ -110,6 +141,7 @@ function App() {
         priority: taskForm.priority,
         dueDate: taskForm.dueDate,
         reminder: taskForm.reminder,
+        listId: taskForm.listId || null,
       });
 
       setTaskForm(emptyTaskForm);
@@ -147,6 +179,46 @@ function App() {
       await loadTasks();
     },
     [user, loadTasks]
+  );
+
+  const handleCreateList = useCallback(
+    async (data) => {
+      if (!user) {
+        throw new Error("You must be signed in to create a list.");
+      }
+
+      const listReference = await createList(user.uid, {
+        ...data,
+        position: lists.length,
+      });
+      await loadLists();
+      return listReference.id;
+    },
+    [user, lists.length, loadLists]
+  );
+
+  const handleRenameList = useCallback(
+    async (listId, data) => {
+      if (!user) {
+        throw new Error("You must be signed in to rename a list.");
+      }
+
+      await updateList(user.uid, listId, data);
+      await loadLists();
+    },
+    [user, loadLists]
+  );
+
+  const handleDeleteList = useCallback(
+    async (listId) => {
+      if (!user) {
+        throw new Error("You must be signed in to delete a list.");
+      }
+
+      await deleteList(user.uid, listId);
+      await Promise.all([loadLists(), loadTasks()]);
+    },
+    [user, loadLists, loadTasks]
   );
 
   const openTaskForm = () => {
@@ -200,8 +272,8 @@ function App() {
 
         <div className="sidebar-card">
           <p className="sidebar-card-title">Project status</p>
-          <h3>Build phase 2</h3>
-          <p>Core task workflow and task details.</p>
+          <h3>Build phase 3</h3>
+          <p>User-created lists and task organization.</p>
         </div>
       </aside>
 
@@ -261,6 +333,7 @@ function App() {
               busyLabel="Creating..."
               busy={taskFormSaving}
               error={taskFormError}
+              lists={lists}
             />
           </section>
         )}
@@ -273,6 +346,13 @@ function App() {
             onRetry={loadTasks}
             onUpdateTask={handleUpdateTask}
             onDeleteTask={handleDeleteTask}
+            lists={lists}
+            listsLoading={listsLoading}
+            listsError={listsError}
+            onRetryLists={loadLists}
+            onCreateList={handleCreateList}
+            onRenameList={handleRenameList}
+            onDeleteList={handleDeleteList}
           />
         ) : (
           <Dashboard

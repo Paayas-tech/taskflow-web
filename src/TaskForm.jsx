@@ -7,6 +7,7 @@ export default function TaskForm({
   busyLabel,
   busy = false,
   error = "",
+  lists = [],
 }) {
   return (
     <form className="task-editor-form" onSubmit={onSubmit} noValidate>
@@ -71,6 +72,23 @@ export default function TaskForm({
           <option value="low">Low</option>
           <option value="medium">Medium</option>
           <option value="high">High</option>
+        </select>
+      </label>
+
+      <label className="task-form-field">
+        <span>List</span>
+        <select
+          name="listId"
+          value={values.listId || ""}
+          onChange={onChange}
+          disabled={busy}
+        >
+          <option value="">Inbox</option>
+          {lists.map((list) => (
+            <option key={list.id} value={list.id}>
+              {list.name}
+            </option>
+          ))}
         </select>
       </label>
 
