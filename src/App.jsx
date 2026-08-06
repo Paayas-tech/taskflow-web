@@ -2,10 +2,16 @@ import React, { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import Dashboard from "./Dashboard";
 import Login from "./Login";
+import TaskForm from "./TaskForm";
 import TasksPage from "./TasksPage";
 import { auth } from "./firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { getTasks, createTask } from "./services/taskService";
+import {
+  getTasks,
+  createTask,
+  updateTask,
+  deleteTask,
+} from "./services/taskService";
 
 const navItems = [
   { label: "Dashboard", view: "dashboard", enabled: true },
@@ -20,7 +26,9 @@ const navItems = [
 const emptyTaskForm = {
   title: "",
   description: "",
+  notes: "",
   status: "todo",
+  priority: "medium",
   dueDate: "",
   reminder: false,
 };
@@ -33,6 +41,7 @@ function App() {
   const [tasksError, setTasksError] = useState("");
   const [tasks, setTasks] = useState([]);
   const [showTaskForm, setShowTaskForm] = useState(false);
+  const [taskFormSaving, setTaskFormSaving] = useState(false);
   const [taskFormError, setTaskFormError] = useState("");
   const [taskForm, setTaskForm] = useState(emptyTaskForm);
 
@@ -89,11 +98,16 @@ function App() {
       return;
     }
 
+    setTaskFormSaving(true);
+
     try {
       await createTask(user.uid, {
         title: taskForm.title,
         description: taskForm.description,
+        notes: taskForm.notes,
         status: taskForm.status,
+        completed: taskForm.status === "completed",
+        priority: taskForm.priority,
         dueDate: taskForm.dueDate,
         reminder: taskForm.reminder,
       });
@@ -106,8 +120,34 @@ function App() {
       setTaskFormError(
         "We couldn't create this task. Check your connection and try again."
       );
+    } finally {
+      setTaskFormSaving(false);
     }
   };
+
+  const handleUpdateTask = useCallback(
+    async (taskId, data) => {
+      if (!user) {
+        throw new Error("You must be signed in to update a task.");
+      }
+
+      await updateTask(user.uid, taskId, data);
+      await loadTasks();
+    },
+    [user, loadTasks]
+  );
+
+  const handleDeleteTask = useCallback(
+    async (taskId) => {
+      if (!user) {
+        throw new Error("You must be signed in to delete a task.");
+      }
+
+      await deleteTask(user.uid, taskId);
+      await loadTasks();
+    },
+    [user, loadTasks]
+  );
 
   const openTaskForm = () => {
     setTaskFormError("");
@@ -160,8 +200,8 @@ function App() {
 
         <div className="sidebar-card">
           <p className="sidebar-card-title">Project status</p>
-          <h3>Build phase 1</h3>
-          <p>Dashboard and Tasks navigation foundation.</p>
+          <h3>Build phase 2</h3>
+          <p>Core task workflow and task details.</p>
         </div>
       </aside>
 
@@ -212,60 +252,16 @@ function App() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateTask}>
-              <input
-                className="search"
-                name="title"
-                placeholder="Task title"
-                value={taskForm.title}
-                onChange={handleTaskChange}
-              />
-
-              <input
-                className="search"
-                name="description"
-                placeholder="Description"
-                value={taskForm.description}
-                onChange={handleTaskChange}
-              />
-
-              <select
-                name="status"
-                value={taskForm.status}
-                onChange={handleTaskChange}
-              >
-                <option value="todo">To do</option>
-                <option value="in-progress">In progress</option>
-                <option value="completed">Completed</option>
-              </select>
-
-              <input
-                type="date"
-                name="dueDate"
-                value={taskForm.dueDate}
-                onChange={handleTaskChange}
-              />
-
-              <label>
-                <input
-                  type="checkbox"
-                  name="reminder"
-                  checked={taskForm.reminder}
-                  onChange={handleTaskChange}
-                />
-                Reminder
-              </label>
-
-              <button className="primary-btn" type="submit">
-                Create Task
-              </button>
-
-              {taskFormError && (
-                <p className="form-error" role="alert">
-                  {taskFormError}
-                </p>
-              )}
-            </form>
+            <TaskForm
+              values={taskForm}
+              onChange={handleTaskChange}
+              onSubmit={handleCreateTask}
+              onCancel={closeTaskForm}
+              submitLabel="Create Task"
+              busyLabel="Creating..."
+              busy={taskFormSaving}
+              error={taskFormError}
+            />
           </section>
         )}
 
@@ -275,6 +271,8 @@ function App() {
             tasksLoading={tasksLoading}
             tasksError={tasksError}
             onRetry={loadTasks}
+            onUpdateTask={handleUpdateTask}
+            onDeleteTask={handleDeleteTask}
           />
         ) : (
           <Dashboard
