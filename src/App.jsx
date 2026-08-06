@@ -1,39 +1,46 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import "./App.css";
+import Dashboard from "./Dashboard";
 import Login from "./Login";
+import TasksPage from "./TasksPage";
 import { auth } from "./firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { getTasks, createTask } from "./services/taskService";
 
 const navItems = [
-  "Dashboard",
-  "Today",
-  "Tasks",
-  "Projects",
-  "Calendar",
-  "Reminders",
-  "Settings",
+  { label: "Dashboard", view: "dashboard", enabled: true },
+  { label: "Today", enabled: false },
+  { label: "Tasks", view: "tasks", enabled: true },
+  { label: "Projects", enabled: false },
+  { label: "Calendar", enabled: false },
+  { label: "Reminders", enabled: false },
+  { label: "Settings", enabled: false },
 ];
+
+const emptyTaskForm = {
+  title: "",
+  description: "",
+  status: "todo",
+  dueDate: "",
+  reminder: false,
+};
 
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeView, setActiveView] = useState("dashboard");
   const [tasksLoading, setTasksLoading] = useState(false);
+  const [tasksError, setTasksError] = useState("");
   const [tasks, setTasks] = useState([]);
-
   const [showTaskForm, setShowTaskForm] = useState(false);
-  const [taskForm, setTaskForm] = useState({
-    title: "",
-    description: "",
-    status: "todo",
-    dueDate: "",
-    reminder: false,
-  });
+  const [taskFormError, setTaskFormError] = useState("");
+  const [taskForm, setTaskForm] = useState(emptyTaskForm);
 
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
     if (!user) return;
 
     setTasksLoading(true);
+    setTasksError("");
 
     try {
       const userTasks = await getTasks(user.uid);
@@ -41,10 +48,13 @@ function App() {
     } catch (error) {
       console.error("Error loading tasks:", error);
       setTasks([]);
+      setTasksError(
+        "We couldn't load your tasks. Check your connection and try again."
+      );
     } finally {
       setTasksLoading(false);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -59,10 +69,10 @@ function App() {
     if (user) {
       loadTasks();
     }
-  }, [user]);
+  }, [user, loadTasks]);
 
-  const handleTaskChange = (e) => {
-    const { name, value, type, checked } = e.target;
+  const handleTaskChange = (event) => {
+    const { name, value, type, checked } = event.target;
 
     setTaskForm((previous) => ({
       ...previous,
@@ -70,10 +80,14 @@ function App() {
     }));
   };
 
-  const handleCreateTask = async (e) => {
-    e.preventDefault();
+  const handleCreateTask = async (event) => {
+    event.preventDefault();
+    setTaskFormError("");
 
-    if (!taskForm.title.trim()) return;
+    if (!taskForm.title.trim()) {
+      setTaskFormError("Enter a task title before saving.");
+      return;
+    }
 
     try {
       await createTask(user.uid, {
@@ -84,77 +98,26 @@ function App() {
         reminder: taskForm.reminder,
       });
 
-      setTaskForm({
-        title: "",
-        description: "",
-        status: "todo",
-        dueDate: "",
-        reminder: false,
-      });
-
+      setTaskForm(emptyTaskForm);
       setShowTaskForm(false);
-
       await loadTasks();
     } catch (error) {
       console.error("Error creating task:", error);
+      setTaskFormError(
+        "We couldn't create this task. Check your connection and try again."
+      );
     }
   };
 
-  const todayTasks = tasks.slice(0, 3).map((task, index) => ({
-    ...task,
-    time: task.dueDate || "No due date",
-    status: task.status || "Pending",
-    _key: task.id || task.title || `task-${index}`,
-  }));
+  const openTaskForm = () => {
+    setTaskFormError("");
+    setShowTaskForm(true);
+  };
 
-  const boardColumns = [
-    {
-      name: "To do",
-      status: "todo",
-      items: tasks.filter(
-        (task) =>
-          task.status === "todo" ||
-          task.status === "Todo" ||
-          !task.status
-      ),
-    },
-    {
-      name: "In progress",
-      status: "in-progress",
-      items: tasks.filter(
-        (task) =>
-          task.status === "in-progress" ||
-          task.status === "In Progress"
-      ),
-    },
-    {
-      name: "Completed",
-      status: "completed",
-      items: tasks.filter(
-        (task) =>
-          task.status === "completed" ||
-          task.completed
-      ),
-    },
-  ];
-
-  const calendarEvents = tasks
-    .filter((task) => task.dueDate)
-    .map((task, index) => ({
-      day: task.dueDate,
-      label: task.title,
-      _key: task.id || `${task.title}-${task.dueDate}-${index}`,
-    }));
-
-  const reminders = tasks
-    .filter((task) => task.reminder)
-    .map((task, index) => ({
-      title: task.title,
-      meta: task.dueDate
-        ? `Due ${task.dueDate}`
-        : "Reminder set",
-      _key: task.id || `${task.title}-${task.dueDate || "reminder"}-${index}`,
-    }));
+  const closeTaskForm = () => {
+    setTaskFormError("");
+    setShowTaskForm(false);
+  };
 
   if (loading) {
     return <div className="loading-screen">Loading...</div>;
@@ -163,6 +126,8 @@ function App() {
   if (!user) {
     return <Login />;
   }
+
+  const isTasksView = activeView === "tasks";
 
   return (
     <div className="app-shell">
@@ -174,35 +139,43 @@ function App() {
           </p>
         </div>
 
-        <nav className="nav-list">
-          {navItems.map((item, idx) => (
+        <nav className="nav-list" aria-label="Primary navigation">
+          {navItems.map((item) => (
             <button
-              key={item}
-              className={`nav-item ${idx === 0 ? "active" : ""}`}
+              key={item.label}
+              type="button"
+              className={`nav-item ${
+                item.view === activeView ? "active" : ""
+              }`}
+              disabled={!item.enabled}
+              aria-current={
+                item.view === activeView ? "page" : undefined
+              }
+              onClick={() => item.enabled && setActiveView(item.view)}
             >
-              {item}
+              {item.label}
             </button>
           ))}
         </nav>
 
         <div className="sidebar-card">
-          <p className="sidebar-card-title">
-            Project status
-          </p>
+          <p className="sidebar-card-title">Project status</p>
           <h3>Build phase 1</h3>
-          <p>
-            UI shell, task flow, calendar, and reminders.
-          </p>
+          <p>Dashboard and Tasks navigation foundation.</p>
         </div>
       </aside>
 
       <main className="main-content">
         <header className="topbar">
           <div className="topbar-left">
-            <p className="eyebrow">Welcome back</p>
-            <h1>Today</h1>
+            <p className="eyebrow">
+              {isTasksView ? "Your workspace" : "Welcome back"}
+            </p>
+            <h1>{isTasksView ? "Tasks" : "Today"}</h1>
             <p className="topbar-date">
-              Tuesday, August 4, 2026
+              {isTasksView
+                ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`
+                : "Tuesday, August 4, 2026"}
             </p>
           </div>
 
@@ -210,14 +183,13 @@ function App() {
             <input
               className="search"
               placeholder="Search tasks, boards, reminders..."
+              disabled
+              aria-label="Search is coming in a future phase"
             />
           </div>
 
           <div className="topbar-actions">
-            <button
-              className="primary-btn"
-              onClick={() => setShowTaskForm(true)}
-            >
+            <button className="primary-btn" onClick={openTaskForm}>
               + New Task
             </button>
 
@@ -231,14 +203,11 @@ function App() {
         </header>
 
         {showTaskForm && (
-          <section className="panel">
+          <section className="panel task-form-panel">
             <div className="panel-header">
               <h2>Create Task</h2>
 
-              <button
-                className="ghost-btn"
-                onClick={() => setShowTaskForm(false)}
-              >
+              <button className="ghost-btn" onClick={closeTaskForm}>
                 Close
               </button>
             </div>
@@ -290,192 +259,33 @@ function App() {
               <button className="primary-btn" type="submit">
                 Create Task
               </button>
+
+              {taskFormError && (
+                <p className="form-error" role="alert">
+                  {taskFormError}
+                </p>
+              )}
             </form>
           </section>
         )}
 
-        <section className="hero-grid">
-          <article className="hero-card accent">
-            <p className="card-label">Focus</p>
-            <h2>Build the first version of your task app UI</h2>
-            <p>
-              Keep the structure flexible so Firebase, collaboration, and AI agents can be added later.
-            </p>
-          </article>
-
-          <article className="hero-card">
-            <p className="card-label">Reminders</p>
-            <h3>{reminders.length} due today</h3>
-            <p>Task reminders are connected with Firestore.</p>
-          </article>
-
-          <article className="hero-card">
-            <p className="card-label">Calendar</p>
-            <h3>Weekly view</h3>
-            <p>Tasks with due dates appear here.</p>
-          </article>
-        </section>
-
-        <section className="content-grid task-board-grid">
-          <article className="panel panel-wide todo-panel">
-            <div className="panel-header">
-              <h2>To-do list</h2>
-              <button className="ghost-btn">View all</button>
-            </div>
-
-            <div className="task-list">
-              {tasksLoading ? (
-                <p>Loading tasks...</p>
-              ) : todayTasks.length === 0 ? (
-                <p>No tasks created yet.</p>
-              ) : (
-                todayTasks.map((task) => (
-                  <div key={task._key} className="task-row">
-                    <div>
-                      <h3>{task.title}</h3>
-                      <p>{task.time}</p>
-                    </div>
-
-                    <span
-                      className={`status ${
-                        task.status === "in-progress"
-                          ? "active"
-                          : ""
-                      }`}
-                    >
-                      {task.status}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </article>
-
-          <article className="panel panel-wide board-panel">
-            <div className="panel-header">
-              <h2>Project board</h2>
-              <button className="ghost-btn">Open board</button>
-            </div>
-
-            <div className="board-columns">
-              {boardColumns.map((column) => (
-                <div key={column.name} className="board-column">
-                  <div className="column-head">
-                    <h3>{column.name}</h3>
-                    <span>{column.items.length}</span>
-                  </div>
-
-                  {column.items.length === 0 ? (
-                    <div className="board-item">No tasks</div>
-                  ) : (
-                    column.items.map((task, index) => (
-                      <div
-                        key={
-                          task.id ||
-                          task.title ||
-                          `${column.name}-${index}`
-                        }
-                        className="board-item"
-                      >
-                        {task.title}
-                      </div>
-                    ))
-                  )}
-                </div>
-              ))}
-            </div>
-          </article>
-        </section>
-
-        <section className="content-grid bottom-grid">
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Calendar</h2>
-              <button className="ghost-btn">
-                Monthly
-              </button>
-            </div>
-
-            <div className="calendar-list">
-              {calendarEvents.length === 0 ? (
-                <p>No scheduled tasks.</p>
-              ) : (
-                calendarEvents.map((event) => (
-                  <div
-                    key={event._key}
-                    className="calendar-item"
-                  >
-                    <span className="calendar-day-label">
-                      {event.day}
-                    </span>
-
-                    <strong className="calendar-day-title">
-                      {event.label}
-                    </strong>
-                  </div>
-                ))
-              )}
-            </div>
-          </article>
-
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Account</h2>
-
-              <button
-                className="ghost-btn"
-                onClick={() => signOut(auth)}
-              >
-                Sign out
-              </button>
-            </div>
-
-            <div className="account-card">
-              <div className="avatar">
-                {user.email?.[0]?.toUpperCase() || "U"}
-              </div>
-
-              <div>
-                <h3>{user.email}</h3>
-                <p>
-                  Firebase authentication is connected.
-                </p>
-              </div>
-            </div>
-          </article>
-        </section>
-
-        <section className="reminders-section">
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Reminders</h2>
-
-              <button className="ghost-btn">
-                Manage
-              </button>
-            </div>
-
-            <div className="reminder-grid">
-              {reminders.length === 0 ? (
-                <p>No reminders available.</p>
-              ) : (
-                reminders.map((reminder) => (
-                  <div
-                    key={reminder._key}
-                    className="reminder-card"
-                  >
-                    <p>{reminder.title}</p>
-                    <span>{reminder.meta}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </article>
-        </section>
-
-        <footer className="dashboard-footer">
-          © 2026 TaskFlow. All rights reserved.
-        </footer>
+        {isTasksView ? (
+          <TasksPage
+            tasks={tasks}
+            tasksLoading={tasksLoading}
+            tasksError={tasksError}
+            onRetry={loadTasks}
+          />
+        ) : (
+          <Dashboard
+            user={user}
+            tasks={tasks}
+            tasksLoading={tasksLoading}
+            tasksError={tasksError}
+            onRetry={loadTasks}
+            onSignOut={() => signOut(auth)}
+          />
+        )}
       </main>
     </div>
   );
