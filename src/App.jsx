@@ -4,6 +4,7 @@ import Dashboard from "./Dashboard";
 import Login from "./Login";
 import TaskForm from "./TaskForm";
 import TasksPage from "./TasksPage";
+import TodayPage from "./TodayPage";
 import { auth } from "./firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
@@ -20,14 +21,26 @@ import {
 } from "./services/listService";
 
 const navItems = [
-  { label: "Dashboard", view: "dashboard", enabled: true },
-  { label: "Today", enabled: false },
-  { label: "Tasks", view: "tasks", enabled: true },
+  { label: "Dashboard", path: "/", enabled: true },
+  { label: "Today", path: "/today", enabled: true },
+  { label: "Tasks", path: "/tasks", enabled: true },
   { label: "Projects", enabled: false },
   { label: "Calendar", enabled: false },
   { label: "Reminders", enabled: false },
   { label: "Settings", enabled: false },
 ];
+
+const routeViews = {
+  "/": "dashboard",
+  "/today": "today",
+  "/tasks": "tasks",
+};
+
+const normalizePath = (pathname) => {
+  const withoutTrailingSlash =
+    pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+  return routeViews[withoutTrailingSlash] ? withoutTrailingSlash : "/";
+};
 
 const emptyTaskForm = {
   title: "",
@@ -43,7 +56,9 @@ const emptyTaskForm = {
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeView, setActiveView] = useState("dashboard");
+  const [currentPath, setCurrentPath] = useState(() =>
+    normalizePath(window.location.pathname)
+  );
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState("");
   const [tasks, setTasks] = useState([]);
@@ -102,6 +117,23 @@ function App() {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const syncPathFromBrowser = () => {
+      const nextPath = normalizePath(window.location.pathname);
+
+      if (window.location.pathname !== nextPath) {
+        window.history.replaceState({}, "", nextPath);
+      }
+
+      setCurrentPath(nextPath);
+    };
+
+    syncPathFromBrowser();
+    window.addEventListener("popstate", syncPathFromBrowser);
+
+    return () => window.removeEventListener("popstate", syncPathFromBrowser);
   }, []);
 
   useEffect(() => {
@@ -231,6 +263,14 @@ function App() {
     setShowTaskForm(false);
   };
 
+  const navigate = (path) => {
+    if (path === currentPath) return;
+
+    window.history.pushState({}, "", path);
+    setCurrentPath(path);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  };
+
   if (loading) {
     return <div className="loading-screen">Loading...</div>;
   }
@@ -239,7 +279,19 @@ function App() {
     return <Login />;
   }
 
-  const isTasksView = activeView === "tasks";
+  const currentView = routeViews[currentPath];
+  const pageTitle =
+    currentView === "tasks"
+      ? "Tasks"
+      : currentView === "today"
+        ? "Today"
+        : "Dashboard";
+  const pageSubtitle =
+    currentView === "tasks"
+      ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`
+      : currentView === "today"
+        ? "Overdue and due-today tasks in one focused view."
+        : "A clear view of what needs your attention.";
 
   return (
     <div className="app-shell">
@@ -255,14 +307,14 @@ function App() {
               key={item.label}
               type="button"
               className={`nav-item ${
-                item.view === activeView ? "active" : ""
+                item.path === currentPath ? "active" : ""
               } ${item.enabled ? "" : "nav-item-disabled"}`}
               disabled={!item.enabled}
               aria-current={
-                item.view === activeView ? "page" : undefined
+                item.path === currentPath ? "page" : undefined
               }
               aria-label={item.enabled ? item.label : `${item.label}, coming soon`}
-              onClick={() => item.enabled && setActiveView(item.view)}
+              onClick={() => item.enabled && navigate(item.path)}
             >
               <span>{item.label}</span>
               {!item.enabled && <small>Soon</small>}
@@ -291,12 +343,8 @@ function App() {
       <main className="main-content">
         <header className="topbar">
           <div className="topbar-title">
-            <h1>{isTasksView ? "Tasks" : "Dashboard"}</h1>
-            <p>
-              {isTasksView
-                ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`
-                : "A clear view of what needs your attention."}
-            </p>
+            <h1>{pageTitle}</h1>
+            <p>{pageSubtitle}</p>
           </div>
 
           <div className="topbar-actions">
@@ -330,7 +378,7 @@ function App() {
           </section>
         )}
 
-        {isTasksView ? (
+        <div className="route-content" hidden={currentView !== "tasks"}>
           <TasksPage
             tasks={tasks}
             tasksLoading={tasksLoading}
@@ -346,14 +394,28 @@ function App() {
             onRenameList={handleRenameList}
             onDeleteList={handleDeleteList}
           />
-        ) : (
+        </div>
+
+        <div className="route-content" hidden={currentView !== "today"}>
+          <TodayPage
+            tasks={tasks}
+            tasksLoading={tasksLoading}
+            tasksError={tasksError}
+            onRetry={loadTasks}
+            onUpdateTask={handleUpdateTask}
+            onDeleteTask={handleDeleteTask}
+            lists={lists}
+          />
+        </div>
+
+        <div className="route-content" hidden={currentView !== "dashboard"}>
           <Dashboard
             tasks={tasks}
             tasksLoading={tasksLoading}
             tasksError={tasksError}
             onRetry={loadTasks}
           />
-        )}
+        </div>
       </main>
     </div>
   );

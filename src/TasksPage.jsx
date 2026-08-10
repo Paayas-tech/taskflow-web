@@ -1,49 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import TaskForm from "./TaskForm";
 import TaskListsPanel from "./TaskListsPanel";
-
-const statusLabels = {
-  todo: "To do",
-  "in-progress": "In progress",
-  completed: "Completed",
-};
-
-const priorityLabels = {
-  low: "Low priority",
-  medium: "Medium priority",
-  high: "High priority",
-};
-
-const dateKeyFor = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const formatTaskDueDate = (value) => {
-  if (!value) return "No due date";
-
-  const parsedDate = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsedDate.getTime())) return value;
-
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(parsedDate);
-};
-
-const dueDateMetaFor = (value) => {
-  if (!value) return { label: "No due date", tone: "undated" };
-
-  const todayKey = dateKeyFor(new Date());
-  if (value < todayKey) {
-    return { label: `Overdue · ${formatTaskDueDate(value)}`, tone: "overdue" };
-  }
-  if (value === todayKey) return { label: "Due today", tone: "today" };
-
-  return { label: formatTaskDueDate(value), tone: "upcoming" };
-};
+import TaskRow from "./TaskRow";
 
 const valuesFromTask = (task, knownListIds) => ({
   title: task.title || "",
@@ -328,70 +286,17 @@ export default function TasksPage({
             <div className="tasks-page-list">
               {filteredTasks.map((task) => {
                 const completionBusy = completionTaskId === task.id;
-                const taskList = lists.find((list) => list.id === task.listId);
-                const dueDateMeta = dueDateMetaFor(task.dueDate);
 
                 return (
-                  <article
+                  <TaskRow
                     key={task.id}
-                    className={`tasks-page-row ${
-                      task.completed ? "task-row-completed" : ""
-                    } ${selectedTaskId === task.id ? "is-selected" : ""}`}
-                    aria-busy={completionBusy}
-                  >
-                    <button
-                      type="button"
-                      className={`completion-control ${task.completed ? "is-complete" : ""}`}
-                      aria-label={task.completed ? `Mark ${task.title} incomplete` : `Mark ${task.title} complete`}
-                      aria-pressed={task.completed}
-                      onClick={() => handleCompletionChange(task)}
-                      disabled={completionBusy}
-                    >
-                      {completionBusy ? <span className="completion-spinner" /> : <span aria-hidden="true">{task.completed ? "✓" : ""}</span>}
-                    </button>
-
-                    <div className="tasks-page-copy">
-                      <button className="task-title-button" type="button" onClick={() => openEditor(task)}>
-                        <span className="task-row-title">{task.title}</span>
-                      </button>
-                      {task.description && <p className="task-description">{task.description}</p>}
-                      {task.notes && <p className="task-notes-preview"><strong>Notes:</strong> {task.notes}</p>}
-                      <div className="tasks-page-meta">
-                        <span className="task-list-badge">
-                          <span
-                            className="list-color-dot"
-                            style={{ backgroundColor: taskList?.color || "#9a8170" }}
-                            aria-hidden="true"
-                          />
-                          {taskList?.name || "Inbox"}
-                        </span>
-                        <span className={`task-due-meta task-due-${dueDateMeta.tone}`}>
-                          {dueDateMeta.label}
-                        </span>
-                        <span className={`priority priority-${task.priority}`}>
-                          {priorityLabels[task.priority] || "Medium priority"}
-                        </span>
-                        {task.reminder && (
-                          <span className="task-reminder-meta">Reminder</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="task-row-actions">
-                      <span className={`task-status task-status-${task.status}`}>
-                        {statusLabels[task.status] || "To do"}
-                      </span>
-                      <button
-                        className="ghost-btn compact-btn task-edit-button"
-                        type="button"
-                        onClick={() => openEditor(task)}
-                        disabled={completionBusy}
-                        aria-label={`Edit ${task.title}`}
-                      >
-                        Edit
-                      </button>
-                    </div>
-                  </article>
+                    task={task}
+                    lists={lists}
+                    completionBusy={completionBusy}
+                    selected={selectedTaskId === task.id}
+                    onToggleCompletion={handleCompletionChange}
+                    onEdit={openEditor}
+                  />
                 );
               })}
             </div>
