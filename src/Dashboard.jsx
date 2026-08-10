@@ -21,14 +21,21 @@ const isTaskComplete = (task) =>
   task.completed === true || task.status === "completed";
 
 function DashboardTaskRow({ task, dateLabel }) {
+  const isOverdue = dateLabel?.startsWith("Overdue");
+
   return (
     <div className="dashboard-task-row">
-      <span className="dashboard-task-marker" aria-hidden="true" />
+      <span
+        className={`dashboard-task-marker ${isOverdue ? "is-overdue" : ""}`}
+        aria-hidden="true"
+      />
 
       <div className="dashboard-task-copy">
         <h3>{task.title}</h3>
         <div className="dashboard-task-meta">
-          <span>{dateLabel || formatDueDate(task.dueDate)}</span>
+          <span className={isOverdue ? "dashboard-overdue" : ""}>
+            {dateLabel || formatDueDate(task.dueDate)}
+          </span>
           {task.priority === "high" && (
             <span className="dashboard-priority">High priority</span>
           )}
@@ -106,15 +113,18 @@ export default function Dashboard({
       ) : (
         <>
           <section className="dashboard-summary" aria-label="Task summary">
-            <div className="summary-stat">
+            <div className="summary-stat summary-stat-remaining">
+              <span className="summary-stat-mark" aria-hidden="true" />
               <strong>{remainingTasks.length}</strong>
               <span>Remaining</span>
             </div>
-            <div className="summary-stat">
+            <div className="summary-stat summary-stat-completed">
+              <span className="summary-stat-mark" aria-hidden="true" />
               <strong>{completedTasks.length}</strong>
               <span>Completed</span>
             </div>
-            <div className="summary-stat">
+            <div className="summary-stat summary-stat-reminders">
+              <span className="summary-stat-mark" aria-hidden="true" />
               <strong>{reminderTasks.length}</strong>
               <span>Active reminders</span>
             </div>

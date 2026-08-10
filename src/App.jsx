@@ -250,20 +250,22 @@ function App() {
         </div>
 
         <nav className="nav-list" aria-label="Primary navigation">
-          {navItems.filter((item) => item.enabled).map((item) => (
+          {navItems.map((item) => (
             <button
               key={item.label}
               type="button"
               className={`nav-item ${
                 item.view === activeView ? "active" : ""
-              }`}
+              } ${item.enabled ? "" : "nav-item-disabled"}`}
               disabled={!item.enabled}
               aria-current={
                 item.view === activeView ? "page" : undefined
               }
+              aria-label={item.enabled ? item.label : `${item.label}, coming soon`}
               onClick={() => item.enabled && setActiveView(item.view)}
             >
-              {item.label}
+              <span>{item.label}</span>
+              {!item.enabled && <small>Soon</small>}
             </button>
           ))}
         </nav>
