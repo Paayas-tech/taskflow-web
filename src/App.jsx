@@ -244,15 +244,13 @@ function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div>
+        <div className="sidebar-brand">
+          <span className="brand-mark" aria-hidden="true" />
           <div className="brand">TaskFlow</div>
-          <p className="brand-subtitle">
-            Your productivity workspace
-          </p>
         </div>
 
         <nav className="nav-list" aria-label="Primary navigation">
-          {navItems.map((item) => (
+          {navItems.filter((item) => item.enabled).map((item) => (
             <button
               key={item.label}
               type="button"
@@ -270,46 +268,38 @@ function App() {
           ))}
         </nav>
 
-        <div className="sidebar-card">
-          <p className="sidebar-card-title">Project status</p>
-          <h3>Build phase 3</h3>
-          <p>User-created lists and task organization.</p>
+        <div className="sidebar-account">
+          <div className="sidebar-avatar" aria-hidden="true">
+            {user.email?.[0]?.toUpperCase() || "U"}
+          </div>
+          <div className="sidebar-account-copy">
+            <strong>{user.email}</strong>
+            <span>Signed in</span>
+          </div>
+          <button
+            className="sidebar-logout"
+            type="button"
+            onClick={() => signOut(auth)}
+          >
+            Log out
+          </button>
         </div>
       </aside>
 
       <main className="main-content">
         <header className="topbar">
-          <div className="topbar-left">
-            <p className="eyebrow">
-              {isTasksView ? "Your workspace" : "Welcome back"}
-            </p>
-            <h1>{isTasksView ? "Tasks" : "Today"}</h1>
-            <p className="topbar-date">
+          <div className="topbar-title">
+            <h1>{isTasksView ? "Tasks" : "Dashboard"}</h1>
+            <p>
               {isTasksView
                 ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`
-                : "Tuesday, August 4, 2026"}
+                : "A clear view of what needs your attention."}
             </p>
-          </div>
-
-          <div className="topbar-center">
-            <input
-              className="search"
-              placeholder="Search tasks, boards, reminders..."
-              disabled
-              aria-label="Search is coming in a future phase"
-            />
           </div>
 
           <div className="topbar-actions">
-            <button className="primary-btn" onClick={openTaskForm}>
+            <button className="primary-btn" type="button" onClick={openTaskForm}>
               + New Task
-            </button>
-
-            <button
-              className="logout-btn"
-              onClick={() => signOut(auth)}
-            >
-              Log out
             </button>
           </div>
         </header>
@@ -319,7 +309,7 @@ function App() {
             <div className="panel-header">
               <h2>Create Task</h2>
 
-              <button className="ghost-btn" onClick={closeTaskForm}>
+              <button className="ghost-btn" type="button" onClick={closeTaskForm}>
                 Close
               </button>
             </div>
@@ -356,12 +346,10 @@ function App() {
           />
         ) : (
           <Dashboard
-            user={user}
             tasks={tasks}
             tasksLoading={tasksLoading}
             tasksError={tasksError}
             onRetry={loadTasks}
-            onSignOut={() => signOut(auth)}
           />
         )}
       </main>

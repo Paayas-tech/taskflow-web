@@ -1,235 +1,209 @@
+const dateKeyFor = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatDueDate = (value) => {
+  if (!value) return "No due date";
+
+  const parsedDate = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsedDate.getTime())) return value;
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(parsedDate);
+};
+
+const isTaskComplete = (task) =>
+  task.completed === true || task.status === "completed";
+
+function DashboardTaskRow({ task, dateLabel }) {
+  return (
+    <div className="dashboard-task-row">
+      <span className="dashboard-task-marker" aria-hidden="true" />
+
+      <div className="dashboard-task-copy">
+        <h3>{task.title}</h3>
+        <div className="dashboard-task-meta">
+          <span>{dateLabel || formatDueDate(task.dueDate)}</span>
+          {task.priority === "high" && (
+            <span className="dashboard-priority">High priority</span>
+          )}
+          {task.reminder && <span>Reminder</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard({
-  user,
   tasks,
   tasksLoading,
   tasksError,
   onRetry,
-  onSignOut,
 }) {
-  const todayTasks = tasks.slice(0, 3).map((task, index) => ({
-    ...task,
-    time: task.dueDate || "No due date",
-    status: task.status || "Pending",
-    _key: task.id || task.title || `task-${index}`,
-  }));
+  const now = new Date();
+  const todayKey = dateKeyFor(now);
+  const currentDate = new Intl.DateTimeFormat(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  }).format(now);
 
-  const boardColumns = [
-    {
-      name: "To do",
-      items: tasks.filter(
-        (task) =>
-          task.status === "todo" ||
-          task.status === "Todo" ||
-          !task.status
-      ),
-    },
-    {
-      name: "In progress",
-      items: tasks.filter(
-        (task) =>
-          task.status === "in-progress" ||
-          task.status === "In Progress"
-      ),
-    },
-    {
-      name: "Completed",
-      items: tasks.filter(
-        (task) => task.status === "completed" || task.completed
-      ),
-    },
-  ];
-
-  const calendarEvents = tasks
-    .filter((task) => task.dueDate)
-    .map((task, index) => ({
-      day: task.dueDate,
-      label: task.title,
-      _key: task.id || `${task.title}-${task.dueDate}-${index}`,
-    }));
-
-  const reminders = tasks
-    .filter((task) => task.reminder)
-    .map((task, index) => ({
-      title: task.title,
-      meta: task.dueDate ? `Due ${task.dueDate}` : "Reminder set",
-      _key:
-        task.id || `${task.title}-${task.dueDate || "reminder"}-${index}`,
-    }));
+  const remainingTasks = tasks.filter((task) => !isTaskComplete(task));
+  const completedTasks = tasks.filter(isTaskComplete);
+  const reminderTasks = remainingTasks.filter((task) => task.reminder);
+  const todayTasks = remainingTasks.filter(
+    (task) => task.dueDate === todayKey
+  );
+  const overdueTasks = remainingTasks
+    .filter((task) => task.dueDate && task.dueDate < todayKey)
+    .sort((firstTask, secondTask) =>
+      firstTask.dueDate.localeCompare(secondTask.dueDate)
+    );
+  const focusTasks = [...overdueTasks, ...todayTasks];
+  const upcomingTasks = remainingTasks
+    .filter((task) => task.dueDate && task.dueDate > todayKey)
+    .sort((firstTask, secondTask) =>
+      firstTask.dueDate.localeCompare(secondTask.dueDate)
+    )
+    .slice(0, 5);
+  const anytimeTasks = remainingTasks
+    .filter((task) => !task.dueDate)
+    .slice(0, 4);
 
   return (
-    <>
-      <section className="hero-grid">
-        <article className="hero-card accent">
-          <p className="card-label">Focus</p>
-          <h2>Build the first version of your task app UI</h2>
-          <p>
-            Keep the structure flexible so Firebase, collaboration, and AI
-            agents can be added later.
-          </p>
-        </article>
-
-        <article className="hero-card">
-          <p className="card-label">Reminders</p>
-          <h3>{reminders.length} due today</h3>
-          <p>Task reminders are connected with Firestore.</p>
-        </article>
-
-        <article className="hero-card">
-          <p className="card-label">Calendar</p>
-          <h3>Weekly view</h3>
-          <p>Tasks with due dates appear here.</p>
-        </article>
+    <div className="dashboard-page">
+      <section className="dashboard-intro" aria-labelledby="dashboard-greeting">
+        <div>
+          <p className="dashboard-kicker">Your day</p>
+          <h2 id="dashboard-greeting">Welcome back</h2>
+          <p className="dashboard-date">{currentDate}</p>
+        </div>
       </section>
 
-      <section className="content-grid task-board-grid">
-        <article className="panel panel-wide todo-panel">
-          <div className="panel-header">
-            <h2>To-do list</h2>
-            <button className="ghost-btn" disabled>
-              View all
-            </button>
+      {tasksLoading ? (
+        <section className="dashboard-feedback" role="status" aria-live="polite">
+          <span className="dashboard-loading-indicator" aria-hidden="true" />
+          <div>
+            <h3>Loading your day</h3>
+            <p>Your saved tasks are being retrieved.</p>
           </div>
+        </section>
+      ) : tasksError ? (
+        <section className="dashboard-feedback dashboard-feedback-error" role="alert">
+          <div>
+            <h3>Tasks unavailable</h3>
+            <p>{tasksError}</p>
+          </div>
+          <button className="ghost-btn" type="button" onClick={onRetry}>
+            Try again
+          </button>
+        </section>
+      ) : (
+        <>
+          <section className="dashboard-summary" aria-label="Task summary">
+            <div className="summary-stat">
+              <strong>{remainingTasks.length}</strong>
+              <span>Remaining</span>
+            </div>
+            <div className="summary-stat">
+              <strong>{completedTasks.length}</strong>
+              <span>Completed</span>
+            </div>
+            <div className="summary-stat">
+              <strong>{reminderTasks.length}</strong>
+              <span>Active reminders</span>
+            </div>
+          </section>
 
-          <div className="task-list">
-            {tasksLoading ? (
-              <p>Loading tasks...</p>
-            ) : tasksError ? (
-              <div className="inline-error" role="alert">
-                <p>{tasksError}</p>
-                <button className="ghost-btn" onClick={onRetry}>
-                  Try again
-                </button>
-              </div>
-            ) : todayTasks.length === 0 ? (
-              <p>No tasks created yet.</p>
-            ) : (
-              todayTasks.map((task) => (
-                <div key={task._key} className="task-row">
-                  <div>
-                    <h3>{task.title}</h3>
-                    <p>{task.time}</p>
-                  </div>
-
-                  <span
-                    className={`status ${
-                      task.status === "in-progress" ? "active" : ""
-                    }`}
-                  >
-                    {task.status}
-                  </span>
+          <div className="dashboard-layout">
+            <section className="dashboard-section dashboard-today" aria-labelledby="today-heading">
+              <header className="dashboard-section-header">
+                <div>
+                  <p className="dashboard-kicker">Focus</p>
+                  <h2 id="today-heading">Today</h2>
                 </div>
-              ))
-            )}
-          </div>
-        </article>
+                <span className="dashboard-section-count">{focusTasks.length}</span>
+              </header>
 
-        <article className="panel panel-wide board-panel">
-          <div className="panel-header">
-            <h2>Project board</h2>
-            <button className="ghost-btn" disabled>
-              Open board
-            </button>
-          </div>
-
-          <div className="board-columns">
-            {boardColumns.map((column) => (
-              <div key={column.name} className="board-column">
-                <div className="column-head">
-                  <h3>{column.name}</h3>
-                  <span>{column.items.length}</span>
+              {focusTasks.length === 0 ? (
+                <div className="dashboard-empty">
+                  <span className="dashboard-empty-mark" aria-hidden="true">✓</span>
+                  <h3>You’re all caught up.</h3>
+                  <p>Nothing is due today.</p>
                 </div>
+              ) : (
+                <div className="dashboard-task-list">
+                  {focusTasks.map((task) => (
+                    <DashboardTaskRow
+                      key={task.id}
+                      task={task}
+                      dateLabel={
+                        task.dueDate < todayKey
+                          ? `Overdue · ${formatDueDate(task.dueDate)}`
+                          : "Today"
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
 
-                {column.items.length === 0 ? (
-                  <div className="board-item">No tasks</div>
+            <section className="dashboard-section dashboard-agenda" aria-labelledby="up-next-heading">
+              <header className="dashboard-section-header">
+                <div>
+                  <p className="dashboard-kicker">Plan ahead</p>
+                  <h2 id="up-next-heading">Up next</h2>
+                </div>
+              </header>
+
+              <div className="dashboard-task-group">
+                <div className="dashboard-group-heading">
+                  <h3>Upcoming</h3>
+                  <span>{upcomingTasks.length}</span>
+                </div>
+                {upcomingTasks.length === 0 ? (
+                  <p className="dashboard-group-empty">No upcoming due dates.</p>
                 ) : (
-                  column.items.map((task, index) => (
-                    <div
-                      key={task.id || task.title || `${column.name}-${index}`}
-                      className="board-item"
-                    >
-                      {task.title}
-                    </div>
-                  ))
+                  <div className="dashboard-task-list dashboard-task-list-compact">
+                    {upcomingTasks.map((task) => (
+                      <DashboardTaskRow key={task.id} task={task} />
+                    ))}
+                  </div>
                 )}
               </div>
-            ))}
-          </div>
-        </article>
-      </section>
 
-      <section className="content-grid bottom-grid">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Calendar</h2>
-            <button className="ghost-btn" disabled>
-              Monthly
-            </button>
-          </div>
-
-          <div className="calendar-list">
-            {calendarEvents.length === 0 ? (
-              <p>No scheduled tasks.</p>
-            ) : (
-              calendarEvents.map((event) => (
-                <div key={event._key} className="calendar-item">
-                  <span className="calendar-day-label">{event.day}</span>
-                  <strong className="calendar-day-title">
-                    {event.label}
-                  </strong>
+              <div className="dashboard-task-group">
+                <div className="dashboard-group-heading">
+                  <h3>Anytime</h3>
+                  <span>{anytimeTasks.length}</span>
                 </div>
-              ))
-            )}
+                {anytimeTasks.length === 0 ? (
+                  <p className="dashboard-group-empty">No tasks without a due date.</p>
+                ) : (
+                  <div className="dashboard-task-list dashboard-task-list-compact">
+                    {anytimeTasks.map((task) => (
+                      <DashboardTaskRow
+                        key={task.id}
+                        task={task}
+                        dateLabel="No due date"
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
           </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Account</h2>
-            <button className="ghost-btn" onClick={onSignOut}>
-              Sign out
-            </button>
-          </div>
-
-          <div className="account-card">
-            <div className="avatar">
-              {user.email?.[0]?.toUpperCase() || "U"}
-            </div>
-
-            <div>
-              <h3>{user.email}</h3>
-              <p>Firebase authentication is connected.</p>
-            </div>
-          </div>
-        </article>
-      </section>
-
-      <section className="reminders-section">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Reminders</h2>
-            <button className="ghost-btn" disabled>
-              Manage
-            </button>
-          </div>
-
-          <div className="reminder-grid">
-            {reminders.length === 0 ? (
-              <p>No reminders available.</p>
-            ) : (
-              reminders.map((reminder) => (
-                <div key={reminder._key} className="reminder-card">
-                  <p>{reminder.title}</p>
-                  <span>{reminder.meta}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </article>
-      </section>
+        </>
+      )}
 
       <footer className="dashboard-footer">
-        Â© 2026 TaskFlow. All rights reserved.
+        © {now.getFullYear()} TaskFlow
       </footer>
-    </>
+    </div>
   );
 }
