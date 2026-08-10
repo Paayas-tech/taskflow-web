@@ -14,6 +14,37 @@ const priorityLabels = {
   high: "High priority",
 };
 
+const dateKeyFor = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const formatTaskDueDate = (value) => {
+  if (!value) return "No due date";
+
+  const parsedDate = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsedDate.getTime())) return value;
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(parsedDate);
+};
+
+const dueDateMetaFor = (value) => {
+  if (!value) return { label: "No due date", tone: "undated" };
+
+  const todayKey = dateKeyFor(new Date());
+  if (value < todayKey) {
+    return { label: `Overdue · ${formatTaskDueDate(value)}`, tone: "overdue" };
+  }
+  if (value === todayKey) return { label: "Due today", tone: "today" };
+
+  return { label: formatTaskDueDate(value), tone: "upcoming" };
+};
+
 const valuesFromTask = (task, knownListIds) => ({
   title: task.title || "",
   description: task.description || "",
@@ -226,9 +257,9 @@ export default function TasksPage({
         <div className="tasks-content">
           <div className="tasks-page-header">
             <div>
-              <p className="card-label">Tasks and lists</p>
+              <p className="card-label">Task workspace</p>
               <h2 id="tasks-page-title">{activeListTitle}</h2>
-              <p>Complete tasks quickly or open one to update its details.</p>
+              <p>Complete tasks quickly, or open a row to update its details.</p>
             </div>
             {!tasksLoading && !tasksError && (
               <span className="tasks-count">
@@ -298,11 +329,14 @@ export default function TasksPage({
               {filteredTasks.map((task) => {
                 const completionBusy = completionTaskId === task.id;
                 const taskList = lists.find((list) => list.id === task.listId);
+                const dueDateMeta = dueDateMetaFor(task.dueDate);
 
                 return (
                   <article
                     key={task.id}
-                    className={`tasks-page-row ${task.completed ? "task-row-completed" : ""}`}
+                    className={`tasks-page-row ${
+                      task.completed ? "task-row-completed" : ""
+                    } ${selectedTaskId === task.id ? "is-selected" : ""}`}
                     aria-busy={completionBusy}
                   >
                     <button
@@ -326,16 +360,20 @@ export default function TasksPage({
                         <span className="task-list-badge">
                           <span
                             className="list-color-dot"
-                            style={{ backgroundColor: taskList?.color || "#64748b" }}
+                            style={{ backgroundColor: taskList?.color || "#9a8170" }}
                             aria-hidden="true"
                           />
                           {taskList?.name || "Inbox"}
                         </span>
-                        <span>{task.dueDate || "No due date"}</span>
+                        <span className={`task-due-meta task-due-${dueDateMeta.tone}`}>
+                          {dueDateMeta.label}
+                        </span>
                         <span className={`priority priority-${task.priority}`}>
                           {priorityLabels[task.priority] || "Medium priority"}
                         </span>
-                        {task.reminder && <span>Reminder set</span>}
+                        {task.reminder && (
+                          <span className="task-reminder-meta">Reminder</span>
+                        )}
                       </div>
                     </div>
 
@@ -343,7 +381,13 @@ export default function TasksPage({
                       <span className={`task-status task-status-${task.status}`}>
                         {statusLabels[task.status] || "To do"}
                       </span>
-                      <button className="ghost-btn compact-btn" type="button" onClick={() => openEditor(task)} disabled={completionBusy}>
+                      <button
+                        className="ghost-btn compact-btn task-edit-button"
+                        type="button"
+                        onClick={() => openEditor(task)}
+                        disabled={completionBusy}
+                        aria-label={`Edit ${task.title}`}
+                      >
                         Edit
                       </button>
                     </div>
