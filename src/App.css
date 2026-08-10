@@ -1289,6 +1289,130 @@ a:focus-visible {
   font-weight: 700;
 }
 
+.task-filters {
+  display: grid;
+  gap: 15px;
+  margin-bottom: 24px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.task-filters-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.task-filters-heading h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  letter-spacing: -0.01em;
+}
+
+.task-filters-heading p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.task-filter-controls {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.task-search-control,
+.task-filter-control {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.task-search-control {
+  flex: 2 1 250px;
+}
+
+.task-filter-control {
+  flex: 1 1 126px;
+}
+
+.task-search-control input,
+.task-filter-control select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 11px;
+  background: #fffefa;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
+}
+
+.task-search-control input::placeholder {
+  color: #a99b90;
+  font-weight: 500;
+}
+
+.task-search-control input:focus,
+.task-filter-control select:focus {
+  outline: 0;
+  border-color: var(--accent);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(164, 81, 57, 0.13);
+}
+
+.task-filter-results {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-filter-results p {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.task-filter-results p strong {
+  color: var(--text-secondary);
+}
+
+.active-filter-list {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.active-filter-chip {
+  max-width: 210px;
+  overflow: hidden;
+  border: 1px solid #dfc4b8;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tasks-state {
   min-height: 230px;
   margin-top: 0;
@@ -2024,6 +2148,23 @@ a:focus-visible {
     grid-template-columns: 25px minmax(0, 1fr);
   }
 
+  .task-search-control {
+    flex-basis: 100%;
+  }
+
+  .task-filter-control {
+    flex-basis: calc(50% - 5px);
+  }
+
+  .task-filter-results {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .active-filter-list {
+    justify-content: flex-start;
+  }
+
   .task-row-actions {
     grid-column: 2;
     justify-content: flex-start;
@@ -2148,6 +2289,29 @@ a:focus-visible {
 
   .tasks-page {
     padding-top: 24px;
+  }
+
+  .task-filters-heading {
+    align-items: flex-start;
+  }
+
+  .task-filter-controls {
+    flex-direction: column;
+  }
+
+  .task-search-control,
+  .task-filter-control {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .task-search-control input,
+  .task-filter-control select {
+    min-height: 44px;
+  }
+
+  .active-filter-chip {
+    max-width: 100%;
   }
 
   .task-lists-panel {
