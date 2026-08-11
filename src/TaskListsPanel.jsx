@@ -1,6 +1,16 @@
 import { useState } from "react";
 
-const listColors = ["#a45139", "#66806a", "#a9656a", "#b17a3e", "#6f7f86"];
+const listColors = ["#6657c8", "#4f8a68", "#ad5c74", "#b77a24", "#64748b"];
+const legacyListColors = {
+  "#a45139": "#6657c8",
+  "#66806a": "#4f8a68",
+  "#a9656a": "#ad5c74",
+  "#b17a3e": "#b77a24",
+  "#6f7f86": "#64748b",
+};
+
+const displayListColor = (color) =>
+  legacyListColors[color?.toLowerCase()] || color || listColors[0];
 
 export default function TaskListsPanel({
   lists,
@@ -182,7 +192,7 @@ export default function TaskListsPanel({
                   >
                     <span
                       className="list-color-dot"
-                      style={{ backgroundColor: list.color || listColors[0] }}
+                      style={{ backgroundColor: displayListColor(list.color) }}
                       aria-hidden="true"
                     />
                     <span className="list-name">{list.name}</span>
@@ -229,11 +239,11 @@ export default function TaskListsPanel({
                 <button
                   key={option}
                   type="button"
-                  className={color === option ? "selected" : ""}
+                  className={displayListColor(color) === option ? "selected" : ""}
                   style={{ backgroundColor: option }}
                   onClick={() => setColor(option)}
                   aria-label={`Use ${option} for this list`}
-                  aria-pressed={color === option}
+                  aria-pressed={displayListColor(color) === option}
                 />
               ))}
             </div>

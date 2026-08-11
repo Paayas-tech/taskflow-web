@@ -10,6 +10,17 @@ const priorityLabels = {
   high: "High priority",
 };
 
+const legacyListColors = {
+  "#a45139": "#6657c8",
+  "#66806a": "#4f8a68",
+  "#a9656a": "#ad5c74",
+  "#b17a3e": "#b77a24",
+  "#6f7f86": "#64748b",
+};
+
+const displayListColor = (color) =>
+  legacyListColors[color?.toLowerCase()] || color || "#7d71cf";
+
 const dateKeyFor = (date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -102,7 +113,7 @@ export default function TaskRow({
           <span className="task-list-badge">
             <span
               className="list-color-dot"
-              style={{ backgroundColor: taskList?.color || "#9a8170" }}
+              style={{ backgroundColor: displayListColor(taskList?.color) }}
               aria-hidden="true"
             />
             {taskList?.name || "Inbox"}

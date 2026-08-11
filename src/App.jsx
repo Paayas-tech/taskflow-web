@@ -21,14 +21,69 @@ import {
 } from "./services/listService";
 
 const navItems = [
-  { label: "Dashboard", path: "/", enabled: true },
-  { label: "Today", path: "/today", enabled: true },
-  { label: "Tasks", path: "/tasks", enabled: true },
-  { label: "Projects", enabled: false },
-  { label: "Calendar", enabled: false },
-  { label: "Reminders", enabled: false },
-  { label: "Settings", enabled: false },
+  { label: "Dashboard", path: "/", enabled: true, icon: "dashboard" },
+  { label: "Today", path: "/today", enabled: true, icon: "today" },
+  { label: "Tasks", path: "/tasks", enabled: true, icon: "tasks" },
+  { label: "Projects", enabled: false, icon: "projects" },
+  { label: "Calendar", enabled: false, icon: "calendar" },
+  { label: "Reminders", enabled: false, icon: "reminders" },
+  { label: "Settings", enabled: false, icon: "settings" },
 ];
+
+const navIcons = {
+  dashboard: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </>
+  ),
+  today: (
+    <>
+      <path d="M7 3v3M17 3v3M4 9h16" />
+      <rect x="4" y="5" width="16" height="16" rx="2.5" />
+      <path d="m9 15 2 2 4-5" />
+    </>
+  ),
+  tasks: (
+    <>
+      <path d="m4 7 2 2 3-4M12 7h8M4 15l2 2 3-4M12 15h8" />
+    </>
+  ),
+  projects: (
+    <>
+      <path d="M3 7.5h18M5 4h5l2 3.5h7a2 2 0 0 1 2 2V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+    </>
+  ),
+  calendar: (
+    <>
+      <path d="M7 3v3M17 3v3M4 9h16" />
+      <rect x="4" y="5" width="16" height="16" rx="2.5" />
+    </>
+  ),
+  reminders: (
+    <>
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" />
+    </>
+  ),
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.55v-.1A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.1 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.3V9.55h.1A1.7 1.7 0 0 0 4.1 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.56 3.7l.06.06A1.7 1.7 0 0 0 8.5 4.1a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1v-.1h4.05v.1A1.7 1.7 0 0 0 15 4.1a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.5c.12.4.34.74.66 1 .3.25.7.4 1.1.4h.1v4.05h-.1A1.7 1.7 0 0 0 19.4 15Z" />
+    </>
+  ),
+};
+
+function NavigationIcon({ name }) {
+  return (
+    <span className="nav-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        {navIcons[name]}
+      </svg>
+    </span>
+  );
+}
 
 const routeViews = {
   "/": "dashboard",
@@ -316,7 +371,10 @@ function App() {
               aria-label={item.enabled ? item.label : `${item.label}, coming soon`}
               onClick={() => item.enabled && navigate(item.path)}
             >
-              <span>{item.label}</span>
+              <span className="nav-item-main">
+                <NavigationIcon name={item.icon} />
+                <span>{item.label}</span>
+              </span>
               {!item.enabled && <small>Soon</small>}
             </button>
           ))}

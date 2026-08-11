@@ -5,38 +5,38 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  color: #352b25;
-  background: #f7f3ed;
+  color: #202234;
+  background: #f8f9fc;
 
-  --bg: #f7f3ed;
-  --bg-warm: #f1ebe2;
-  --surface: #fffdf9;
-  --surface-soft: #f4eee6;
-  --surface-muted: #ebe3d8;
-  --border: #ded4c8;
-  --border-strong: #cdbfb1;
+  --bg: #f8f9fc;
+  --bg-warm: #f4f5f9;
+  --surface: #ffffff;
+  --surface-soft: #f5f6f9;
+  --surface-muted: #eceef4;
+  --border: #e2e4eb;
+  --border-strong: #cfd2dc;
 
-  --text-primary: #352b25;
-  --text-secondary: #6f6259;
-  --text-muted: #94867b;
+  --text-primary: #202234;
+  --text-secondary: #5f6475;
+  --text-muted: #858a99;
 
-  --accent: #a45139;
-  --accent-hover: #8d422f;
-  --accent-soft: #f1dfd7;
-  --sage: #66806a;
-  --sage-soft: #e2ebe2;
-  --rose: #a9656a;
-  --rose-soft: #f4e3e3;
-  --warning: #a35a35;
-  --warning-soft: #f7e8df;
-  --danger: #a4433e;
-  --danger-soft: #f8e6e3;
+  --accent: #6657c8;
+  --accent-hover: #5546b7;
+  --accent-soft: #f0eefb;
+  --sage: #4f8a68;
+  --sage-soft: #eaf5ee;
+  --rose: #ad5c74;
+  --rose-soft: #f9edf1;
+  --warning: #a8641d;
+  --warning-soft: #fff4e5;
+  --danger: #c3474a;
+  --danger-soft: #fceced;
 
-  --radius-lg: 18px;
-  --radius-md: 12px;
-  --radius-sm: 9px;
-  --shadow-sm: 0 1px 2px rgba(73, 53, 39, 0.06);
-  --shadow: 0 14px 38px rgba(73, 53, 39, 0.09);
+  --radius-lg: 14px;
+  --radius-md: 10px;
+  --radius-sm: 8px;
+  --shadow-sm: 0 1px 2px rgba(32, 34, 52, 0.06);
+  --shadow: 0 10px 30px rgba(32, 34, 52, 0.08);
   --transition: 160ms ease;
 }
 
@@ -72,7 +72,7 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 a:focus-visible {
-  outline: 3px solid rgba(164, 81, 57, 0.24);
+  outline: 3px solid rgba(102, 87, 200, 0.22);
   outline-offset: 2px;
 }
 
@@ -106,7 +106,7 @@ a:focus-visible {
   flex-direction: column;
   padding: 28px 18px 20px;
   border-right: 1px solid var(--border);
-  background: var(--bg-warm);
+  background: var(--surface);
 }
 
 .sidebar-brand {
@@ -117,12 +117,23 @@ a:focus-visible {
 }
 
 .brand-mark {
+  position: relative;
+  display: grid;
   width: 13px;
   height: 13px;
   flex: 0 0 13px;
   border-radius: 50%;
   background: var(--accent);
   box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.34);
+}
+
+.brand-mark::after {
+  width: 5px;
+  height: 3px;
+  border-bottom: 1.5px solid #fff;
+  border-left: 1.5px solid #fff;
+  content: "";
+  transform: translate(4px, 4px) rotate(-45deg);
 }
 
 .brand {
@@ -157,15 +168,47 @@ a:focus-visible {
   transition: background var(--transition), color var(--transition), border-color var(--transition);
 }
 
+.nav-item-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-icon {
+  display: grid;
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.nav-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
 .nav-item:not(:disabled):hover {
-  background: rgba(255, 253, 249, 0.72);
+  background: var(--surface-soft);
   color: var(--text-primary);
 }
 
 .nav-item.active {
-  border-color: #e2c8bd;
+  border-color: #ddd8f5;
   background: var(--accent-soft);
   color: var(--accent-hover);
+}
+
+.nav-item.active .nav-icon {
+  color: var(--accent);
+}
+
+.nav-item:not(:disabled):hover .nav-icon {
+  color: var(--accent);
 }
 
 .nav-item small {
@@ -196,7 +239,7 @@ a:focus-visible {
   width: 34px;
   height: 34px;
   place-items: center;
-  border: 1px solid #d9c9ba;
+  border: 1px solid #d9dce5;
   border-radius: 50%;
   background: var(--surface);
   color: var(--accent);
@@ -251,6 +294,7 @@ a:focus-visible {
   width: 100%;
   min-width: 0;
   padding: 0 clamp(24px, 4.5vw, 68px) 44px;
+  background: var(--surface);
 }
 
 .topbar {
@@ -269,9 +313,8 @@ a:focus-visible {
 .topbar-title h1 {
   margin: 0;
   color: var(--text-primary);
-  font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(1.85rem, 3vw, 2.35rem);
-  font-weight: 600;
+  font-weight: 750;
   letter-spacing: -0.045em;
 }
 
@@ -307,7 +350,7 @@ a:focus-visible {
 .primary-btn {
   border: 1px solid var(--accent);
   background: var(--accent);
-  color: #fffaf6;
+  color: #fff;
   box-shadow: var(--shadow-sm);
 }
 
@@ -331,14 +374,14 @@ a:focus-visible {
 }
 
 .danger-btn {
-  border: 1px solid #d9aaa4;
+  border: 1px solid #efc8ca;
   background: var(--danger-soft);
   color: var(--danger);
 }
 
 .danger-btn:hover:not(:disabled) {
   border-color: var(--danger);
-  background: #f2d6d2;
+  background: #f8dfe1;
 }
 
 .primary-btn:disabled,
@@ -390,14 +433,13 @@ a:focus-visible {
 }
 
 .panel-header h2 {
-  font-family: Georgia, "Times New Roman", serif;
   font-size: 1.4rem;
-  font-weight: 600;
+  font-weight: 750;
 }
 
 .form-error,
 .inline-error {
-  border: 1px solid #dfb7b1;
+  border: 1px solid #efc8ca;
   border-radius: var(--radius-sm);
   background: var(--danger-soft);
   color: var(--danger);
@@ -452,9 +494,8 @@ a:focus-visible {
 .dashboard-intro h2 {
   margin: 0;
   color: var(--text-primary);
-  font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(2rem, 4vw, 3rem);
-  font-weight: 600;
+  font-weight: 760;
   letter-spacing: -0.05em;
   line-height: 1.05;
 }
@@ -505,9 +546,8 @@ a:focus-visible {
 
 .summary-stat strong {
   color: var(--text-primary);
-  font-family: Georgia, "Times New Roman", serif;
   font-size: 1.75rem;
-  font-weight: 600;
+  font-weight: 750;
   letter-spacing: -0.04em;
   line-height: 1;
 }
@@ -556,9 +596,8 @@ a:focus-visible {
 .dashboard-section-header h2 {
   margin: 0;
   color: var(--text-primary);
-  font-family: Georgia, "Times New Roman", serif;
   font-size: 1.55rem;
-  font-weight: 600;
+  font-weight: 750;
   letter-spacing: -0.035em;
 }
 
@@ -591,14 +630,14 @@ a:focus-visible {
 }
 
 .dashboard-task-row:hover {
-  background: #fcf8f2;
+  background: #f8f8fc;
 }
 
 .dashboard-task-marker {
   width: 15px;
   height: 15px;
   margin-top: 2px;
-  border: 1.5px solid #bcaea2;
+  border: 1.5px solid #c9ccd7;
   border-radius: 50%;
   background: var(--surface);
 }
@@ -749,7 +788,7 @@ a:focus-visible {
   margin-top: 32px;
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-md);
-  background: rgba(255, 253, 249, 0.56);
+  background: rgba(255, 255, 255, 0.88);
   padding: 28px;
   color: var(--text-secondary);
   text-align: center;
@@ -773,7 +812,7 @@ a:focus-visible {
 .dashboard-feedback-error,
 .tasks-state.error-state {
   border-style: solid;
-  border-color: #dfb7b1;
+  border-color: #efc8ca;
   background: var(--danger-soft);
 }
 
@@ -783,7 +822,7 @@ a:focus-visible {
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
-  border: 2px solid #d4c8bc;
+  border: 2px solid #d3d6df;
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: taskflow-spin 0.8s linear infinite;
@@ -828,9 +867,8 @@ a:focus-visible {
 .today-page-header h2 {
   margin: 0;
   color: var(--text-primary);
-  font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(1.7rem, 3.5vw, 2.35rem);
-  font-weight: 600;
+  font-weight: 750;
   letter-spacing: -0.045em;
 }
 
@@ -865,7 +903,6 @@ a:focus-visible {
 
 .today-page-summary strong {
   color: var(--text-primary);
-  font-family: Georgia, "Times New Roman", serif;
   font-size: 1rem;
 }
 
@@ -902,9 +939,8 @@ a:focus-visible {
 .today-task-group-header h3 {
   margin: 0;
   color: var(--text-primary);
-  font-family: Georgia, "Times New Roman", serif;
   font-size: 1.25rem;
-  font-weight: 600;
+  font-weight: 750;
   letter-spacing: -0.025em;
 }
 
@@ -985,9 +1021,9 @@ a:focus-visible {
   top: 24px;
   min-width: 0;
   padding: 18px 12px;
-  border: 1px solid #e3d9cd;
+  border: 1px solid var(--border);
   border-radius: 14px;
-  background: rgba(241, 235, 226, 0.72);
+  background: var(--surface-soft);
 }
 
 .task-lists-heading {
@@ -1019,7 +1055,7 @@ a:focus-visible {
 }
 
 .list-add-button:hover:not(:disabled) {
-  border-color: #d7b9ad;
+  border-color: #d9d4f3;
   background: var(--accent-soft);
 }
 
@@ -1054,12 +1090,12 @@ a:focus-visible {
 }
 
 .task-list-filter:hover {
-  background: rgba(255, 253, 249, 0.78);
+  background: var(--surface-soft);
   color: var(--text-primary);
 }
 
 .task-list-filter.active {
-  border-color: #e3c8bc;
+  border-color: #d9d4f3;
   background: var(--accent-soft);
   color: var(--accent-hover);
 }
@@ -1111,7 +1147,7 @@ a:focus-visible {
   display: flex;
   gap: 2px;
   padding-left: 6px;
-  background: linear-gradient(90deg, transparent, #f0e9df 22%);
+  background: var(--surface-soft);
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--transition);
@@ -1198,7 +1234,7 @@ a:focus-visible {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 9px;
-  background: #fffefa;
+  background: #fff;
   color: var(--text-primary);
   transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
 }
@@ -1217,7 +1253,7 @@ a:focus-visible {
   outline: 0;
   border-color: var(--accent);
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(164, 81, 57, 0.13);
+  box-shadow: 0 0 0 3px rgba(102, 87, 200, 0.14);
 }
 
 .list-editor fieldset {
@@ -1267,9 +1303,8 @@ a:focus-visible {
 }
 
 .tasks-page-header h2 {
-  font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(1.65rem, 3vw, 2rem);
-  font-weight: 600;
+  font-weight: 750;
   letter-spacing: -0.035em;
 }
 
@@ -1351,7 +1386,7 @@ a:focus-visible {
   border: 1px solid var(--border);
   border-radius: 9px;
   padding: 9px 11px;
-  background: #fffefa;
+  background: #fff;
   color: var(--text-primary);
   font: inherit;
   font-size: 0.76rem;
@@ -1360,7 +1395,7 @@ a:focus-visible {
 }
 
 .task-search-control input::placeholder {
-  color: #a99b90;
+  color: #9297a6;
   font-weight: 500;
 }
 
@@ -1369,7 +1404,7 @@ a:focus-visible {
   outline: 0;
   border-color: var(--accent);
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(164, 81, 57, 0.13);
+  box-shadow: 0 0 0 3px rgba(102, 87, 200, 0.14);
 }
 
 .task-filter-results {
@@ -1402,7 +1437,7 @@ a:focus-visible {
 .active-filter-chip {
   max-width: 210px;
   overflow: hidden;
-  border: 1px solid #dfc4b8;
+  border: 1px solid #d9d4f3;
   border-radius: 999px;
   padding: 4px 8px;
   background: var(--accent-soft);
@@ -1437,7 +1472,7 @@ a:focus-visible {
 }
 
 .tasks-page-row:hover {
-  background: #fcf8f2;
+  background: #f8f8fc;
 }
 
 .tasks-page-row.is-selected {
@@ -1458,7 +1493,7 @@ a:focus-visible {
   width: 24px;
   height: 24px;
   place-items: center;
-  border: 1.5px solid #b9aaa0;
+  border: 1.5px solid #c2c5d0;
   border-radius: 50%;
   padding: 0;
   background: var(--surface);
@@ -1533,7 +1568,7 @@ a:focus-visible {
 
 .task-row-completed .task-description,
 .task-row-completed .task-notes-preview {
-  color: #ab9f95;
+  color: #9a9eaa;
 }
 
 .tasks-page-meta {
@@ -1642,7 +1677,7 @@ a:focus-visible {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: 0 12px 32px rgba(73, 53, 39, 0.07);
+  box-shadow: 0 8px 24px rgba(32, 34, 52, 0.06);
 }
 
 .task-detail-header {
@@ -1737,7 +1772,7 @@ a:focus-visible {
 .task-editor-form input::placeholder,
 .task-editor-form textarea::placeholder,
 .auth-label input::placeholder {
-  color: #ad9f94;
+  color: #9297a6;
 }
 
 .task-editor-form select:disabled,
@@ -1790,7 +1825,7 @@ a:focus-visible {
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgba(53, 43, 37, 0.28);
+  background: rgba(25, 27, 43, 0.32);
   backdrop-filter: blur(3px);
 }
 
@@ -1806,9 +1841,8 @@ a:focus-visible {
 .confirmation-dialog h3 {
   margin: 0;
   color: var(--text-primary);
-  font-family: Georgia, "Times New Roman", serif;
   font-size: 1.35rem;
-  font-weight: 600;
+  font-weight: 750;
 }
 
 .confirmation-dialog > p:not(.card-label):not(.form-error) {
@@ -1862,9 +1896,8 @@ a:focus-visible {
 .auth-card h1 {
   margin: 22px 0 0;
   color: var(--text-primary);
-  font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(2rem, 8vw, 2.7rem);
-  font-weight: 600;
+  font-weight: 760;
   letter-spacing: -0.05em;
 }
 
@@ -1899,7 +1932,7 @@ a:focus-visible {
   border-radius: 10px;
   padding: 11px 16px;
   background: var(--accent);
-  color: #fffaf6;
+  color: #fff;
   font-size: 0.86rem;
   font-weight: 800;
   transition: background var(--transition), border-color var(--transition);
@@ -1952,7 +1985,7 @@ a:focus-visible {
     padding: 12px clamp(22px, 4vw, 42px);
     border-right: 0;
     border-bottom: 1px solid var(--border);
-    box-shadow: 0 5px 18px rgba(73, 53, 39, 0.04);
+    box-shadow: 0 4px 16px rgba(32, 34, 52, 0.05);
   }
 
   .sidebar-brand {
