@@ -4,6 +4,7 @@ import Dashboard from "./Dashboard";
 import Login from "./Login";
 import TaskForm from "./TaskForm";
 import TasksPage from "./TasksPage";
+import TodayPage from "./TodayPage";
 import { auth } from "./firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
@@ -20,14 +21,26 @@ import {
 } from "./services/listService";
 
 const navItems = [
-  { label: "Dashboard", view: "dashboard", enabled: true },
-  { label: "Today", enabled: false },
-  { label: "Tasks", view: "tasks", enabled: true },
+  { label: "Dashboard", path: "/", enabled: true },
+  { label: "Today", path: "/today", enabled: true },
+  { label: "Tasks", path: "/tasks", enabled: true },
   { label: "Projects", enabled: false },
   { label: "Calendar", enabled: false },
   { label: "Reminders", enabled: false },
   { label: "Settings", enabled: false },
 ];
+
+const routeViews = {
+  "/": "dashboard",
+  "/today": "today",
+  "/tasks": "tasks",
+};
+
+const normalizePath = (pathname) => {
+  const withoutTrailingSlash =
+    pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+  return routeViews[withoutTrailingSlash] ? withoutTrailingSlash : "/";
+};
 
 const emptyTaskForm = {
   title: "",
@@ -43,7 +56,9 @@ const emptyTaskForm = {
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeView, setActiveView] = useState("dashboard");
+  const [currentPath, setCurrentPath] = useState(() =>
+    normalizePath(window.location.pathname)
+  );
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState("");
   const [tasks, setTasks] = useState([]);
@@ -102,6 +117,23 @@ function App() {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const syncPathFromBrowser = () => {
+      const nextPath = normalizePath(window.location.pathname);
+
+      if (window.location.pathname !== nextPath) {
+        window.history.replaceState({}, "", nextPath);
+      }
+
+      setCurrentPath(nextPath);
+    };
+
+    syncPathFromBrowser();
+    window.addEventListener("popstate", syncPathFromBrowser);
+
+    return () => window.removeEventListener("popstate", syncPathFromBrowser);
   }, []);
 
   useEffect(() => {
@@ -231,6 +263,14 @@ function App() {
     setShowTaskForm(false);
   };
 
+  const navigate = (path) => {
+    if (path === currentPath) return;
+
+    window.history.pushState({}, "", path);
+    setCurrentPath(path);
+    window.scrollTo({ top: 0, behavior: "auto" });
+  };
+
   if (loading) {
     return <div className="loading-screen">Loading...</div>;
   }
@@ -239,16 +279,26 @@ function App() {
     return <Login />;
   }
 
-  const isTasksView = activeView === "tasks";
+  const currentView = routeViews[currentPath];
+  const pageTitle =
+    currentView === "tasks"
+      ? "Tasks"
+      : currentView === "today"
+        ? "Today"
+        : "Dashboard";
+  const pageSubtitle =
+    currentView === "tasks"
+      ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`
+      : currentView === "today"
+        ? "Overdue and due-today tasks in one focused view."
+        : "A clear view of what needs your attention.";
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div>
+        <div className="sidebar-brand">
+          <span className="brand-mark" aria-hidden="true" />
           <div className="brand">TaskFlow</div>
-          <p className="brand-subtitle">
-            Your productivity workspace
-          </p>
         </div>
 
         <nav className="nav-list" aria-label="Primary navigation">
@@ -257,59 +307,49 @@ function App() {
               key={item.label}
               type="button"
               className={`nav-item ${
-                item.view === activeView ? "active" : ""
-              }`}
+                item.path === currentPath ? "active" : ""
+              } ${item.enabled ? "" : "nav-item-disabled"}`}
               disabled={!item.enabled}
               aria-current={
-                item.view === activeView ? "page" : undefined
+                item.path === currentPath ? "page" : undefined
               }
-              onClick={() => item.enabled && setActiveView(item.view)}
+              aria-label={item.enabled ? item.label : `${item.label}, coming soon`}
+              onClick={() => item.enabled && navigate(item.path)}
             >
-              {item.label}
+              <span>{item.label}</span>
+              {!item.enabled && <small>Soon</small>}
             </button>
           ))}
         </nav>
 
-        <div className="sidebar-card">
-          <p className="sidebar-card-title">Project status</p>
-          <h3>Build phase 3</h3>
-          <p>User-created lists and task organization.</p>
+        <div className="sidebar-account">
+          <div className="sidebar-avatar" aria-hidden="true">
+            {user.email?.[0]?.toUpperCase() || "U"}
+          </div>
+          <div className="sidebar-account-copy">
+            <strong>{user.email}</strong>
+            <span>Signed in</span>
+          </div>
+          <button
+            className="sidebar-logout"
+            type="button"
+            onClick={() => signOut(auth)}
+          >
+            Log out
+          </button>
         </div>
       </aside>
 
       <main className="main-content">
         <header className="topbar">
-          <div className="topbar-left">
-            <p className="eyebrow">
-              {isTasksView ? "Your workspace" : "Welcome back"}
-            </p>
-            <h1>{isTasksView ? "Tasks" : "Today"}</h1>
-            <p className="topbar-date">
-              {isTasksView
-                ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`
-                : "Tuesday, August 4, 2026"}
-            </p>
-          </div>
-
-          <div className="topbar-center">
-            <input
-              className="search"
-              placeholder="Search tasks, boards, reminders..."
-              disabled
-              aria-label="Search is coming in a future phase"
-            />
+          <div className="topbar-title">
+            <h1>{pageTitle}</h1>
+            <p>{pageSubtitle}</p>
           </div>
 
           <div className="topbar-actions">
-            <button className="primary-btn" onClick={openTaskForm}>
+            <button className="primary-btn" type="button" onClick={openTaskForm}>
               + New Task
-            </button>
-
-            <button
-              className="logout-btn"
-              onClick={() => signOut(auth)}
-            >
-              Log out
             </button>
           </div>
         </header>
@@ -319,7 +359,7 @@ function App() {
             <div className="panel-header">
               <h2>Create Task</h2>
 
-              <button className="ghost-btn" onClick={closeTaskForm}>
+              <button className="ghost-btn" type="button" onClick={closeTaskForm}>
                 Close
               </button>
             </div>
@@ -338,7 +378,7 @@ function App() {
           </section>
         )}
 
-        {isTasksView ? (
+        <div className="route-content" hidden={currentView !== "tasks"}>
           <TasksPage
             tasks={tasks}
             tasksLoading={tasksLoading}
@@ -354,16 +394,28 @@ function App() {
             onRenameList={handleRenameList}
             onDeleteList={handleDeleteList}
           />
-        ) : (
-          <Dashboard
-            user={user}
+        </div>
+
+        <div className="route-content" hidden={currentView !== "today"}>
+          <TodayPage
             tasks={tasks}
             tasksLoading={tasksLoading}
             tasksError={tasksError}
             onRetry={loadTasks}
-            onSignOut={() => signOut(auth)}
+            onUpdateTask={handleUpdateTask}
+            onDeleteTask={handleDeleteTask}
+            lists={lists}
           />
-        )}
+        </div>
+
+        <div className="route-content" hidden={currentView !== "dashboard"}>
+          <Dashboard
+            tasks={tasks}
+            tasksLoading={tasksLoading}
+            tasksError={tasksError}
+            onRetry={loadTasks}
+          />
+        </div>
       </main>
     </div>
   );

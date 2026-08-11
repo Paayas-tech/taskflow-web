@@ -102,6 +102,7 @@ const mutableTaskFields = [
   "dueDate",
   "reminder",
   "listId",
+  "projectId",
 ];
 
 
@@ -135,6 +136,7 @@ export const createTask = async (userId, taskData = {}) => {
     dueDate: taskData.dueDate || "",
     reminder: taskData.reminder === true,
     listId: taskData.listId || null,
+    projectId: taskData.projectId || null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     completedAt: completed ? serverTimestamp() : null,
@@ -171,6 +173,7 @@ export const getTasks = async (userId) => {
         dueDate: data.dueDate ?? "",
         reminder: data.reminder === true,
         listId: data.listId ?? null,
+        projectId: data.projectId ?? null,
         createdAt: data.createdAt ?? null,
         updatedAt: data.updatedAt ?? null,
         completedAt: data.completedAt ?? null,

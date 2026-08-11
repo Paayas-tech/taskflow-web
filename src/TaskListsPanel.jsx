@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const listColors = ["#8b5cf6", "#3b82f6", "#10b981", "#f59e0b", "#ef4444"];
+const listColors = ["#a45139", "#66806a", "#a9656a", "#b17a3e", "#6f7f86"];
 
 export default function TaskListsPanel({
   lists,
@@ -166,6 +166,9 @@ export default function TaskListsPanel({
           </div>
         ) : (
           <>
+            {lists.length > 0 && (
+              <p className="list-section-label">Custom lists</p>
+            )}
             {lists.map((list) => {
               const taskCount = tasks.filter((task) => task.listId === list.id).length;
 
@@ -187,7 +190,7 @@ export default function TaskListsPanel({
                   </button>
                   <div className="task-list-actions">
                     <button type="button" onClick={() => beginRename(list)} aria-label={`Rename ${list.name}`}>
-                      Edit
+                      Rename
                     </button>
                     <button type="button" onClick={() => requestDelete(list)} aria-label={`Delete ${list.name}`}>
                       Delete
@@ -205,6 +208,10 @@ export default function TaskListsPanel({
 
       {mode && (
         <form className="list-editor" onSubmit={handleSubmit} noValidate>
+          <div className="list-editor-heading">
+            <strong>{mode === "create" ? "Create a list" : "Edit list"}</strong>
+            <span>Use a name and color that are easy to scan.</span>
+          </div>
           <label>
             <span>{mode === "create" ? "New list name" : "Rename list"}</span>
             <input
