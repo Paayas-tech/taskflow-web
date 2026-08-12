@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import Dashboard from "./Dashboard";
 import Login from "./Login";
+import ProjectsPage from "./ProjectsPage";
 import TaskForm from "./TaskForm";
 import TasksPage from "./TasksPage";
 import TodayPage from "./TodayPage";
@@ -19,12 +20,16 @@ import {
   updateList,
   deleteList,
 } from "./services/listService";
+import {
+  createProject,
+  getProjects,
+} from "./services/projectService";
 
 const navItems = [
   { label: "Dashboard", path: "/", enabled: true, icon: "dashboard" },
   { label: "Today", path: "/today", enabled: true, icon: "today" },
   { label: "Tasks", path: "/tasks", enabled: true, icon: "tasks" },
-  { label: "Projects", enabled: false, icon: "projects" },
+  { label: "Projects", path: "/projects", enabled: true, icon: "projects" },
   { label: "Calendar", enabled: false, icon: "calendar" },
   { label: "Reminders", enabled: false, icon: "reminders" },
   { label: "Settings", enabled: false, icon: "settings" },
@@ -89,6 +94,7 @@ const routeViews = {
   "/": "dashboard",
   "/today": "today",
   "/tasks": "tasks",
+  "/projects": "projects",
 };
 
 const normalizePath = (pathname) => {
@@ -120,6 +126,9 @@ function App() {
   const [listsLoading, setListsLoading] = useState(false);
   const [listsError, setListsError] = useState("");
   const [lists, setLists] = useState([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [projectsError, setProjectsError] = useState("");
+  const [projects, setProjects] = useState([]);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskFormSaving, setTaskFormSaving] = useState(false);
   const [taskFormError, setTaskFormError] = useState("");
@@ -192,6 +201,26 @@ function App() {
     }
   }, [user]);
 
+  const loadProjects = useCallback(async () => {
+    if (!user) return;
+
+    setProjectsLoading(true);
+    setProjectsError("");
+
+    try {
+      const userProjects = await getProjects(user.uid);
+      setProjects(userProjects);
+    } catch (error) {
+      console.error("Error loading projects:", error);
+      setProjects([]);
+      setProjectsError(
+        "We couldn't load your projects. Check your connection and try again."
+      );
+    } finally {
+      setProjectsLoading(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -222,8 +251,9 @@ function App() {
     if (user) {
       loadTasks();
       loadLists();
+      loadProjects();
     }
-  }, [user, loadTasks, loadLists]);
+  }, [user, loadTasks, loadLists, loadProjects]);
 
   useEffect(() => {
     tasksRef.current = tasks;
@@ -439,6 +469,22 @@ function App() {
     [user, loadLists, loadTasks]
   );
 
+  const handleCreateProject = useCallback(
+    async (projectData) => {
+      if (!user) {
+        throw new Error("You must be signed in to create a project.");
+      }
+
+      const projectReference = await createProject(user.uid, {
+        ...projectData,
+        position: projects.length,
+      });
+      await loadProjects();
+      return projectReference.id;
+    },
+    [user, projects.length, loadProjects]
+  );
+
   const openTaskForm = () => {
     setTaskFormError("");
     setTaskForm(emptyTaskForm);
@@ -517,12 +563,16 @@ function App() {
       ? "Tasks"
       : currentView === "today"
         ? "Today"
+        : currentView === "projects"
+          ? "Projects"
         : "Dashboard";
   const pageSubtitle =
     currentView === "tasks"
       ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`
       : currentView === "today"
         ? "Overdue and due-today tasks in one focused view."
+        : currentView === "projects"
+          ? `${projects.length} ${projects.length === 1 ? "project" : "projects"}`
         : "A clear view of what needs your attention.";
 
   return (
@@ -678,6 +728,16 @@ function App() {
             quickTaskPendingIds={quickTaskPendingIds}
             onDeleteTask={handleDeleteTask}
             lists={lists}
+          />
+        </div>
+
+        <div className="route-content" hidden={currentView !== "projects"}>
+          <ProjectsPage
+            projects={projects}
+            loading={projectsLoading}
+            error={projectsError}
+            onRetry={loadProjects}
+            onCreateProject={handleCreateProject}
           />
         </div>
 
