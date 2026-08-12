@@ -30,7 +30,7 @@ function TodayTaskGroup({
   tasks,
   lists,
   selectedTaskId,
-  completionTaskId,
+  completionTaskIds,
   onToggleCompletion,
   onEdit,
   emptyMessage,
@@ -54,7 +54,7 @@ function TodayTaskGroup({
               key={task.id}
               task={task}
               lists={lists}
-              completionBusy={completionTaskId === task.id}
+              completionBusy={completionTaskIds.has(task.id)}
               selected={selectedTaskId === task.id}
               onToggleCompletion={onToggleCompletion}
               onEdit={onEdit}
@@ -72,6 +72,8 @@ export default function TodayPage({
   tasksError,
   onRetry,
   onUpdateTask,
+  onQuickUpdateTask,
+  quickTaskPendingIds,
   onDeleteTask,
   lists,
 }) {
@@ -79,7 +81,6 @@ export default function TodayPage({
   const [editValues, setEditValues] = useState(null);
   const [savingTask, setSavingTask] = useState(false);
   const [editError, setEditError] = useState("");
-  const [completionTaskId, setCompletionTaskId] = useState(null);
   const [mutationError, setMutationError] = useState("");
   const [deleteCandidate, setDeleteCandidate] = useState(null);
   const [deletingTask, setDeletingTask] = useState(false);
@@ -178,11 +179,10 @@ export default function TodayPage({
 
   const handleCompletionChange = async (task) => {
     const completed = !isTaskComplete(task);
-    setCompletionTaskId(task.id);
     setMutationError("");
 
     try {
-      await onUpdateTask(task.id, {
+      await onQuickUpdateTask(task.id, {
         completed,
         status: completed ? "completed" : "todo",
       });
@@ -191,8 +191,6 @@ export default function TodayPage({
       setMutationError(
         `We couldn't ${completed ? "complete" : "reopen"} “${task.title}”. Try again.`
       );
-    } finally {
-      setCompletionTaskId(null);
     }
   };
 
@@ -321,7 +319,7 @@ export default function TodayPage({
             tasks={overdueTasks}
             lists={lists}
             selectedTaskId={selectedTaskId}
-            completionTaskId={completionTaskId}
+            completionTaskIds={quickTaskPendingIds}
             onToggleCompletion={handleCompletionChange}
             onEdit={openEditor}
             emptyMessage="No overdue tasks."
@@ -333,7 +331,7 @@ export default function TodayPage({
             tasks={dueTodayTasks}
             lists={lists}
             selectedTaskId={selectedTaskId}
-            completionTaskId={completionTaskId}
+            completionTaskIds={quickTaskPendingIds}
             onToggleCompletion={handleCompletionChange}
             onEdit={openEditor}
             emptyMessage="Nothing else is due today."
@@ -346,7 +344,7 @@ export default function TodayPage({
               tasks={anytimeTasks}
               lists={lists}
               selectedTaskId={selectedTaskId}
-              completionTaskId={completionTaskId}
+              completionTaskIds={quickTaskPendingIds}
               onToggleCompletion={handleCompletionChange}
               onEdit={openEditor}
             />
@@ -359,7 +357,7 @@ export default function TodayPage({
               tasks={completedTasks}
               lists={lists}
               selectedTaskId={selectedTaskId}
-              completionTaskId={completionTaskId}
+              completionTaskIds={quickTaskPendingIds}
               onToggleCompletion={handleCompletionChange}
               onEdit={openEditor}
             />

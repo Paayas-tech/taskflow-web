@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import Dashboard from "./Dashboard";
 import Login from "./Login";
@@ -124,6 +124,23 @@ function App() {
   const [taskFormSaving, setTaskFormSaving] = useState(false);
   const [taskFormError, setTaskFormError] = useState("");
   const [taskForm, setTaskForm] = useState(emptyTaskForm);
+  const [quickTaskPendingIds, setQuickTaskPendingIds] = useState(
+    () => new Set()
+  );
+  const newTaskButtonRef = useRef(null);
+  const taskFormSubmissionRef = useRef(false);
+  const tasksRef = useRef([]);
+  const quickTaskMutationsRef = useRef(new Map());
+
+  const syncQuickTaskPendingIds = useCallback(() => {
+    setQuickTaskPendingIds(
+      new Set(
+        [...quickTaskMutationsRef.current.entries()]
+          .filter(([, mutation]) => mutation.pendingCount > 0)
+          .map(([taskId]) => taskId)
+      )
+    );
+  }, []);
 
   const loadTasks = useCallback(async () => {
     if (!user) return;
@@ -133,9 +150,19 @@ function App() {
 
     try {
       const userTasks = await getTasks(user.uid);
-      setTasks(userTasks);
+      const tasksWithPendingChanges = userTasks.map((task) => {
+        const pendingMutation = quickTaskMutationsRef.current.get(task.id);
+
+        return pendingMutation
+          ? { ...task, ...pendingMutation.optimisticPatch }
+          : task;
+      });
+
+      tasksRef.current = tasksWithPendingChanges;
+      setTasks(tasksWithPendingChanges);
     } catch (error) {
       console.error("Error loading tasks:", error);
+      tasksRef.current = [];
       setTasks([]);
       setTasksError(
         "We couldn't load your tasks. Check your connection and try again."
@@ -198,6 +225,10 @@ function App() {
     }
   }, [user, loadTasks, loadLists]);
 
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
+
   const handleTaskChange = (event) => {
     const { name, value, type, checked } = event.target;
 
@@ -209,10 +240,15 @@ function App() {
 
   const handleCreateTask = async (event) => {
     event.preventDefault();
+
+    if (taskFormSubmissionRef.current) return;
+
+    taskFormSubmissionRef.current = true;
     setTaskFormError("");
 
     if (!taskForm.title.trim()) {
       setTaskFormError("Enter a task title before saving.");
+      taskFormSubmissionRef.current = false;
       return;
     }
 
@@ -240,6 +276,7 @@ function App() {
         "We couldn't create this task. Check your connection and try again."
       );
     } finally {
+      taskFormSubmissionRef.current = false;
       setTaskFormSaving(false);
     }
   };
@@ -254,6 +291,100 @@ function App() {
       await loadTasks();
     },
     [user, loadTasks]
+  );
+
+  const handleQuickUpdateTask = useCallback(
+    (taskId, data) => {
+      if (!user) {
+        return Promise.reject(
+          new Error("You must be signed in to update a task.")
+        );
+      }
+
+      const currentTask = tasksRef.current.find((task) => task.id === taskId);
+
+      if (!currentTask) {
+        return Promise.reject(new Error("The selected task is unavailable."));
+      }
+
+      const existingMutation = quickTaskMutationsRef.current.get(taskId);
+      const patchAlreadyApplied = Object.entries(data).every(
+        ([field, value]) => currentTask[field] === value
+      );
+
+      if (patchAlreadyApplied) {
+        return existingMutation?.chain || Promise.resolve();
+      }
+
+      const mutation = existingMutation || {
+        chain: Promise.resolve(),
+        confirmedTask: currentTask,
+        optimisticPatch: {},
+        pendingCount: 0,
+        version: 0,
+      };
+      const mutationVersion = mutation.version + 1;
+
+      mutation.version = mutationVersion;
+      mutation.pendingCount += 1;
+      mutation.optimisticPatch = {
+        ...mutation.optimisticPatch,
+        ...data,
+      };
+      quickTaskMutationsRef.current.set(taskId, mutation);
+
+      const optimisticTasks = tasksRef.current.map((task) =>
+        task.id === taskId ? { ...task, ...data } : task
+      );
+      tasksRef.current = optimisticTasks;
+      setTasks(optimisticTasks);
+      syncQuickTaskPendingIds();
+
+      const previousOperation = mutation.chain;
+      const operation = previousOperation
+        .catch(() => undefined)
+        .then(async () => {
+          await updateTask(user.uid, taskId, data);
+          mutation.confirmedTask = {
+            ...mutation.confirmedTask,
+            ...data,
+          };
+        })
+        .catch((error) => {
+          if (mutation.version !== mutationVersion) {
+            console.error("A superseded task update could not be saved:", error);
+            return;
+          }
+
+          const rollbackFields = Object.keys(mutation.optimisticPatch);
+          const rolledBackTasks = tasksRef.current.map((task) => {
+            if (task.id !== taskId) return task;
+
+            const rolledBackTask = { ...task };
+            rollbackFields.forEach((field) => {
+              rolledBackTask[field] = mutation.confirmedTask[field];
+            });
+            return rolledBackTask;
+          });
+
+          tasksRef.current = rolledBackTasks;
+          setTasks(rolledBackTasks);
+          throw error;
+        })
+        .finally(() => {
+          mutation.pendingCount -= 1;
+
+          if (mutation.pendingCount === 0) {
+            quickTaskMutationsRef.current.delete(taskId);
+          }
+
+          syncQuickTaskPendingIds();
+        });
+
+      mutation.chain = operation;
+      return operation;
+    },
+    [syncQuickTaskPendingIds, user]
   );
 
   const handleDeleteTask = useCallback(
@@ -310,13 +441,59 @@ function App() {
 
   const openTaskForm = () => {
     setTaskFormError("");
+    setTaskForm(emptyTaskForm);
     setShowTaskForm(true);
   };
 
-  const closeTaskForm = () => {
+  const closeTaskForm = useCallback(() => {
+    if (taskFormSaving) return;
+
     setTaskFormError("");
+    setTaskForm(emptyTaskForm);
     setShowTaskForm(false);
+    newTaskButtonRef.current?.focus();
+  }, [taskFormSaving]);
+
+  const handleTaskModalBackdrop = (event) => {
+    if (event.target === event.currentTarget) closeTaskForm();
   };
+
+  useEffect(() => {
+    if (!showTaskForm) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !taskFormSaving) closeTaskForm();
+
+      if (event.key === "Tab") {
+        const dialog = document.getElementById("create-task-dialog");
+        const focusableElements = dialog?.querySelectorAll(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+        );
+
+        if (!focusableElements?.length) return;
+
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (event.shiftKey && document.activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus();
+        } else if (!event.shiftKey && document.activeElement === lastElement) {
+          event.preventDefault();
+          firstElement.focus();
+        }
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeTaskForm, showTaskForm, taskFormSaving]);
 
   const navigate = (path) => {
     if (path === currentPath) return;
@@ -406,34 +583,68 @@ function App() {
           </div>
 
           <div className="topbar-actions">
-            <button className="primary-btn" type="button" onClick={openTaskForm}>
+            <button
+              ref={newTaskButtonRef}
+              className="primary-btn"
+              type="button"
+              onClick={openTaskForm}
+              disabled={taskFormSaving}
+              aria-haspopup="dialog"
+              aria-expanded={showTaskForm}
+              aria-controls="create-task-dialog"
+            >
               + New Task
             </button>
           </div>
         </header>
 
         {showTaskForm && (
-          <section className="panel task-form-panel">
-            <div className="panel-header">
-              <h2>Create Task</h2>
+          <div
+            className="task-modal-backdrop"
+            onMouseDown={handleTaskModalBackdrop}
+          >
+            <section
+              className="task-modal"
+              id="create-task-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="create-task-dialog-title"
+              aria-describedby="create-task-dialog-description"
+              aria-busy={taskFormSaving}
+            >
+              <div className="task-modal-header">
+                <div>
+                  <p className="card-label">New task</p>
+                  <h2 id="create-task-dialog-title">Create Task</h2>
+                  <p id="create-task-dialog-description">
+                    Add the details now, then adjust them anytime from Tasks.
+                  </p>
+                </div>
 
-              <button className="ghost-btn" type="button" onClick={closeTaskForm}>
-                Close
-              </button>
-            </div>
+                <button
+                  className="ghost-btn compact-btn task-modal-close"
+                  type="button"
+                  onClick={closeTaskForm}
+                  disabled={taskFormSaving}
+                  aria-label="Close Create Task dialog"
+                >
+                  Close
+                </button>
+              </div>
 
-            <TaskForm
-              values={taskForm}
-              onChange={handleTaskChange}
-              onSubmit={handleCreateTask}
-              onCancel={closeTaskForm}
-              submitLabel="Create Task"
-              busyLabel="Creating..."
-              busy={taskFormSaving}
-              error={taskFormError}
-              lists={lists}
-            />
-          </section>
+              <TaskForm
+                values={taskForm}
+                onChange={handleTaskChange}
+                onSubmit={handleCreateTask}
+                onCancel={closeTaskForm}
+                submitLabel="Create Task"
+                busyLabel="Creating..."
+                busy={taskFormSaving}
+                error={taskFormError}
+                lists={lists}
+              />
+            </section>
+          </div>
         )}
 
         <div className="route-content" hidden={currentView !== "tasks"}>
@@ -443,6 +654,8 @@ function App() {
             tasksError={tasksError}
             onRetry={loadTasks}
             onUpdateTask={handleUpdateTask}
+            onQuickUpdateTask={handleQuickUpdateTask}
+            quickTaskPendingIds={quickTaskPendingIds}
             onDeleteTask={handleDeleteTask}
             lists={lists}
             listsLoading={listsLoading}
@@ -461,6 +674,8 @@ function App() {
             tasksError={tasksError}
             onRetry={loadTasks}
             onUpdateTask={handleUpdateTask}
+            onQuickUpdateTask={handleQuickUpdateTask}
+            quickTaskPendingIds={quickTaskPendingIds}
             onDeleteTask={handleDeleteTask}
             lists={lists}
           />

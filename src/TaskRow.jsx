@@ -84,7 +84,6 @@ export default function TaskRow({
         }
         aria-pressed={completed}
         onClick={() => onToggleCompletion(task)}
-        disabled={completionBusy}
       >
         {completionBusy ? (
           <span className="completion-spinner" />
@@ -97,7 +96,8 @@ export default function TaskRow({
         <button
           className="task-title-button"
           type="button"
-          onClick={() => onEdit(task)}
+          onClick={(event) => onEdit(task, event.currentTarget)}
+          disabled={completionBusy}
         >
           <span className="task-row-title">{task.title}</span>
         </button>
@@ -137,7 +137,7 @@ export default function TaskRow({
         <button
           className="ghost-btn compact-btn task-edit-button"
           type="button"
-          onClick={() => onEdit(task)}
+          onClick={(event) => onEdit(task, event.currentTarget)}
           disabled={completionBusy}
           aria-label={`Edit ${task.title}`}
         >
