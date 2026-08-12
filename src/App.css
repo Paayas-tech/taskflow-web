@@ -1117,6 +1117,16 @@ a:focus-visible {
   font-weight: 650;
 }
 
+.project-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.project-card-actions .ghost-btn {
+  min-height: 36px;
+}
+
 .projects-state {
   display: grid;
   min-height: 270px;
@@ -1257,6 +1267,234 @@ a:focus-visible {
   border-top: 1px solid var(--border);
 }
 
+/* Project task workspace */
+
+.project-tasks-page {
+  width: min(1080px, 100%);
+  margin: 0 auto;
+  padding-top: 34px;
+}
+
+.project-back-button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.project-back-button:hover {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.project-back-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.project-task-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 28px;
+  margin-top: 18px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--border);
+}
+
+.project-task-identity {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 17px;
+}
+
+.project-task-color {
+  width: 9px;
+  height: 74px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+.project-task-identity > div {
+  min-width: 0;
+}
+
+.project-task-identity h2 {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: clamp(1.8rem, 4vw, 2.55rem);
+  font-weight: 780;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.project-task-identity > div > p:not(.card-label) {
+  max-width: 640px;
+  margin: 10px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.project-task-identity .project-status {
+  margin-top: 14px;
+}
+
+.project-task-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 26px 0 34px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.project-task-summary > div {
+  display: grid;
+  gap: 4px;
+  padding: 17px 20px;
+}
+
+.project-task-summary > div + div {
+  border-left: 1px solid var(--border);
+}
+
+.project-task-summary strong {
+  color: var(--text-primary);
+  font-size: 1.4rem;
+  font-weight: 780;
+  line-height: 1;
+}
+
+.project-task-summary span {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.project-task-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 22px;
+  margin-bottom: 12px;
+}
+
+.project-task-toolbar h3,
+.project-task-toolbar p {
+  margin: 0;
+}
+
+.project-task-toolbar h3 {
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.project-task-toolbar p {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.project-status-filters {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
+  background: var(--surface-soft);
+}
+
+.project-status-filters button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 11px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.project-status-filters button:hover {
+  color: var(--text-primary);
+}
+
+.project-status-filters button.active {
+  background: var(--surface);
+  color: var(--accent-hover);
+  box-shadow: var(--shadow-sm);
+}
+
+.project-status-filters button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.project-task-list {
+  border-top: 1px solid var(--border);
+}
+
+.project-task-state {
+  display: grid;
+  min-height: 260px;
+  place-items: center;
+  align-content: center;
+  gap: 9px;
+  margin-top: 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 30px 20px;
+  background: var(--surface);
+  text-align: center;
+}
+
+.project-task-state h2,
+.project-task-state h3,
+.project-task-state p {
+  margin: 0;
+}
+
+.project-task-state h2,
+.project-task-state h3 {
+  color: var(--text-primary);
+}
+
+.project-task-state p {
+  max-width: 470px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.project-task-state > .primary-btn,
+.project-task-state > .ghost-btn {
+  margin-top: 8px;
+}
+
+.project-task-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 8px;
+}
+
+.project-task-filter-empty {
+  min-height: 210px;
+  background: var(--surface-soft);
+}
+
 /* Tasks and lists */
 
 .tasks-page {
@@ -1393,7 +1631,8 @@ a:focus-visible {
   font-weight: 750;
 }
 
-.list-color-dot {
+.list-color-dot,
+.project-color-dot {
   display: inline-block;
   width: 9px;
   height: 9px;
@@ -1906,6 +2145,7 @@ a:focus-visible {
 }
 
 .task-list-badge,
+.task-project-badge,
 .priority,
 .task-status {
   display: inline-flex;
@@ -1922,6 +2162,15 @@ a:focus-visible {
   padding-left: 0;
   background: transparent;
   color: var(--text-secondary);
+}
+
+.task-project-badge {
+  max-width: 180px;
+  overflow: hidden;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-due-meta,
@@ -2062,6 +2311,45 @@ a:focus-visible {
   display: grid;
   gap: 7px;
   min-width: 0;
+}
+
+.task-project-feedback {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.task-project-error {
+  color: var(--danger);
+}
+
+.task-project-retry {
+  min-height: 28px;
+  border: 0;
+  border-radius: 7px;
+  padding: 4px 7px;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font: inherit;
+  font-weight: 750;
+}
+
+.task-project-retry:hover:not(:disabled) {
+  background: var(--surface-muted);
+}
+
+.task-project-retry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.task-project-retry:disabled {
+  opacity: 0.55;
 }
 
 .task-editor-form input,
@@ -2602,6 +2890,11 @@ a:focus-visible {
     align-items: flex-start;
   }
 
+  .project-task-toolbar {
+    display: grid;
+    align-items: start;
+  }
+
   .today-page-summary {
     padding-top: 3px;
   }
@@ -2745,6 +3038,10 @@ a:focus-visible {
     padding: 18px;
   }
 
+  .project-card-actions .ghost-btn {
+    width: 100%;
+  }
+
   .projects-state {
     min-height: 240px;
     margin-top: 24px;
@@ -2757,6 +3054,62 @@ a:focus-visible {
   }
 
   .project-form-actions button {
+    width: 100%;
+  }
+
+  .project-tasks-page {
+    padding-top: 24px;
+  }
+
+  .project-task-hero {
+    display: grid;
+    gap: 20px;
+    margin-top: 12px;
+    padding-bottom: 22px;
+  }
+
+  .project-task-hero > .primary-btn {
+    width: 100%;
+  }
+
+  .project-task-identity {
+    gap: 13px;
+  }
+
+  .project-task-color {
+    height: 64px;
+  }
+
+  .project-task-summary {
+    margin: 22px 0 28px;
+  }
+
+  .project-task-summary > div {
+    padding: 14px 10px;
+  }
+
+  .project-status-filters {
+    width: 100%;
+  }
+
+  .project-status-filters button {
+    flex: 1 1 0;
+    padding-right: 7px;
+    padding-left: 7px;
+  }
+
+  .project-task-state {
+    min-height: 230px;
+    padding: 26px 16px;
+  }
+
+  .project-task-state-actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .project-task-state-actions button {
     width: 100%;
   }
 
@@ -2846,6 +3199,10 @@ a:focus-visible {
 
   .tasks-page-meta {
     gap: 7px 11px;
+  }
+
+  .task-project-badge {
+    max-width: min(100%, 180px);
   }
 
   .task-row-actions {

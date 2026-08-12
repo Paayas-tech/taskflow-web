@@ -56,6 +56,7 @@ export default function ProjectsPage({
   error,
   onRetry,
   onCreateProject,
+  onOpenProject,
 }) {
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [values, setValues] = useState(emptyProjectForm);
@@ -235,6 +236,16 @@ export default function ProjectsPage({
                   {dueDate && <span>Due {dueDate}</span>}
                   {createdAt && <span>Created {createdAt}</span>}
                   {!dueDate && !createdAt && <span>Ready for planning</span>}
+                </div>
+                <div className="project-card-actions">
+                  <button
+                    className="ghost-btn compact-btn"
+                    type="button"
+                    onClick={() => onOpenProject(project.id)}
+                    aria-label={`View tasks in ${project.name}`}
+                  >
+                    View tasks
+                  </button>
                 </div>
               </article>
             );

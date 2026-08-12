@@ -58,6 +58,7 @@ const isTaskComplete = (task) =>
 export default function TaskRow({
   task,
   lists,
+  projects = [],
   completionBusy = false,
   selected = false,
   onToggleCompletion,
@@ -65,6 +66,7 @@ export default function TaskRow({
 }) {
   const completed = isTaskComplete(task);
   const taskList = lists.find((list) => list.id === task.listId);
+  const taskProject = projects.find((project) => project.id === task.projectId);
   const dueDateMeta = dueDateMetaFor(task.dueDate);
 
   return (
@@ -118,6 +120,16 @@ export default function TaskRow({
             />
             {taskList?.name || "Inbox"}
           </span>
+          {taskProject && (
+            <span className="task-project-badge">
+              <span
+                className="project-color-dot"
+                style={{ backgroundColor: taskProject.color || "#6657c8" }}
+                aria-hidden="true"
+              />
+              {taskProject.name}
+            </span>
+          )}
           <span className={`task-due-meta task-due-${dueDateMeta.tone}`}>
             {dueDateMeta.label}
           </span>

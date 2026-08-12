@@ -3,6 +3,7 @@ import "./App.css";
 import Dashboard from "./Dashboard";
 import Login from "./Login";
 import ProjectsPage from "./ProjectsPage";
+import ProjectTasksPage from "./ProjectTasksPage";
 import TaskForm from "./TaskForm";
 import TasksPage from "./TasksPage";
 import TodayPage from "./TodayPage";
@@ -97,10 +98,27 @@ const routeViews = {
   "/projects": "projects",
 };
 
+const projectIdFromPath = (pathname) => {
+  if (!pathname.startsWith("/projects/")) return null;
+
+  const encodedProjectId = pathname.slice("/projects/".length);
+  if (!encodedProjectId || encodedProjectId.includes("/")) return null;
+
+  try {
+    const projectId = decodeURIComponent(encodedProjectId);
+    return projectId && !projectId.includes("/") ? projectId : null;
+  } catch {
+    return null;
+  }
+};
+
 const normalizePath = (pathname) => {
   const withoutTrailingSlash =
     pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
-  return routeViews[withoutTrailingSlash] ? withoutTrailingSlash : "/";
+  if (routeViews[withoutTrailingSlash]) return withoutTrailingSlash;
+
+  const projectId = projectIdFromPath(withoutTrailingSlash);
+  return projectId ? `/projects/${encodeURIComponent(projectId)}` : "/";
 };
 
 const emptyTaskForm = {
@@ -112,6 +130,7 @@ const emptyTaskForm = {
   dueDate: "",
   reminder: false,
   listId: "",
+  projectId: "",
 };
 
 function App() {
@@ -295,6 +314,7 @@ function App() {
         dueDate: taskForm.dueDate,
         reminder: taskForm.reminder,
         listId: taskForm.listId || null,
+        projectId: taskForm.projectId || null,
       });
 
       setTaskForm(emptyTaskForm);
@@ -485,9 +505,9 @@ function App() {
     [user, projects.length, loadProjects]
   );
 
-  const openTaskForm = () => {
+  const openTaskForm = (initialValues = {}) => {
     setTaskFormError("");
-    setTaskForm(emptyTaskForm);
+    setTaskForm({ ...emptyTaskForm, ...initialValues });
     setShowTaskForm(true);
   };
 
@@ -557,7 +577,16 @@ function App() {
     return <Login />;
   }
 
-  const currentView = routeViews[currentPath];
+  const selectedProjectId = projectIdFromPath(currentPath);
+  const selectedProject = projects.find(
+    (project) => project.id === selectedProjectId
+  );
+  const currentView = selectedProjectId
+    ? "project"
+    : routeViews[currentPath];
+  const selectedProjectTaskCount = selectedProject
+    ? tasks.filter((task) => task.projectId === selectedProject.id).length
+    : 0;
   const pageTitle =
     currentView === "tasks"
       ? "Tasks"
@@ -565,6 +594,8 @@ function App() {
         ? "Today"
         : currentView === "projects"
           ? "Projects"
+          : currentView === "project"
+            ? selectedProject?.name || "Project"
         : "Dashboard";
   const pageSubtitle =
     currentView === "tasks"
@@ -573,6 +604,12 @@ function App() {
         ? "Overdue and due-today tasks in one focused view."
         : currentView === "projects"
           ? `${projects.length} ${projects.length === 1 ? "project" : "projects"}`
+          : currentView === "project"
+            ? selectedProject
+              ? `${selectedProjectTaskCount} ${selectedProjectTaskCount === 1 ? "task" : "tasks"} in this project`
+              : projectsLoading
+                ? "Loading project..."
+                : "Project unavailable"
         : "A clear view of what needs your attention.";
 
   return (
@@ -584,17 +621,20 @@ function App() {
         </div>
 
         <nav className="nav-list" aria-label="Primary navigation">
-          {navItems.map((item) => (
-            <button
+          {navItems.map((item) => {
+            const isActive =
+              item.path === currentPath ||
+              (item.path === "/projects" && currentView === "project");
+
+            return (
+              <button
               key={item.label}
               type="button"
               className={`nav-item ${
-                item.path === currentPath ? "active" : ""
+                isActive ? "active" : ""
               } ${item.enabled ? "" : "nav-item-disabled"}`}
               disabled={!item.enabled}
-              aria-current={
-                item.path === currentPath ? "page" : undefined
-              }
+              aria-current={isActive ? "page" : undefined}
               aria-label={item.enabled ? item.label : `${item.label}, coming soon`}
               onClick={() => item.enabled && navigate(item.path)}
             >
@@ -603,8 +643,9 @@ function App() {
                 <span>{item.label}</span>
               </span>
               {!item.enabled && <small>Soon</small>}
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </nav>
 
         <div className="sidebar-account">
@@ -637,7 +678,13 @@ function App() {
               ref={newTaskButtonRef}
               className="primary-btn"
               type="button"
-              onClick={openTaskForm}
+              onClick={() =>
+                openTaskForm(
+                  currentView === "project" && selectedProject
+                    ? { projectId: selectedProject.id }
+                    : {}
+                )
+              }
               disabled={taskFormSaving}
               aria-haspopup="dialog"
               aria-expanded={showTaskForm}
@@ -692,6 +739,10 @@ function App() {
                 busy={taskFormSaving}
                 error={taskFormError}
                 lists={lists}
+                projects={projects}
+                projectsLoading={projectsLoading}
+                projectsError={projectsError}
+                onRetryProjects={loadProjects}
               />
             </section>
           </div>
@@ -714,6 +765,10 @@ function App() {
             onCreateList={handleCreateList}
             onRenameList={handleRenameList}
             onDeleteList={handleDeleteList}
+            projects={projects}
+            projectsLoading={projectsLoading}
+            projectsError={projectsError}
+            onRetryProjects={loadProjects}
           />
         </div>
 
@@ -728,6 +783,10 @@ function App() {
             quickTaskPendingIds={quickTaskPendingIds}
             onDeleteTask={handleDeleteTask}
             lists={lists}
+            projects={projects}
+            projectsLoading={projectsLoading}
+            projectsError={projectsError}
+            onRetryProjects={loadProjects}
           />
         </div>
 
@@ -738,8 +797,35 @@ function App() {
             error={projectsError}
             onRetry={loadProjects}
             onCreateProject={handleCreateProject}
+            onOpenProject={(projectId) =>
+              navigate(`/projects/${encodeURIComponent(projectId)}`)
+            }
           />
         </div>
+
+        {currentView === "project" && (
+          <ProjectTasksPage
+            projectId={selectedProjectId}
+            project={selectedProject}
+            projects={projects}
+            projectsLoading={projectsLoading}
+            projectsError={projectsError}
+            onRetryProjects={loadProjects}
+            tasks={tasks}
+            tasksLoading={tasksLoading}
+            tasksError={tasksError}
+            onRetryTasks={loadTasks}
+            onUpdateTask={handleUpdateTask}
+            onQuickUpdateTask={handleQuickUpdateTask}
+            quickTaskPendingIds={quickTaskPendingIds}
+            onDeleteTask={handleDeleteTask}
+            lists={lists}
+            onBack={() => navigate("/projects")}
+            onCreateTask={() =>
+              openTaskForm({ projectId: selectedProject.id })
+            }
+          />
+        )}
 
         <div className="route-content" hidden={currentView !== "dashboard"}>
           <Dashboard

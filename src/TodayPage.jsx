@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import TaskForm from "./TaskForm";
+import { useRef, useState } from "react";
+import TaskEditModal from "./TaskEditModal";
 import TaskRow from "./TaskRow";
 
 const dateKeyFor = (date) => {
@@ -12,23 +12,13 @@ const dateKeyFor = (date) => {
 const isTaskComplete = (task) =>
   task.completed === true || task.status === "completed";
 
-const valuesFromTask = (task, knownListIds) => ({
-  title: task.title || "",
-  description: task.description || "",
-  notes: task.notes || "",
-  status: task.status || "todo",
-  priority: task.priority || "medium",
-  dueDate: task.dueDate || "",
-  reminder: task.reminder === true,
-  listId: knownListIds.has(task.listId) ? task.listId : "",
-});
-
 function TodayTaskGroup({
   title,
   description,
   tone,
   tasks,
   lists,
+  projects,
   selectedTaskId,
   completionTaskIds,
   onToggleCompletion,
@@ -54,6 +44,7 @@ function TodayTaskGroup({
               key={task.id}
               task={task}
               lists={lists}
+              projects={projects}
               completionBusy={completionTaskIds.has(task.id)}
               selected={selectedTaskId === task.id}
               onToggleCompletion={onToggleCompletion}
@@ -76,15 +67,14 @@ export default function TodayPage({
   quickTaskPendingIds,
   onDeleteTask,
   lists,
+  projects,
+  projectsLoading,
+  projectsError,
+  onRetryProjects,
 }) {
   const [selectedTaskId, setSelectedTaskId] = useState(null);
-  const [editValues, setEditValues] = useState(null);
-  const [savingTask, setSavingTask] = useState(false);
-  const [editError, setEditError] = useState("");
   const [mutationError, setMutationError] = useState("");
-  const [deleteCandidate, setDeleteCandidate] = useState(null);
-  const [deletingTask, setDeletingTask] = useState(false);
-  const [deleteError, setDeleteError] = useState("");
+  const editTriggerRef = useRef(null);
 
   const now = new Date();
   const todayKey = dateKeyFor(now);
@@ -94,10 +84,6 @@ export default function TodayPage({
     day: "numeric",
   }).format(now);
 
-  const knownListIds = useMemo(
-    () => new Set(lists.map((list) => list.id)),
-    [lists]
-  );
   const selectedTask = tasks.find((task) => task.id === selectedTaskId);
   const activeTasks = tasks.filter((task) => !isTaskComplete(task));
   const overdueTasks = activeTasks
@@ -118,63 +104,14 @@ export default function TodayPage({
     (task) => task.dueDate && task.dueDate > todayKey
   ).length;
 
-  const openEditor = (task) => {
+  const openEditor = (task, triggerElement) => {
+    editTriggerRef.current = triggerElement || null;
     setSelectedTaskId(task.id);
-    setEditValues(valuesFromTask(task, knownListIds));
-    setEditError("");
     setMutationError("");
   };
 
   const closeEditor = () => {
-    if (savingTask) return;
     setSelectedTaskId(null);
-    setEditValues(null);
-    setEditError("");
-  };
-
-  const handleEditChange = (event) => {
-    const { name, value, type, checked } = event.target;
-    setEditValues((previous) => ({
-      ...previous,
-      [name]: type === "checkbox" ? checked : value,
-    }));
-  };
-
-  const handleEditSubmit = async (event) => {
-    event.preventDefault();
-    setEditError("");
-
-    if (!editValues.title.trim()) {
-      setEditError("Enter a task title before saving.");
-      return;
-    }
-
-    setSavingTask(true);
-
-    try {
-      const completed = editValues.status === "completed";
-      await onUpdateTask(selectedTask.id, {
-        title: editValues.title.trim(),
-        description: editValues.description,
-        notes: editValues.notes,
-        status: editValues.status,
-        completed,
-        priority: editValues.priority,
-        dueDate: editValues.dueDate,
-        reminder: editValues.reminder,
-        listId: editValues.listId || null,
-      });
-
-      setSelectedTaskId(null);
-      setEditValues(null);
-    } catch (error) {
-      console.error("Error saving task from Today:", error);
-      setEditError(
-        "We couldn't save your changes. Check your connection and try again."
-      );
-    } finally {
-      setSavingTask(false);
-    }
   };
 
   const handleCompletionChange = async (task) => {
@@ -191,39 +128,6 @@ export default function TodayPage({
       setMutationError(
         `We couldn't ${completed ? "complete" : "reopen"} “${task.title}”. Try again.`
       );
-    }
-  };
-
-  const requestDelete = () => {
-    if (!selectedTask) return;
-    setDeleteCandidate(selectedTask);
-    setDeleteError("");
-  };
-
-  const cancelDelete = () => {
-    if (deletingTask) return;
-    setDeleteCandidate(null);
-    setDeleteError("");
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteCandidate) return;
-
-    setDeletingTask(true);
-    setDeleteError("");
-
-    try {
-      await onDeleteTask(deleteCandidate.id);
-      setDeleteCandidate(null);
-      setSelectedTaskId(null);
-      setEditValues(null);
-    } catch (error) {
-      console.error("Error deleting task from Today:", error);
-      setDeleteError(
-        "We couldn't delete this task. Check your connection and try again."
-      );
-    } finally {
-      setDeletingTask(false);
     }
   };
 
@@ -260,35 +164,20 @@ export default function TodayPage({
         </div>
       )}
 
-      {selectedTask && editValues && (
-        <section className="task-detail-panel" aria-labelledby="today-task-detail-title">
-          <div className="task-detail-header">
-            <div>
-              <p className="card-label">Task details</p>
-              <h3 id="today-task-detail-title">Edit task</h3>
-            </div>
-            <button
-              className="danger-btn"
-              type="button"
-              onClick={requestDelete}
-              disabled={savingTask}
-            >
-              Delete task
-            </button>
-          </div>
-
-          <TaskForm
-            values={editValues}
-            onChange={handleEditChange}
-            onSubmit={handleEditSubmit}
-            onCancel={closeEditor}
-            submitLabel="Save changes"
-            busyLabel="Saving..."
-            busy={savingTask}
-            error={editError}
-            lists={lists}
-          />
-        </section>
+      {selectedTask && (
+        <TaskEditModal
+          key={selectedTask.id}
+          task={selectedTask}
+          lists={lists}
+          projects={projects}
+          projectsLoading={projectsLoading}
+          projectsError={projectsError}
+          onRetryProjects={onRetryProjects}
+          onUpdateTask={onUpdateTask}
+          onDeleteTask={onDeleteTask}
+          onClose={closeEditor}
+          returnFocusElement={editTriggerRef.current}
+        />
       )}
 
       {tasksLoading ? (
@@ -318,6 +207,7 @@ export default function TodayPage({
             tone="overdue"
             tasks={overdueTasks}
             lists={lists}
+            projects={projects}
             selectedTaskId={selectedTaskId}
             completionTaskIds={quickTaskPendingIds}
             onToggleCompletion={handleCompletionChange}
@@ -330,6 +220,7 @@ export default function TodayPage({
             tone="today"
             tasks={dueTodayTasks}
             lists={lists}
+            projects={projects}
             selectedTaskId={selectedTaskId}
             completionTaskIds={quickTaskPendingIds}
             onToggleCompletion={handleCompletionChange}
@@ -343,6 +234,7 @@ export default function TodayPage({
               tone="anytime"
               tasks={anytimeTasks}
               lists={lists}
+              projects={projects}
               selectedTaskId={selectedTaskId}
               completionTaskIds={quickTaskPendingIds}
               onToggleCompletion={handleCompletionChange}
@@ -356,6 +248,7 @@ export default function TodayPage({
               tone="completed"
               tasks={completedTasks}
               lists={lists}
+              projects={projects}
               selectedTaskId={selectedTaskId}
               completionTaskIds={quickTaskPendingIds}
               onToggleCompletion={handleCompletionChange}
@@ -365,44 +258,6 @@ export default function TodayPage({
         </div>
       )}
 
-      {deleteCandidate && (
-        <div className="confirmation-backdrop">
-          <section
-            className="confirmation-dialog"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="today-delete-dialog-title"
-            aria-describedby="today-delete-dialog-description"
-          >
-            <p className="card-label">Permanent action</p>
-            <h3 id="today-delete-dialog-title">Delete this task?</h3>
-            <p id="today-delete-dialog-description">
-              “{deleteCandidate.title}” will be permanently removed from TaskFlow. This cannot be undone.
-            </p>
-            {deleteError && (
-              <p className="form-error" role="alert">{deleteError}</p>
-            )}
-            <div className="confirmation-actions">
-              <button
-                className="ghost-btn"
-                type="button"
-                onClick={cancelDelete}
-                disabled={deletingTask}
-              >
-                Cancel
-              </button>
-              <button
-                className="danger-btn"
-                type="button"
-                onClick={confirmDelete}
-                disabled={deletingTask}
-              >
-                {deletingTask ? "Deleting..." : "Delete task"}
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
     </section>
   );
 }

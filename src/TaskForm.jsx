@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 export default function TaskForm({
   values,
   onChange,
@@ -8,7 +10,17 @@ export default function TaskForm({
   busy = false,
   error = "",
   lists = [],
+  projects = [],
+  projectsLoading = false,
+  projectsError = "",
+  onRetryProjects,
 }) {
+  const projectFieldId = useId();
+  const selectedProjectId = values.projectId || "";
+  const selectedProjectIsUnavailable =
+    selectedProjectId &&
+    !projects.some((project) => project.id === selectedProjectId);
+
   return (
     <form className="task-editor-form" onSubmit={onSubmit} noValidate>
       <section className="task-form-section task-form-primary">
@@ -81,6 +93,50 @@ export default function TaskForm({
               ))}
             </select>
           </label>
+
+          <div className="task-form-field task-project-field">
+            <label htmlFor={projectFieldId}>Project</label>
+            <select
+              id={projectFieldId}
+              name="projectId"
+              value={selectedProjectId}
+              onChange={onChange}
+              disabled={busy || projectsLoading}
+              aria-busy={projectsLoading}
+            >
+              <option value="">No project</option>
+              {selectedProjectIsUnavailable && (
+                <option value={selectedProjectId}>
+                  Current project (unavailable)
+                </option>
+              )}
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+            {projectsLoading && (
+              <span className="task-project-feedback" role="status">
+                Loading projects...
+              </span>
+            )}
+            {!projectsLoading && projectsError && (
+              <span className="task-project-feedback task-project-error" role="alert">
+                <span>Projects could not be loaded.</span>
+                {onRetryProjects && (
+                  <button
+                    type="button"
+                    className="task-project-retry"
+                    onClick={onRetryProjects}
+                    disabled={busy}
+                  >
+                    Try again
+                  </button>
+                )}
+              </span>
+            )}
+          </div>
 
           <label className="task-form-field">
             <span>Due date</span>
