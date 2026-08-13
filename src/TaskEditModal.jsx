@@ -1,21 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import TaskForm from "./TaskForm";
-
-const valuesFromTask = (task, lists) => {
-  const knownListIds = new Set(lists.map((list) => list.id));
-
-  return {
-    title: task.title || "",
-    description: task.description || "",
-    notes: task.notes || "",
-    status: task.status || "todo",
-    priority: task.priority || "medium",
-    dueDate: task.dueDate || "",
-    reminder: task.reminder === true,
-    listId: knownListIds.has(task.listId) ? task.listId : "",
-    projectId: task.projectId || "",
-  };
-};
+import {
+  buildTaskEditPayload,
+  taskFormValuesFromTask,
+} from "./domain/taskDomain";
 
 export default function TaskEditModal({
   task,
@@ -29,7 +17,9 @@ export default function TaskEditModal({
   onClose,
   returnFocusElement,
 }) {
-  const [values, setValues] = useState(() => valuesFromTask(task, lists));
+  const [values, setValues] = useState(() =>
+    taskFormValuesFromTask(task, lists)
+  );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -130,19 +120,7 @@ export default function TaskEditModal({
     setSaving(true);
 
     try {
-      const completed = values.status === "completed";
-      await onUpdateTask(task.id, {
-        title: values.title.trim(),
-        description: values.description,
-        notes: values.notes,
-        status: values.status,
-        completed,
-        priority: values.priority,
-        dueDate: values.dueDate,
-        reminder: values.reminder,
-        listId: values.listId || null,
-        projectId: values.projectId || null,
-      });
+      await onUpdateTask(task.id, buildTaskEditPayload(values));
       onClose();
     } catch (error) {
       console.error("Error saving task:", error);

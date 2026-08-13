@@ -2,24 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import TaskEditModal from "./TaskEditModal";
 import TaskListsPanel from "./TaskListsPanel";
 import TaskRow from "./TaskRow";
-
-const dateKeyFor = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const isTaskComplete = (task) =>
-  task.completed === true || task.status === "completed";
-
-const includesSearchTerm = (task, searchTerm) => {
-  if (!searchTerm) return true;
-
-  return [task.title, task.description, task.notes].some((value) =>
-    String(value || "").toLocaleLowerCase().includes(searchTerm)
-  );
-};
+import {
+  dateOnlyKey,
+  filterTasks,
+  isTaskComplete,
+} from "./domain/taskDomain";
 
 export default function TasksPage({
   tasks,
@@ -66,7 +53,7 @@ export default function TasksPage({
       : selectedListKey === "inbox"
         ? "Inbox"
         : selectedList?.name || "All tasks";
-  const todayKey = dateKeyFor(new Date());
+  const todayKey = dateOnlyKey(new Date());
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
   const queryFiltersActive =
     Boolean(normalizedSearch) ||
@@ -86,38 +73,16 @@ export default function TasksPage({
 
   const filteredTasks = useMemo(
     () =>
-      tasks.filter((task) => {
-        const belongsToSelectedList =
-          selectedListKey === "all" ||
-          (selectedListKey === "inbox"
-            ? !task.listId || !knownListIds.has(task.listId)
-            : task.listId === selectedListKey);
-
-        if (!belongsToSelectedList || !includesSearchTerm(task, normalizedSearch)) {
-          return false;
-        }
-
-        if (statusFilter !== "all" && task.status !== statusFilter) return false;
-        if (priorityFilter !== "all" && task.priority !== priorityFilter) return false;
-
-        const completed = isTaskComplete(task);
-        if (completionFilter === "active" && completed) return false;
-        if (completionFilter === "completed" && !completed) return false;
-
-        if (reminderFilter === "enabled" && task.reminder !== true) return false;
-
-        const dueDate =
-          typeof task.dueDate === "string" ? task.dueDate.trim() : "";
-        if (dueDateFilter === "overdue" && (!dueDate || dueDate >= todayKey)) {
-          return false;
-        }
-        if (dueDateFilter === "today" && dueDate !== todayKey) return false;
-        if (dueDateFilter === "upcoming" && (!dueDate || dueDate <= todayKey)) {
-          return false;
-        }
-        if (dueDateFilter === "undated" && dueDate) return false;
-
-        return true;
+      filterTasks(tasks, {
+        selectedListKey,
+        knownListIds,
+        searchTerm: normalizedSearch,
+        status: statusFilter,
+        priority: priorityFilter,
+        dueDate: dueDateFilter,
+        reminder: reminderFilter,
+        completion: completionFilter,
+        todayKey,
       }),
     [
       completionFilter,

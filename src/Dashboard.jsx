@@ -1,24 +1,10 @@
-const dateKeyFor = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const formatDueDate = (value) => {
-  if (!value) return "No due date";
-
-  const parsedDate = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsedDate.getTime())) return value;
-
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(parsedDate);
-};
-
-const isTaskComplete = (task) =>
-  task.completed === true || task.status === "completed";
+import {
+  classifyDateOnly,
+  compareDateOnly,
+  dateOnlyKey,
+  formatTaskDueDate,
+  isTaskComplete,
+} from "./domain/taskDomain";
 
 function DashboardTaskRow({ task, dateLabel }) {
   const isOverdue = dateLabel?.startsWith("Overdue");
@@ -34,7 +20,7 @@ function DashboardTaskRow({ task, dateLabel }) {
         <h3>{task.title}</h3>
         <div className="dashboard-task-meta">
           <span className={isOverdue ? "dashboard-overdue" : ""}>
-            {dateLabel || formatDueDate(task.dueDate)}
+            {dateLabel || formatTaskDueDate(task.dueDate)}
           </span>
           {task.priority === "high" && (
             <span className="dashboard-priority">High priority</span>
@@ -53,7 +39,7 @@ export default function Dashboard({
   onRetry,
 }) {
   const now = new Date();
-  const todayKey = dateKeyFor(now);
+  const todayKey = dateOnlyKey(now);
   const currentDate = new Intl.DateTimeFormat(undefined, {
     weekday: "long",
     month: "long",
@@ -64,22 +50,22 @@ export default function Dashboard({
   const completedTasks = tasks.filter(isTaskComplete);
   const reminderTasks = remainingTasks.filter((task) => task.reminder);
   const todayTasks = remainingTasks.filter(
-    (task) => task.dueDate === todayKey
+    (task) => classifyDateOnly(task.dueDate, todayKey) === "today"
   );
   const overdueTasks = remainingTasks
-    .filter((task) => task.dueDate && task.dueDate < todayKey)
+    .filter((task) => classifyDateOnly(task.dueDate, todayKey) === "overdue")
     .sort((firstTask, secondTask) =>
-      firstTask.dueDate.localeCompare(secondTask.dueDate)
+      compareDateOnly(firstTask.dueDate, secondTask.dueDate)
     );
   const focusTasks = [...overdueTasks, ...todayTasks];
   const upcomingTasks = remainingTasks
-    .filter((task) => task.dueDate && task.dueDate > todayKey)
+    .filter((task) => classifyDateOnly(task.dueDate, todayKey) === "upcoming")
     .sort((firstTask, secondTask) =>
-      firstTask.dueDate.localeCompare(secondTask.dueDate)
+      compareDateOnly(firstTask.dueDate, secondTask.dueDate)
     )
     .slice(0, 5);
   const anytimeTasks = remainingTasks
-    .filter((task) => !task.dueDate)
+    .filter((task) => classifyDateOnly(task.dueDate, todayKey) === "undated")
     .slice(0, 4);
 
   return (
@@ -153,8 +139,8 @@ export default function Dashboard({
                       key={task.id}
                       task={task}
                       dateLabel={
-                        task.dueDate < todayKey
-                          ? `Overdue · ${formatDueDate(task.dueDate)}`
+                        classifyDateOnly(task.dueDate, todayKey) === "overdue"
+                          ? `Overdue · ${formatTaskDueDate(task.dueDate)}`
                           : "Today"
                       }
                     />

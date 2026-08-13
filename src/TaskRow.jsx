@@ -1,3 +1,10 @@
+import {
+  classifyDateOnly,
+  dateOnlyKey,
+  formatTaskDueDate,
+  isTaskComplete,
+} from "./domain/taskDomain";
+
 const statusLabels = {
   todo: "To do",
   "in-progress": "In progress",
@@ -21,39 +28,18 @@ const legacyListColors = {
 const displayListColor = (color) =>
   legacyListColors[color?.toLowerCase()] || color || "#7d71cf";
 
-const dateKeyFor = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const formatTaskDueDate = (value) => {
-  if (!value) return "No due date";
-
-  const parsedDate = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsedDate.getTime())) return value;
-
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(parsedDate);
-};
-
 const dueDateMetaFor = (value) => {
   if (!value) return { label: "No due date", tone: "undated" };
 
-  const todayKey = dateKeyFor(new Date());
-  if (value < todayKey) {
+  const todayKey = dateOnlyKey(new Date());
+  const dateGroup = classifyDateOnly(value, todayKey);
+  if (dateGroup === "overdue") {
     return { label: `Overdue · ${formatTaskDueDate(value)}`, tone: "overdue" };
   }
-  if (value === todayKey) return { label: "Due today", tone: "today" };
+  if (dateGroup === "today") return { label: "Due today", tone: "today" };
 
   return { label: formatTaskDueDate(value), tone: "upcoming" };
 };
-
-const isTaskComplete = (task) =>
-  task.completed === true || task.status === "completed";
 
 export default function TaskRow({
   task,

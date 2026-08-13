@@ -1,16 +1,11 @@
 import { useRef, useState } from "react";
 import TaskEditModal from "./TaskEditModal";
 import TaskRow from "./TaskRow";
-
-const dateKeyFor = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const isTaskComplete = (task) =>
-  task.completed === true || task.status === "completed";
+import {
+  dateOnlyKey,
+  groupTasksForToday,
+  isTaskComplete,
+} from "./domain/taskDomain";
 
 function TodayTaskGroup({
   title,
@@ -77,7 +72,7 @@ export default function TodayPage({
   const editTriggerRef = useRef(null);
 
   const now = new Date();
-  const todayKey = dateKeyFor(now);
+  const todayKey = dateOnlyKey(now);
   const currentDate = new Intl.DateTimeFormat(undefined, {
     weekday: "long",
     month: "long",
@@ -85,24 +80,12 @@ export default function TodayPage({
   }).format(now);
 
   const selectedTask = tasks.find((task) => task.id === selectedTaskId);
-  const activeTasks = tasks.filter((task) => !isTaskComplete(task));
-  const overdueTasks = activeTasks
-    .filter((task) => task.dueDate && task.dueDate < todayKey)
-    .sort((firstTask, secondTask) =>
-      firstTask.dueDate.localeCompare(secondTask.dueDate)
-    );
-  const dueTodayTasks = activeTasks.filter(
-    (task) => task.dueDate === todayKey
-  );
-  const anytimeTasks = activeTasks.filter((task) => !task.dueDate);
-  const completedTasks = tasks.filter(
-    (task) =>
-      isTaskComplete(task) &&
-      (!task.dueDate || task.dueDate <= todayKey)
-  );
-  const futureTaskCount = activeTasks.filter(
-    (task) => task.dueDate && task.dueDate > todayKey
-  ).length;
+  const todayGroups = groupTasksForToday(tasks, todayKey);
+  const overdueTasks = todayGroups.overdue;
+  const dueTodayTasks = todayGroups.today;
+  const anytimeTasks = todayGroups.undated;
+  const completedTasks = todayGroups.completed;
+  const futureTaskCount = todayGroups.upcoming.length;
 
   const openEditor = (task, triggerElement) => {
     editTriggerRef.current = triggerElement || null;

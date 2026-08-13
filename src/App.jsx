@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
+import CalendarPage from "./CalendarPage";
 import Dashboard from "./Dashboard";
 import Login from "./Login";
 import ProjectsPage from "./ProjectsPage";
@@ -31,7 +32,7 @@ const navItems = [
   { label: "Today", path: "/today", enabled: true, icon: "today" },
   { label: "Tasks", path: "/tasks", enabled: true, icon: "tasks" },
   { label: "Projects", path: "/projects", enabled: true, icon: "projects" },
-  { label: "Calendar", enabled: false, icon: "calendar" },
+  { label: "Calendar", path: "/calendar", enabled: true, icon: "calendar" },
   { label: "Reminders", enabled: false, icon: "reminders" },
   { label: "Settings", enabled: false, icon: "settings" },
 ];
@@ -96,6 +97,7 @@ const routeViews = {
   "/today": "today",
   "/tasks": "tasks",
   "/projects": "projects",
+  "/calendar": "calendar",
 };
 
 const projectIdFromPath = (pathname) => {
@@ -592,6 +594,8 @@ function App() {
       ? "Tasks"
       : currentView === "today"
         ? "Today"
+        : currentView === "calendar"
+          ? "Calendar"
         : currentView === "projects"
           ? "Projects"
           : currentView === "project"
@@ -602,6 +606,8 @@ function App() {
       ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`
       : currentView === "today"
         ? "Overdue and due-today tasks in one focused view."
+        : currentView === "calendar"
+          ? "Plan dated work from your existing TaskFlow tasks."
         : currentView === "projects"
           ? `${projects.length} ${projects.length === 1 ? "project" : "projects"}`
           : currentView === "project"
@@ -782,6 +788,25 @@ function App() {
             onQuickUpdateTask={handleQuickUpdateTask}
             quickTaskPendingIds={quickTaskPendingIds}
             onDeleteTask={handleDeleteTask}
+            lists={lists}
+            projects={projects}
+            projectsLoading={projectsLoading}
+            projectsError={projectsError}
+            onRetryProjects={loadProjects}
+          />
+        </div>
+
+        <div className="route-content" hidden={currentView !== "calendar"}>
+          <CalendarPage
+            tasks={tasks}
+            tasksLoading={tasksLoading}
+            tasksError={tasksError}
+            onRetry={loadTasks}
+            onUpdateTask={handleUpdateTask}
+            onQuickUpdateTask={handleQuickUpdateTask}
+            quickTaskPendingIds={quickTaskPendingIds}
+            onDeleteTask={handleDeleteTask}
+            onCreateTask={(dueDate) => openTaskForm({ dueDate })}
             lists={lists}
             projects={projects}
             projectsLoading={projectsLoading}
