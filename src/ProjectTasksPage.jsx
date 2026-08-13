@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import TaskEditModal from "./TaskEditModal";
 import TaskRow from "./TaskRow";
+import ProjectMembersSection from "./ProjectMembersSection";
 import {
   filterTasksByProject,
   isTaskComplete,
@@ -30,6 +31,8 @@ export default function ProjectTasksPage({
   lists,
   onBack,
   onCreateTask,
+  ownerId,
+  ownerEmail,
 }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
@@ -177,6 +180,12 @@ export default function ProjectTasksPage({
           <span>Completed</span>
         </div>
       </div>
+
+      <ProjectMembersSection
+        ownerId={ownerId}
+        ownerEmail={ownerEmail}
+        projectId={projectId}
+      />
 
       <div className="project-task-toolbar">
         <div>

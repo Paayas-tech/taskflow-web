@@ -2677,6 +2677,135 @@ a:focus-visible {
 
 /* Calendar */
 
+.project-members-section {
+  margin: 0 0 34px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.project-members-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.project-members-header h3 {
+  margin: 4px 0 5px;
+  font-size: 1rem;
+}
+
+.project-members-header p:last-child,
+.project-members-empty,
+.project-members-note,
+.project-members-feedback p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.project-members-header > span {
+  display: grid;
+  min-width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.project-member-list {
+  display: grid;
+}
+
+.project-member-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.project-member-avatar {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.project-member-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.project-member-copy strong {
+  overflow: hidden;
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-member-copy span,
+.project-member-role {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.project-member-role {
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: var(--surface-soft);
+  font-weight: 750;
+}
+
+.project-members-feedback {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0 2px;
+}
+
+.project-members-feedback .state-spinner {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.project-members-error {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.project-members-error p {
+  color: var(--danger);
+}
+
+.project-members-empty {
+  padding: 14px 0 2px;
+}
+
+.project-members-note {
+  margin-top: 14px;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--surface-soft);
+}
+
 .calendar-page {
   padding: 42px 0 20px;
 }
@@ -3293,6 +3422,32 @@ a:focus-visible {
     padding-right: 4px;
     padding-left: 4px;
     font-size: 0.62rem;
+  }
+
+  .project-members-section {
+    padding: 18px 14px;
+  }
+
+  .project-members-header {
+    display: grid;
+    gap: 10px;
+  }
+
+  .project-members-header > span {
+    grid-row: 1;
+  }
+
+  .project-member-row {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .project-member-role {
+    grid-column: 2;
+    width: fit-content;
+  }
+
+  .project-members-error {
+    display: grid;
   }
 }
 

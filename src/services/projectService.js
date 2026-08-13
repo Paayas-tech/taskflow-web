@@ -3,8 +3,10 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
@@ -12,6 +14,12 @@ import {
 } from "firebase/firestore";
 
 import { db } from "../firebase";
+import {
+  buildProjectMemberRecord,
+  buildProjectOwnerMembership,
+  normalizeProjectMemberDocument,
+  validateMembershipId,
+} from "../domain/projectMemberDomain";
 
 
 const projectStatuses = new Set([
@@ -126,6 +134,149 @@ const mutableProjectFields = [
 ];
 
 
+const projectMembersRef = (ownerId, projectId) =>
+  collection(
+    db,
+    "users",
+    validateMembershipId(ownerId, "Owner ID"),
+    "projects",
+    validateMembershipId(projectId, "Project ID"),
+    "members"
+  );
+
+
+const projectMemberRef = (ownerId, projectId, memberId) =>
+  doc(
+    projectMembersRef(ownerId, projectId),
+    validateMembershipId(memberId, "Member ID")
+  );
+
+
+export const getProjectMembers = async (ownerId, projectId) => {
+  const normalizedOwnerId = validateMembershipId(ownerId, "Owner ID");
+  const membersSnapshot = await getDocs(
+    projectMembersRef(normalizedOwnerId, projectId)
+  );
+
+  return membersSnapshot.docs
+    .map((memberDocument) =>
+      normalizeProjectMemberDocument(
+        normalizedOwnerId,
+        memberDocument.id,
+        memberDocument.data()
+      )
+    )
+    .sort((firstMember, secondMember) => {
+      if (firstMember.role === secondMember.role) {
+        return firstMember.userId.localeCompare(secondMember.userId);
+      }
+      return firstMember.role === "owner" ? -1 : 1;
+    });
+};
+
+
+export const ensureProjectOwnerMembership = async (ownerId, projectId) => {
+  const normalizedOwnerId = validateMembershipId(ownerId, "Owner ID");
+  const ownerMemberRef = projectMemberRef(
+    normalizedOwnerId,
+    projectId,
+    normalizedOwnerId
+  );
+
+  await runTransaction(db, async (transaction) => {
+    const ownerSnapshot = await transaction.get(ownerMemberRef);
+
+    if (ownerSnapshot.exists()) {
+      normalizeProjectMemberDocument(
+        normalizedOwnerId,
+        normalizedOwnerId,
+        ownerSnapshot.data()
+      );
+      return;
+    }
+
+    transaction.set(
+      ownerMemberRef,
+      buildProjectOwnerMembership(normalizedOwnerId, () => serverTimestamp())
+    );
+  });
+
+  return ownerMemberRef;
+};
+
+
+export const addProjectMemberRecord = async (
+  ownerId,
+  projectId,
+  memberId,
+  data = {}
+) => {
+  const normalizedOwnerId = validateMembershipId(ownerId, "Owner ID");
+  const normalizedMemberId = validateMembershipId(memberId, "Member ID");
+  const memberRef = projectMemberRef(
+    normalizedOwnerId,
+    projectId,
+    normalizedMemberId
+  );
+  const memberData = buildProjectMemberRecord(
+    normalizedOwnerId,
+    normalizedMemberId,
+    data,
+    () => serverTimestamp()
+  );
+
+  await runTransaction(db, async (transaction) => {
+    const memberSnapshot = await transaction.get(memberRef);
+
+    if (memberSnapshot.exists()) {
+      normalizeProjectMemberDocument(
+        normalizedOwnerId,
+        normalizedMemberId,
+        memberSnapshot.data()
+      );
+      return;
+    }
+
+    transaction.set(memberRef, memberData);
+  });
+
+  return memberRef;
+};
+
+
+export const removeProjectMemberRecord = async (
+  ownerId,
+  projectId,
+  memberId
+) => {
+  const normalizedOwnerId = validateMembershipId(ownerId, "Owner ID");
+  const normalizedMemberId = validateMembershipId(memberId, "Member ID");
+
+  if (normalizedMemberId === normalizedOwnerId) {
+    throw new Error("The project owner membership cannot be removed.");
+  }
+
+  const memberRef = projectMemberRef(
+    normalizedOwnerId,
+    projectId,
+    normalizedMemberId
+  );
+
+  return await runTransaction(db, async (transaction) => {
+    const memberSnapshot = await transaction.get(memberRef);
+    if (!memberSnapshot.exists()) return false;
+
+    normalizeProjectMemberDocument(
+      normalizedOwnerId,
+      normalizedMemberId,
+      memberSnapshot.data()
+    );
+    transaction.delete(memberRef);
+    return true;
+  });
+};
+
+
 export const getProjects = async (userId) => {
   try {
     const projectsRef = collection(db, "users", userId, "projects");
@@ -182,16 +333,17 @@ export const getProjects = async (userId) => {
 
 
 export const createProject = async (userId, projectData = {}) => {
+  const ownerId = validateMembershipId(userId, "Owner ID");
   const name = normalizeName(projectData.name);
 
   if (!name) {
     throw new Error("Project name cannot be empty.");
   }
 
-  const projectsRef = collection(db, "users", userId, "projects");
+  const projectsRef = collection(db, "users", ownerId, "projects");
   const status = normalizeStatus(projectData.status);
 
-  return await addDoc(projectsRef, {
+  const projectReference = await addDoc(projectsRef, {
     name,
     description: String(projectData.description || ""),
     color: String(projectData.color || ""),
@@ -202,6 +354,16 @@ export const createProject = async (userId, projectData = {}) => {
     updatedAt: serverTimestamp(),
     completedAt: status === "completed" ? serverTimestamp() : null,
   });
+
+  try {
+    await ensureProjectOwnerMembership(ownerId, projectReference.id);
+  } catch {
+    // Existing/deployed rules may not include the members subcollection yet.
+    // The owner remains authoritative through the project path and is treated
+    // as an implicit owner until this idempotent write can be retried.
+  }
+
+  return projectReference;
 };
 
 
@@ -264,10 +426,12 @@ export const updateProject = async (
 
 
 export const deleteProject = async (userId, projectId) => {
-  const tasksRef = collection(db, "users", userId, "tasks");
+  const ownerId = validateMembershipId(userId, "Owner ID");
+  const normalizedProjectId = validateMembershipId(projectId, "Project ID");
+  const tasksRef = collection(db, "users", ownerId, "tasks");
   const assignedTasksQuery = query(
     tasksRef,
-    where("projectId", "==", projectId)
+    where("projectId", "==", normalizedProjectId)
   );
   const assignedTasks = await getDocs(assignedTasksQuery);
 
@@ -292,10 +456,42 @@ export const deleteProject = async (userId, projectId) => {
   const projectRef = doc(
     db,
     "users",
-    userId,
+    ownerId,
     "projects",
-    projectId
+    normalizedProjectId
+  );
+  let membersSnapshot;
+  try {
+    membersSnapshot = await getDocs(
+      projectMembersRef(ownerId, normalizedProjectId)
+    );
+  } catch (error) {
+    if (error?.code === "permission-denied") {
+      // Preserve project deletion while deployed rules still predate the
+      // members subcollection. No member records can exist under those rules.
+      return await deleteDoc(projectRef);
+    }
+    throw error;
+  }
+  const nonOwnerMembers = membersSnapshot.docs.filter(
+    (memberDocument) => memberDocument.id !== ownerId
   );
 
-  return await deleteDoc(projectRef);
+  for (let index = 0; index < nonOwnerMembers.length; index += chunkSize) {
+    const batch = writeBatch(db);
+    nonOwnerMembers.slice(index, index + chunkSize).forEach((memberDocument) => {
+      batch.delete(memberDocument.ref);
+    });
+    await batch.commit();
+  }
+
+  const ownerMemberSnapshot = await getDoc(
+    projectMemberRef(ownerId, normalizedProjectId, ownerId)
+  );
+  const finalBatch = writeBatch(db);
+  if (ownerMemberSnapshot.exists()) {
+    finalBatch.delete(ownerMemberSnapshot.ref);
+  }
+  finalBatch.delete(projectRef);
+  return await finalBatch.commit();
 };

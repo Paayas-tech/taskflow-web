@@ -849,6 +849,8 @@ function App() {
             onCreateTask={() =>
               openTaskForm({ projectId: selectedProject.id })
             }
+            ownerId={user.uid}
+            ownerEmail={user.email || ""}
           />
         )}
 
