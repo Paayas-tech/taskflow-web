@@ -28,11 +28,14 @@ export default function ProjectTasksPage({
   onQuickUpdateTask,
   quickTaskPendingIds,
   onDeleteTask,
+  onArchiveTask,
   lists,
   onBack,
   onCreateTask,
   ownerId,
   ownerEmail,
+  browserNotificationsEnabled,
+  formatSettings,
 }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
@@ -90,6 +93,16 @@ export default function ProjectTasksPage({
       setMutationError(
         `We couldn't ${completed ? "complete" : "reopen"} “${task.title}”. Try again.`
       );
+    }
+  };
+
+  const handleArchiveTask = async (task) => {
+    setMutationError("");
+    try {
+      await onArchiveTask(task.id);
+    } catch (error) {
+      console.error("Error archiving project task:", error);
+      setMutationError(`We couldn't archive “${task.title}”. Try again.`);
     }
   };
 
@@ -267,6 +280,8 @@ export default function ProjectTasksPage({
               selected={selectedTaskId === task.id}
               onToggleCompletion={handleCompletionChange}
               onEdit={openEditor}
+              onArchive={handleArchiveTask}
+              formatSettings={formatSettings}
             />
           ))}
         </div>
@@ -281,8 +296,10 @@ export default function ProjectTasksPage({
           projectsLoading={projectsLoading}
           projectsError={projectsError}
           onRetryProjects={onRetryProjects}
+          browserNotificationsEnabled={browserNotificationsEnabled}
           onUpdateTask={onUpdateTask}
           onDeleteTask={onDeleteTask}
+          onArchiveTask={onArchiveTask}
           onClose={closeEditor}
           returnFocusElement={editTriggerRef.current}
         />

@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
+import ArchivedTasksPage from "./ArchivedTasksPage";
 import CalendarPage from "./CalendarPage";
 import Dashboard from "./Dashboard";
 import Login from "./Login";
 import ProjectsPage from "./ProjectsPage";
 import ProjectTasksPage from "./ProjectTasksPage";
+import SettingsPage from "./SettingsPage";
 import TaskForm from "./TaskForm";
 import TasksPage from "./TasksPage";
 import TodayPage from "./TodayPage";
@@ -15,6 +17,8 @@ import {
   createTask,
   updateTask,
   deleteTask,
+  archiveTask,
+  unarchiveTask,
 } from "./services/taskService";
 import {
   getLists,
@@ -25,7 +29,20 @@ import {
 import {
   createProject,
   getProjects,
+  updateProject,
 } from "./services/projectService";
+import { createReminderScheduler } from "./services/reminderService";
+import { getSettings, saveSettings } from "./services/settingsService";
+import {
+  defaultViewPath,
+  normalizeSettings,
+  resolveThemeMode,
+  weekStartIndex,
+} from "./domain/settingsDomain";
+import {
+  filterActiveTasks,
+  filterArchivedTasks,
+} from "./domain/archivedTasksDomain";
 
 const navItems = [
   { label: "Dashboard", path: "/", enabled: true, icon: "dashboard" },
@@ -34,7 +51,7 @@ const navItems = [
   { label: "Projects", path: "/projects", enabled: true, icon: "projects" },
   { label: "Calendar", path: "/calendar", enabled: true, icon: "calendar" },
   { label: "Reminders", enabled: false, icon: "reminders" },
-  { label: "Settings", enabled: false, icon: "settings" },
+  { label: "Settings", path: "/settings", enabled: true, icon: "settings" },
 ];
 
 const navIcons = {
@@ -98,7 +115,17 @@ const routeViews = {
   "/tasks": "tasks",
   "/projects": "projects",
   "/calendar": "calendar",
+  "/settings": "settings",
+  "/archived-tasks": "archived",
 };
+
+const updateSettingsLastViewed = (settings, path) => ({
+  ...settings,
+  navigation: {
+    ...settings.navigation,
+    lastViewedPath: path,
+  },
+});
 
 const projectIdFromPath = (pathname) => {
   if (!pathname.startsWith("/projects/")) return null;
@@ -130,7 +157,11 @@ const emptyTaskForm = {
   status: "todo",
   priority: "medium",
   dueDate: "",
+  endDate: "",
+  startTime: "",
+  endTime: "",
   reminder: false,
+  reminderAt: "",
   listId: "",
   projectId: "",
 };
@@ -145,22 +176,34 @@ function App() {
   const [tasksError, setTasksError] = useState("");
   const [tasks, setTasks] = useState([]);
   const [listsLoading, setListsLoading] = useState(false);
+  const [listsLoaded, setListsLoaded] = useState(false);
   const [listsError, setListsError] = useState("");
   const [lists, setLists] = useState([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectsError, setProjectsError] = useState("");
+  const [projectCreateRequest, setProjectCreateRequest] = useState(0);
   const [projects, setProjects] = useState([]);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskFormSaving, setTaskFormSaving] = useState(false);
   const [taskFormError, setTaskFormError] = useState("");
   const [taskForm, setTaskForm] = useState(emptyTaskForm);
+  const [settings, setSettings] = useState(() => normalizeSettings());
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsError, setSettingsError] = useState("");
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSaveMessage, setSettingsSaveMessage] = useState("");
+  const [reminderNotice, setReminderNotice] = useState(null);
   const [quickTaskPendingIds, setQuickTaskPendingIds] = useState(
     () => new Set()
   );
   const newTaskButtonRef = useRef(null);
   const taskFormSubmissionRef = useRef(false);
   const tasksRef = useRef([]);
+  const reminderSchedulerRef = useRef(null);
+  const settingsRef = useRef(settings);
+  const notifiedReminderIdsRef = useRef(new Set());
   const quickTaskMutationsRef = useRef(new Map());
+  const defaultRouteAppliedRef = useRef(false);
 
   const syncQuickTaskPendingIds = useCallback(() => {
     setQuickTaskPendingIds(
@@ -206,6 +249,7 @@ function App() {
     if (!user) return;
 
     setListsLoading(true);
+    setListsLoaded(false);
     setListsError("");
 
     try {
@@ -219,6 +263,7 @@ function App() {
       );
     } finally {
       setListsLoading(false);
+      setListsLoaded(true);
     }
   }, [user]);
 
@@ -242,14 +287,56 @@ function App() {
     }
   }, [user]);
 
+  const loadSettings = useCallback(async () => {
+    if (!user) return;
+
+    setSettingsLoading(true);
+    setSettingsError("");
+    setSettingsSaveMessage("");
+
+    try {
+      const userSettings = await getSettings(user);
+      settingsRef.current = userSettings;
+      setSettings(userSettings);
+
+      if (!defaultRouteAppliedRef.current) {
+        defaultRouteAppliedRef.current = true;
+        if (normalizePath(window.location.pathname) === "/") {
+          const startupPath = defaultViewPath(
+            userSettings.navigation.defaultView,
+            userSettings.navigation.lastViewedPath
+          );
+          if (startupPath !== "/") {
+            window.history.replaceState({}, "", startupPath);
+            setCurrentPath(startupPath);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error loading settings:", error);
+      const fallback = normalizeSettings({}, user);
+      settingsRef.current = fallback;
+      setSettings(fallback);
+      setSettingsError(
+        "We couldn't load your saved settings. Safe defaults are active."
+      );
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (!currentUser || currentUser.uid !== user?.uid) {
+        defaultRouteAppliedRef.current = false;
+        setListsLoaded(false);
+      }
       setUser(currentUser);
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user?.uid]);
 
   useEffect(() => {
     const syncPathFromBrowser = () => {
@@ -273,12 +360,87 @@ function App() {
       loadTasks();
       loadLists();
       loadProjects();
+      loadSettings();
     }
-  }, [user, loadTasks, loadLists, loadProjects]);
+  }, [user, loadTasks, loadLists, loadProjects, loadSettings]);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const resolved = resolveThemeMode(settings.theme.mode, mediaQuery.matches);
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.dataset.themePreference = settings.theme.mode;
+      document.documentElement.style.colorScheme = resolved;
+    };
+
+    applyTheme();
+    if (settings.theme.mode !== "system") return undefined;
+
+    mediaQuery.addEventListener?.("change", applyTheme);
+    return () => mediaQuery.removeEventListener?.("change", applyTheme);
+  }, [settings.theme.mode]);
+
+  useEffect(() => {
+    document.documentElement.dataset.background = settings.background.selected;
+  }, [settings.background.selected]);
+
+  useEffect(() => {
+    const defaultListId = settings.taskDefaults.listId;
+    if (
+      !user ||
+      !listsLoaded ||
+      !defaultListId ||
+      lists.some((list) => list.id === defaultListId)
+    ) {
+      return;
+    }
+
+    const nextSettings = {
+      ...settings,
+      taskDefaults: { ...settings.taskDefaults, listId: null },
+    };
+    settingsRef.current = nextSettings;
+    setSettings(nextSettings);
+    void saveSettings(user, nextSettings).catch((error) => {
+      console.error("Error resetting an unavailable default list:", error);
+    });
+  }, [lists, listsLoaded, settings, user]);
 
   useEffect(() => {
     tasksRef.current = tasks;
+    reminderSchedulerRef.current?.check();
   }, [tasks]);
+
+  useEffect(() => {
+    if (!user) {
+      setReminderNotice(null);
+      return undefined;
+    }
+
+    // Never let a new authenticated session inspect reminder data retained in
+    // memory from the previous user while its own task load is still pending.
+    tasksRef.current = [];
+    notifiedReminderIdsRef.current.clear();
+    settingsRef.current = normalizeSettings({}, user);
+
+    const scheduler = createReminderScheduler({
+      getTasks: () => tasksRef.current,
+      notifiedIds: notifiedReminderIdsRef.current,
+      onInAppReminder: (task) => setReminderNotice(task),
+      getPreferences: () => settingsRef.current.reminder,
+    });
+    reminderSchedulerRef.current = scheduler;
+    scheduler.start();
+
+    return () => {
+      reminderSchedulerRef.current = null;
+      scheduler.stop();
+    };
+  }, [user]);
 
   const handleTaskChange = (event) => {
     const { name, value, type, checked } = event.target;
@@ -314,7 +476,11 @@ function App() {
         completed: taskForm.status === "completed",
         priority: taskForm.priority,
         dueDate: taskForm.dueDate,
+        endDate: taskForm.endDate,
+        startTime: taskForm.startTime,
+        endTime: taskForm.endTime,
         reminder: taskForm.reminder,
+        reminderAt: taskForm.reminderAt,
         listId: taskForm.listId || null,
         projectId: taskForm.projectId || null,
       });
@@ -451,6 +617,30 @@ function App() {
     [user, loadTasks]
   );
 
+  const handleArchiveTask = useCallback(
+    async (taskId) => {
+      if (!user) {
+        throw new Error("You must be signed in to archive a task.");
+      }
+
+      await archiveTask(user.uid, taskId);
+      await loadTasks();
+    },
+    [user, loadTasks]
+  );
+
+  const handleRestoreTask = useCallback(
+    async (taskId) => {
+      if (!user) {
+        throw new Error("You must be signed in to restore a task.");
+      }
+
+      await unarchiveTask(user.uid, taskId);
+      await loadTasks();
+    },
+    [user, loadTasks]
+  );
+
   const handleCreateList = useCallback(
     async (data) => {
       if (!user) {
@@ -507,9 +697,61 @@ function App() {
     [user, projects.length, loadProjects]
   );
 
+  const handleRestoreProject = useCallback(
+    async (projectId) => {
+      if (!user) throw new Error("You must be signed in to restore a project.");
+      await updateProject(user.uid, projectId, { status: "active" });
+      await loadProjects();
+    },
+    [user, loadProjects]
+  );
+
+  const handleSettingsChange = (nextSettings) => {
+    settingsRef.current = nextSettings;
+    setSettings(nextSettings);
+    setSettingsSaveMessage("");
+    setSettingsError("");
+  };
+
+  const handleSaveSettings = async (nextSettings) => {
+    if (!user) throw new Error("You must be signed in to save settings.");
+
+    setSettingsSaving(true);
+    setSettingsError("");
+    setSettingsSaveMessage("");
+
+    try {
+      const result = await saveSettings(user, nextSettings);
+      settingsRef.current = result.settings;
+      setSettings(result.settings);
+      setSettingsSaveMessage(
+        result.profileUpdated
+          ? "Settings saved in this browser."
+          : "Settings saved locally. Your display name will sync when you're online."
+      );
+      return result.settings;
+    } catch (error) {
+      console.error("Error saving settings:", error);
+      setSettingsError(
+        error?.message || "We couldn't save your settings. Please try again."
+      );
+      throw error;
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
   const openTaskForm = (initialValues = {}) => {
     setTaskFormError("");
-    setTaskForm({ ...emptyTaskForm, ...initialValues });
+    const defaultListId = settings.taskDefaults.listId;
+    const validDefaultListId = lists.some((list) => list.id === defaultListId)
+      ? defaultListId
+      : "";
+    setTaskForm({
+      ...emptyTaskForm,
+      listId: validDefaultListId,
+      ...initialValues,
+    });
     setShowTaskForm(true);
   };
 
@@ -569,6 +811,18 @@ function App() {
     window.history.pushState({}, "", path);
     setCurrentPath(path);
     window.scrollTo({ top: 0, behavior: "auto" });
+
+    if (
+      user &&
+      ["/", "/today", "/tasks", "/projects", "/calendar"].includes(path)
+    ) {
+      const nextSettings = updateSettingsLastViewed(settingsRef.current, path);
+      settingsRef.current = nextSettings;
+      setSettings(nextSettings);
+      void saveSettings(user, nextSettings).catch((error) => {
+        console.error("Error remembering the last viewed page:", error);
+      });
+    }
   };
 
   if (loading) {
@@ -580,6 +834,8 @@ function App() {
   }
 
   const selectedProjectId = projectIdFromPath(currentPath);
+  const activeTasks = filterActiveTasks(tasks);
+  const archivedTasks = filterArchivedTasks(tasks);
   const selectedProject = projects.find(
     (project) => project.id === selectedProjectId
   );
@@ -587,15 +843,19 @@ function App() {
     ? "project"
     : routeViews[currentPath];
   const selectedProjectTaskCount = selectedProject
-    ? tasks.filter((task) => task.projectId === selectedProject.id).length
+    ? activeTasks.filter((task) => task.projectId === selectedProject.id).length
     : 0;
   const pageTitle =
     currentView === "tasks"
       ? "Tasks"
       : currentView === "today"
         ? "Today"
-        : currentView === "calendar"
+      : currentView === "archived"
+        ? "Archived Tasks"
+      : currentView === "calendar"
           ? "Calendar"
+        : currentView === "settings"
+          ? "Settings"
         : currentView === "projects"
           ? "Projects"
           : currentView === "project"
@@ -606,8 +866,12 @@ function App() {
       ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`
       : currentView === "today"
         ? "Overdue and due-today tasks in one focused view."
+      : currentView === "archived"
+        ? `${archivedTasks.length} ${archivedTasks.length === 1 ? "archived task" : "archived tasks"}`
         : currentView === "calendar"
           ? "Plan dated work from your existing TaskFlow tasks."
+        : currentView === "settings"
+          ? "Personalize reminders, notifications, appearance, and your profile."
         : currentView === "projects"
           ? `${projects.length} ${projects.length === 1 ? "project" : "projects"}`
           : currentView === "project"
@@ -630,7 +894,8 @@ function App() {
           {navItems.map((item) => {
             const isActive =
               item.path === currentPath ||
-              (item.path === "/projects" && currentView === "project");
+              (item.path === "/projects" && currentView === "project") ||
+              (item.path === "/settings" && currentView === "archived");
 
             return (
               <button
@@ -656,10 +921,10 @@ function App() {
 
         <div className="sidebar-account">
           <div className="sidebar-avatar" aria-hidden="true">
-            {user.email?.[0]?.toUpperCase() || "U"}
+            {(settings.profile.displayName || user.email)?.[0]?.toUpperCase() || "U"}
           </div>
           <div className="sidebar-account-copy">
-            <strong>{user.email}</strong>
+            <strong>{settings.profile.displayName || user.email}</strong>
             <span>Signed in</span>
           </div>
           <button
@@ -679,26 +944,28 @@ function App() {
             <p>{pageSubtitle}</p>
           </div>
 
-          <div className="topbar-actions">
-            <button
-              ref={newTaskButtonRef}
-              className="primary-btn"
-              type="button"
-              onClick={() =>
-                openTaskForm(
-                  currentView === "project" && selectedProject
-                    ? { projectId: selectedProject.id }
-                    : {}
-                )
-              }
-              disabled={taskFormSaving}
-              aria-haspopup="dialog"
-              aria-expanded={showTaskForm}
-              aria-controls="create-task-dialog"
-            >
-              + New Task
-            </button>
-          </div>
+          {currentView !== "settings" && currentView !== "archived" && (
+            <div className="topbar-actions">
+              <button
+                ref={newTaskButtonRef}
+                className="primary-btn"
+                type="button"
+                onClick={() =>
+                  openTaskForm(
+                    currentView === "project" && selectedProject
+                      ? { projectId: selectedProject.id }
+                      : {}
+                  )
+                }
+                disabled={taskFormSaving}
+                aria-haspopup="dialog"
+                aria-expanded={showTaskForm}
+                aria-controls="create-task-dialog"
+              >
+                + New Task
+              </button>
+            </div>
+          )}
         </header>
 
         {showTaskForm && (
@@ -749,6 +1016,10 @@ function App() {
                 projectsLoading={projectsLoading}
                 projectsError={projectsError}
                 onRetryProjects={loadProjects}
+                defaultReminderMinutes={settings.reminder.defaultTime}
+                browserNotificationsEnabled={
+                  settings.reminder.enableBrowserNotifications
+                }
               />
             </section>
           </div>
@@ -756,7 +1027,7 @@ function App() {
 
         <div className="route-content" hidden={currentView !== "tasks"}>
           <TasksPage
-            tasks={tasks}
+            tasks={activeTasks}
             tasksLoading={tasksLoading}
             tasksError={tasksError}
             onRetry={loadTasks}
@@ -764,6 +1035,7 @@ function App() {
             onQuickUpdateTask={handleQuickUpdateTask}
             quickTaskPendingIds={quickTaskPendingIds}
             onDeleteTask={handleDeleteTask}
+            onArchiveTask={handleArchiveTask}
             lists={lists}
             listsLoading={listsLoading}
             listsError={listsError}
@@ -771,16 +1043,20 @@ function App() {
             onCreateList={handleCreateList}
             onRenameList={handleRenameList}
             onDeleteList={handleDeleteList}
+            formatSettings={settings.time}
             projects={projects}
             projectsLoading={projectsLoading}
             projectsError={projectsError}
             onRetryProjects={loadProjects}
+            browserNotificationsEnabled={
+              settings.reminder.enableBrowserNotifications
+            }
           />
         </div>
 
         <div className="route-content" hidden={currentView !== "today"}>
           <TodayPage
-            tasks={tasks}
+            tasks={activeTasks}
             tasksLoading={tasksLoading}
             tasksError={tasksError}
             onRetry={loadTasks}
@@ -788,17 +1064,23 @@ function App() {
             onQuickUpdateTask={handleQuickUpdateTask}
             quickTaskPendingIds={quickTaskPendingIds}
             onDeleteTask={handleDeleteTask}
+            onArchiveTask={handleArchiveTask}
             lists={lists}
+            formatSettings={settings.time}
+            myDaySettings={settings.myDay}
             projects={projects}
             projectsLoading={projectsLoading}
             projectsError={projectsError}
             onRetryProjects={loadProjects}
+            browserNotificationsEnabled={
+              settings.reminder.enableBrowserNotifications
+            }
           />
         </div>
 
         <div className="route-content" hidden={currentView !== "calendar"}>
           <CalendarPage
-            tasks={tasks}
+            tasks={activeTasks}
             tasksLoading={tasksLoading}
             tasksError={tasksError}
             onRetry={loadTasks}
@@ -806,12 +1088,24 @@ function App() {
             onQuickUpdateTask={handleQuickUpdateTask}
             quickTaskPendingIds={quickTaskPendingIds}
             onDeleteTask={handleDeleteTask}
-            onCreateTask={(dueDate) => openTaskForm({ dueDate })}
+            onArchiveTask={handleArchiveTask}
+            onCreateTask={(schedule) =>
+              openTaskForm(
+                typeof schedule === "string"
+                  ? { dueDate: schedule }
+                  : schedule
+              )
+            }
+            formatSettings={settings.time}
+            weekStartsOn={weekStartIndex(settings.time.weekStartsOn)}
             lists={lists}
             projects={projects}
             projectsLoading={projectsLoading}
             projectsError={projectsError}
             onRetryProjects={loadProjects}
+            browserNotificationsEnabled={
+              settings.reminder.enableBrowserNotifications
+            }
           />
         </div>
 
@@ -822,6 +1116,7 @@ function App() {
             error={projectsError}
             onRetry={loadProjects}
             onCreateProject={handleCreateProject}
+            createRequest={projectCreateRequest}
             onOpenProject={(projectId) =>
               navigate(`/projects/${encodeURIComponent(projectId)}`)
             }
@@ -836,7 +1131,7 @@ function App() {
             projectsLoading={projectsLoading}
             projectsError={projectsError}
             onRetryProjects={loadProjects}
-            tasks={tasks}
+            tasks={activeTasks}
             tasksLoading={tasksLoading}
             tasksError={tasksError}
             onRetryTasks={loadTasks}
@@ -844,25 +1139,100 @@ function App() {
             onQuickUpdateTask={handleQuickUpdateTask}
             quickTaskPendingIds={quickTaskPendingIds}
             onDeleteTask={handleDeleteTask}
+            onArchiveTask={handleArchiveTask}
             lists={lists}
+            formatSettings={settings.time}
             onBack={() => navigate("/projects")}
             onCreateTask={() =>
               openTaskForm({ projectId: selectedProject.id })
             }
             ownerId={user.uid}
             ownerEmail={user.email || ""}
+            browserNotificationsEnabled={
+              settings.reminder.enableBrowserNotifications
+            }
           />
         )}
 
         <div className="route-content" hidden={currentView !== "dashboard"}>
           <Dashboard
-            tasks={tasks}
+            tasks={activeTasks}
             tasksLoading={tasksLoading}
             tasksError={tasksError}
             onRetry={loadTasks}
+            myDaySettings={settings.myDay}
+          />
+        </div>
+
+        <div className="route-content" hidden={currentView !== "settings"}>
+          <SettingsPage
+            settings={settings}
+            loading={settingsLoading}
+            error={settingsError}
+            saving={settingsSaving}
+            saveMessage={settingsSaveMessage}
+            onRetry={loadSettings}
+            onChange={handleSettingsChange}
+            onSave={handleSaveSettings}
+            onCommit={handleSaveSettings}
+            onSignOut={() => signOut(auth)}
+            onNavigate={navigate}
+            onOpenProjectCreate={() => {
+              setProjectCreateRequest((request) => request + 1);
+              navigate("/projects");
+            }}
+            onRestoreProject={handleRestoreProject}
+            exportData={{
+              version: 1,
+              exportedAt: new Date().toISOString(),
+              settings,
+              tasks,
+              lists,
+              projects,
+            }}
+          />
+        </div>
+
+        <div className="route-content" hidden={currentView !== "archived"}>
+          <ArchivedTasksPage
+            tasks={archivedTasks}
+            loading={tasksLoading}
+            error={tasksError}
+            onRetry={loadTasks}
+            onRestoreTask={handleRestoreTask}
+            onUpdateTask={handleUpdateTask}
+            onDeleteTask={handleDeleteTask}
+            onBack={() => navigate("/settings")}
+            lists={lists}
+            projects={projects}
+            projectsLoading={projectsLoading}
+            projectsError={projectsError}
+            onRetryProjects={loadProjects}
+            formatSettings={settings.time}
+            browserNotificationsEnabled={
+              settings.reminder.enableBrowserNotifications
+            }
           />
         </div>
       </main>
+
+      {reminderNotice && (
+        <aside className="reminder-toast" role="status" aria-live="assertive">
+          <span className="reminder-toast-icon" aria-hidden="true">!</span>
+          <div>
+            <strong>Task reminder</strong>
+            <p>{reminderNotice.title}</p>
+          </div>
+          <button
+            className="ghost-btn compact-btn"
+            type="button"
+            onClick={() => setReminderNotice(null)}
+            aria-label="Dismiss reminder"
+          >
+            Dismiss
+          </button>
+        </aside>
+      )}
     </div>
   );
 }

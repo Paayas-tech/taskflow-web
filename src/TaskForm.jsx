@@ -1,4 +1,24 @@
-import { useId } from "react";
+import { useId, useState } from "react";
+import {
+  deriveIsAllDay,
+  getScheduleValidationError,
+} from "./domain/calendarDomain";
+import {
+  calculateReminderPreset,
+  defaultReminderAt,
+  getReminderValidationError,
+  toDateTimeLocalValue,
+} from "./domain/reminderDomain";
+import { requestNotificationPermission } from "./services/reminderService";
+
+const reminderPresets = [
+  ["at-time", "At time of task"],
+  ["5-minutes", "5 minutes before"],
+  ["15-minutes", "15 minutes before"],
+  ["30-minutes", "30 minutes before"],
+  ["1-hour", "1 hour before"],
+  ["1-day", "1 day before"],
+];
 
 export default function TaskForm({
   values,
@@ -14,15 +34,105 @@ export default function TaskForm({
   projectsLoading = false,
   projectsError = "",
   onRetryProjects,
+  defaultReminderMinutes = 15,
+  browserNotificationsEnabled = true,
 }) {
   const projectFieldId = useId();
+  const reminderFieldId = useId();
+  const [reminderPreset, setReminderPreset] = useState("custom");
+  const [reminderPresetError, setReminderPresetError] = useState("");
   const selectedProjectId = values.projectId || "";
   const selectedProjectIsUnavailable =
     selectedProjectId &&
     !projects.some((project) => project.id === selectedProjectId);
+  const isAllDay = deriveIsAllDay(values);
+  const scheduleError = getScheduleValidationError(values);
+  const reminderError = getReminderValidationError(values);
+
+  const updateField = (name, value, type = "text") => {
+    onChange({
+      target: {
+        name,
+        value,
+        type,
+        checked: type === "checkbox" ? value : false,
+      },
+    });
+  };
+
+  const handleAllDayChange = (event) => {
+    if (event.target.checked) {
+      updateField("startTime", "");
+      updateField("endTime", "");
+      return;
+    }
+
+    updateField("startTime", values.startTime || "09:00");
+    updateField("endTime", values.endTime || "10:00");
+  };
+
+  const handleSubmit = (event) => {
+    if (scheduleError || reminderError) {
+      event.preventDefault();
+      return;
+    }
+
+    onSubmit(event);
+  };
+
+  const handleReminderToggle = (event) => {
+    const enabled = event.target.checked;
+    updateField("reminder", enabled, "checkbox");
+    setReminderPresetError("");
+
+    if (!enabled) {
+      updateField("reminderAt", "");
+      setReminderPreset("custom");
+      return;
+    }
+
+    if (browserNotificationsEnabled) void requestNotificationPermission();
+    if (!values.reminderAt) {
+      updateField(
+        "reminderAt",
+        toDateTimeLocalValue(
+          defaultReminderAt(values, new Date(), defaultReminderMinutes)
+        )
+      );
+      setReminderPreset("custom");
+    }
+  };
+
+  const handleReminderPreset = (event) => {
+    const preset = event.target.value;
+    setReminderPreset(preset);
+    setReminderPresetError("");
+    if (preset === "custom") return;
+
+    const reminderAt = calculateReminderPreset(values, preset);
+    if (!reminderAt) {
+      setReminderPresetError(
+        "Choose a future task date and time before using this preset."
+      );
+      return;
+    }
+
+    if (!values.reminder) {
+      updateField("reminder", true, "checkbox");
+      if (browserNotificationsEnabled) void requestNotificationPermission();
+    }
+    updateField("reminderAt", toDateTimeLocalValue(reminderAt));
+  };
+
+  const clearReminder = () => {
+    updateField("reminder", false, "checkbox");
+    updateField("reminderAt", "");
+    setReminderPreset("custom");
+    setReminderPresetError("");
+  };
 
   return (
-    <form className="task-editor-form" onSubmit={onSubmit} noValidate>
+    <form className="task-editor-form" onSubmit={handleSubmit} noValidate>
       <section className="task-form-section task-form-primary">
         <label className="task-form-field task-title-field">
           <span>Task title</span>
@@ -139,7 +249,7 @@ export default function TaskForm({
           </div>
 
           <label className="task-form-field">
-            <span>Due date</span>
+            <span>Start / due date</span>
             <input
               type="date"
               name="dueDate"
@@ -147,6 +257,41 @@ export default function TaskForm({
               onChange={onChange}
               onInput={onChange}
               disabled={busy}
+            />
+          </label>
+
+          <label className="task-form-field">
+            <span>End date <small>Optional</small></span>
+            <input
+              type="date"
+              name="endDate"
+              value={values.endDate || ""}
+              onChange={onChange}
+              onInput={onChange}
+              min={values.dueDate || undefined}
+              disabled={busy}
+            />
+          </label>
+
+          <label className="task-form-field">
+            <span>Start time <small>Optional</small></span>
+            <input
+              type="time"
+              name="startTime"
+              value={values.startTime || ""}
+              onChange={onChange}
+              disabled={busy || isAllDay}
+            />
+          </label>
+
+          <label className="task-form-field">
+            <span>End time <small>Optional</small></span>
+            <input
+              type="time"
+              name="endTime"
+              value={values.endTime || ""}
+              onChange={onChange}
+              disabled={busy || isAllDay}
             />
           </label>
 
@@ -179,19 +324,105 @@ export default function TaskForm({
           </label>
         </div>
 
+        <label className="task-all-day-field">
+          <input
+            type="checkbox"
+            checked={isAllDay}
+            onChange={handleAllDayChange}
+            disabled={busy}
+          />
+          <span>
+            <strong>All day</strong>
+            Clear specific times and show this as an all-day calendar item.
+          </span>
+        </label>
+
+        <p className="task-schedule-hint">
+          Until TaskFlow adds task and event types, this date is both a task
+          deadline and a calendar start date.
+        </p>
+
+        {scheduleError && (
+          <p className="form-error task-schedule-error" role="alert">
+            {scheduleError}
+          </p>
+        )}
+
         <label className="task-reminder-field">
           <input
             type="checkbox"
             name="reminder"
             checked={values.reminder}
-            onChange={onChange}
+            onChange={handleReminderToggle}
             disabled={busy}
           />
           <span>
             <strong>Reminder</strong>
-            Keep this task visible in reminder summaries.
+            Schedule a browser or in-app notification.
           </span>
         </label>
+
+        {values.reminder && (
+          <div className="task-reminder-controls">
+            <label className="task-form-field" htmlFor={`${reminderFieldId}-preset`}>
+              <span>Reminder timing</span>
+              <select
+                id={`${reminderFieldId}-preset`}
+                value={reminderPreset}
+                onChange={handleReminderPreset}
+                disabled={busy}
+              >
+                <option value="custom">Custom date and time</option>
+                {reminderPresets.map(([value, label]) => (
+                  <option key={value} value={value} disabled={!values.dueDate}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="task-form-field" htmlFor={`${reminderFieldId}-date`}>
+              <span>Date and time</span>
+              <input
+                id={`${reminderFieldId}-date`}
+                type="datetime-local"
+                name="reminderAt"
+                value={values.reminderAt || ""}
+                onChange={(event) => {
+                  setReminderPreset("custom");
+                  setReminderPresetError("");
+                  onChange(event);
+                }}
+                disabled={busy}
+              />
+            </label>
+
+            <button
+              className="ghost-btn compact-btn task-reminder-clear"
+              type="button"
+              onClick={clearReminder}
+              disabled={busy}
+            >
+              Clear reminder
+            </button>
+
+            {!values.reminderAt && (
+              <p className="task-reminder-legacy-note">
+                This legacy reminder remains visual-only until a time is selected.
+              </p>
+            )}
+            {reminderPresetError && (
+              <p className="form-error" role="alert">
+                {reminderPresetError}
+              </p>
+            )}
+            {reminderError && (
+              <p className="form-error" role="alert">
+                {reminderError}
+              </p>
+            )}
+          </div>
+        )}
       </section>
 
       {error && (
@@ -209,7 +440,11 @@ export default function TaskForm({
         >
           Cancel
         </button>
-        <button className="primary-btn" type="submit" disabled={busy}>
+        <button
+          className="primary-btn"
+          type="submit"
+          disabled={busy || Boolean(scheduleError) || Boolean(reminderError)}
+        >
           {busy ? busyLabel : submitLabel}
         </button>
       </div>

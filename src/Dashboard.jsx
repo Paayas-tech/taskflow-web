@@ -5,6 +5,7 @@ import {
   formatTaskDueDate,
   isTaskComplete,
 } from "./domain/taskDomain";
+import { effectiveMyDayDate } from "./domain/settingsDomain";
 
 function DashboardTaskRow({ task, dateLabel }) {
   const isOverdue = dateLabel?.startsWith("Overdue");
@@ -37,8 +38,9 @@ export default function Dashboard({
   tasksLoading,
   tasksError,
   onRetry,
+  myDaySettings,
 }) {
-  const now = new Date();
+  const now = effectiveMyDayDate(new Date(), myDaySettings);
   const todayKey = dateOnlyKey(now);
   const currentDate = new Intl.DateTimeFormat(undefined, {
     weekday: "long",

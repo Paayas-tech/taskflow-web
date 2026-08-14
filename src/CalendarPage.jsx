@@ -1,21 +1,34 @@
 import { useMemo, useRef, useState } from "react";
+import CalendarAgendaView from "./CalendarAgendaView";
+import CalendarDayView from "./CalendarDayView";
+import CalendarEvent from "./CalendarEvent";
+import CalendarWeekView from "./CalendarWeekView";
 import TaskEditModal from "./TaskEditModal";
 import TaskRow from "./TaskRow";
 import {
+  assignMultiDayLanes,
+  clipDateRange,
+  createCalendarTaskInitialValues,
+  buildCalendarWeek,
+  groupCalendarAgenda,
+  isValidCalendarDate,
+  normalizeTaskSchedule,
+  segmentMultiDayItems,
+  shiftCalendarDate,
+} from "./domain/calendarDomain";
+import {
   buildCalendarMonthGrid,
   calendarMonthStart,
-  calendarTasks,
-  calendarTasksByDate,
   dateOnlyKey,
   isTaskComplete,
   localDateFromDateOnly,
   shiftCalendarMonth,
-  tasksForCalendarDate,
-  tasksForCalendarMonth,
   upcomingCalendarTasks,
 } from "./domain/taskDomain";
 
 const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const visibleEventLimit = 3;
+const calendarViews = ["month", "week", "day", "agenda"];
 
 const formatMonth = (date) =>
   new Intl.DateTimeFormat(undefined, {
@@ -34,6 +47,34 @@ const formatSelectedDate = (dateKey) => {
   }).format(date);
 };
 
+const formatWeekRange = (dateKey, weekStartsOn) => {
+  const week = buildCalendarWeek(dateKey, weekStartsOn);
+  if (!week.length) return "Week";
+
+  const start = week[0].date;
+  const end = week.at(-1).date;
+  const sameMonth = start.getMonth() === end.getMonth();
+  const startLabel = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(sameMonth ? {} : { year: "numeric" }),
+  }).format(start);
+  const endLabel = new Intl.DateTimeFormat(undefined, {
+    month: sameMonth ? undefined : "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(end);
+  return `${startLabel}–${endLabel}`;
+};
+
+const chunkWeeks = (monthGrid) =>
+  Array.from({ length: 6 }, (_, index) =>
+    monthGrid.slice(index * 7, index * 7 + 7)
+  );
+
+const isMultiDayTask = (task) =>
+  isValidCalendarDate(task.endDate) && task.endDate > task.dueDate;
+
 export default function CalendarPage({
   tasks,
   tasksLoading,
@@ -43,42 +84,123 @@ export default function CalendarPage({
   onQuickUpdateTask,
   quickTaskPendingIds,
   onDeleteTask,
+  onArchiveTask,
   onCreateTask,
   lists,
   projects,
   projectsLoading,
   projectsError,
   onRetryProjects,
+  browserNotificationsEnabled,
+  formatSettings = {},
+  weekStartsOn = 0,
 }) {
   const now = new Date();
   const todayKey = dateOnlyKey(now);
   const [visibleMonth, setVisibleMonth] = useState(() =>
     calendarMonthStart(now)
   );
+  const [calendarView, setCalendarView] = useState("month");
   const [selectedDateKey, setSelectedDateKey] = useState(todayKey);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [mutationError, setMutationError] = useState("");
   const editTriggerRef = useRef(null);
 
   const monthGrid = useMemo(
-    () => buildCalendarMonthGrid(visibleMonth),
-    [visibleMonth]
+    () => buildCalendarMonthGrid(visibleMonth, weekStartsOn),
+    [visibleMonth, weekStartsOn]
   );
-  const datedTasks = useMemo(() => calendarTasks(tasks), [tasks]);
-  const tasksByDate = useMemo(() => calendarTasksByDate(tasks), [tasks]);
-  const selectedDateTasks = useMemo(
-    () => tasksForCalendarDate(tasks, selectedDateKey),
-    [selectedDateKey, tasks]
+  const orderedWeekdayLabels = useMemo(
+    () => [
+      ...weekdayLabels.slice(weekStartsOn),
+      ...weekdayLabels.slice(0, weekStartsOn),
+    ],
+    [weekStartsOn]
+  );
+  const weeks = useMemo(() => chunkWeeks(monthGrid), [monthGrid]);
+  const normalizedTasks = useMemo(
+    () =>
+      tasks
+        .map((task) => ({ ...task, ...normalizeTaskSchedule(task) }))
+        .filter((task) => isValidCalendarDate(task.dueDate)),
+    [tasks]
+  );
+  const agendaByDate = useMemo(
+    () =>
+      new Map(
+        groupCalendarAgenda(normalizedTasks, { expandMultiDay: true }).map(
+          ({ date, items }) => [date, items]
+        )
+      ),
+    [normalizedTasks]
+  );
+  const selectedDateTasks = agendaByDate.get(selectedDateKey) || [];
+  const gridStartDate = monthGrid[0]?.key || "";
+  const gridEndDate = monthGrid.at(-1)?.key || "";
+  const monthStartDate = dateOnlyKey(calendarMonthStart(visibleMonth));
+  const monthEndDate = dateOnlyKey(
+    new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0)
   );
   const visibleMonthTasks = useMemo(
-    () => tasksForCalendarMonth(tasks, visibleMonth),
-    [tasks, visibleMonth]
+    () =>
+      normalizedTasks.filter((task) =>
+        clipDateRange(
+          task.dueDate,
+          task.endDate || task.dueDate,
+          monthStartDate,
+          monthEndDate
+        )
+      ),
+    [monthEndDate, monthStartDate, normalizedTasks]
   );
+  const positionedSegments = useMemo(
+    () =>
+      assignMultiDayLanes(
+        segmentMultiDayItems(
+          normalizedTasks.filter(isMultiDayTask),
+          gridStartDate,
+          gridEndDate,
+          weekStartsOn
+        )
+      ),
+    [gridEndDate, gridStartDate, normalizedTasks, weekStartsOn]
+  );
+  const segmentsByWeek = useMemo(() => {
+    const grouped = new Map();
+    positionedSegments.forEach((segment) => {
+      const row = grouped.get(segment.rowKey) || [];
+      row.push(segment);
+      grouped.set(segment.rowKey, row);
+    });
+    return grouped;
+  }, [positionedSegments]);
   const upcomingTasks = useMemo(
-    () => upcomingCalendarTasks(tasks, visibleMonth),
-    [tasks, visibleMonth]
+    () => upcomingCalendarTasks(normalizedTasks, visibleMonth),
+    [normalizedTasks, visibleMonth]
   );
   const selectedTask = tasks.find((task) => task.id === selectedTaskId);
+  const calendarTitle =
+    calendarView === "month"
+      ? formatMonth(visibleMonth)
+      : calendarView === "week"
+        ? formatWeekRange(selectedDateKey, weekStartsOn)
+        : calendarView === "day"
+          ? formatSelectedDate(selectedDateKey)
+          : "Agenda";
+  const calendarSummary =
+    calendarView === "month"
+      ? `${visibleMonthTasks.length} ${
+          visibleMonthTasks.length === 1 ? "task" : "tasks"
+        } scheduled this month`
+      : calendarView === "week"
+        ? "Seven-day schedule with all-day and timed tasks"
+        : calendarView === "day"
+          ? `${selectedDateTasks.length} ${
+              selectedDateTasks.length === 1 ? "task" : "tasks"
+            } on this date`
+          : `${normalizedTasks.length} scheduled ${
+              normalizedTasks.length === 1 ? "task" : "tasks"
+            }`;
 
   const selectDate = (dateKey) => {
     setSelectedDateKey(dateKey);
@@ -92,10 +214,30 @@ export default function CalendarPage({
     }
   };
 
+  const createOnDate = (dateKey) => {
+    setSelectedDateKey(dateKey);
+    onCreateTask(createCalendarTaskInitialValues({ date: dateKey }));
+  };
+
   const changeMonth = (amount) => {
     const nextMonth = shiftCalendarMonth(visibleMonth, amount);
     setVisibleMonth(nextMonth);
     setSelectedDateKey(dateOnlyKey(nextMonth));
+  };
+
+  const changeSelectedDate = (amount) => {
+    const nextDate = shiftCalendarDate(selectedDateKey, amount);
+    if (!nextDate) return;
+    selectDate(nextDate);
+  };
+
+  const changePeriod = (amount) => {
+    if (calendarView === "month") {
+      changeMonth(amount);
+      return;
+    }
+
+    changeSelectedDate(calendarView === "week" ? amount * 7 : amount);
   };
 
   const returnToToday = () => {
@@ -131,6 +273,16 @@ export default function CalendarPage({
     }
   };
 
+  const handleArchiveTask = async (task) => {
+    setMutationError("");
+    try {
+      await onArchiveTask(task.id);
+    } catch (error) {
+      console.error("Error archiving task from Calendar:", error);
+      setMutationError(`We couldn't archive “${task.title}”. Try again.`);
+    }
+  };
+
   if (tasksLoading) {
     return (
       <section className="calendar-page">
@@ -158,22 +310,21 @@ export default function CalendarPage({
   }
 
   return (
-    <section className="calendar-page" aria-labelledby="calendar-month-title">
+    <section className="calendar-page" aria-labelledby="calendar-view-title">
       <header className="calendar-toolbar">
         <div>
           <p className="card-label">Schedule</p>
-          <h2 id="calendar-month-title">{formatMonth(visibleMonth)}</h2>
-          <p>
-            {visibleMonthTasks.length} {visibleMonthTasks.length === 1 ? "task" : "tasks"} scheduled this month
-          </p>
+          <h2 id="calendar-view-title">{calendarTitle}</h2>
+          <p>{calendarSummary}</p>
         </div>
 
+        {calendarView !== "agenda" && (
         <div className="calendar-controls" aria-label="Calendar navigation">
           <button
             className="ghost-btn compact-btn"
             type="button"
-            onClick={() => changeMonth(-1)}
-            aria-label="Previous month"
+            onClick={() => changePeriod(-1)}
+            aria-label={`Previous ${calendarView === "month" ? "month" : calendarView === "week" ? "week" : "day"}`}
           >
             ←
           </button>
@@ -183,22 +334,38 @@ export default function CalendarPage({
           <button
             className="ghost-btn compact-btn"
             type="button"
-            onClick={() => changeMonth(1)}
-            aria-label="Next month"
+            onClick={() => changePeriod(1)}
+            aria-label={`Next ${calendarView === "month" ? "month" : calendarView === "week" ? "week" : "day"}`}
           >
             →
           </button>
         </div>
+        )}
       </header>
 
-      {datedTasks.length === 0 && (
+      <div className="calendar-view-switcher" role="tablist" aria-label="Calendar view">
+        {calendarViews.map((view) => (
+          <button
+            className={calendarView === view ? "is-active" : ""}
+            type="button"
+            role="tab"
+            aria-selected={calendarView === view}
+            key={view}
+            onClick={() => setCalendarView(view)}
+          >
+            {view[0].toUpperCase() + view.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {normalizedTasks.length === 0 && calendarView !== "agenda" && (
         <div className="calendar-no-tasks" role="status">
           <h3>No scheduled tasks yet</h3>
           <p>Tasks with a valid due date will appear on this calendar.</p>
           <button
             className="primary-btn"
             type="button"
-            onClick={() => onCreateTask(selectedDateKey)}
+            onClick={() => createOnDate(selectedDateKey)}
           >
             Create a dated task
           </button>
@@ -218,79 +385,183 @@ export default function CalendarPage({
         </div>
       )}
 
-      <div className="calendar-layout">
-        <div className="calendar-grid-shell">
+      {calendarView === "agenda" ? (
+        <CalendarAgendaView
+          tasks={normalizedTasks}
+          todayKey={todayKey}
+          selectedTaskId={selectedTaskId}
+          lists={lists}
+          projects={projects}
+          quickTaskPendingIds={quickTaskPendingIds}
+          onSelectDate={selectDate}
+          onToggleCompletion={handleCompletionChange}
+          onEditTask={openEditor}
+          onArchiveTask={handleArchiveTask}
+          formatSettings={formatSettings}
+        />
+      ) : (
+      <div className={`calendar-layout calendar-layout-${calendarView}`}>
+        {calendarView === "month" ? (
+          <div className="calendar-grid-shell">
           <div className="calendar-weekdays" aria-hidden="true">
-            {weekdayLabels.map((label) => (
+            {orderedWeekdayLabels.map((label) => (
               <span key={label}>{label}</span>
             ))}
           </div>
 
           <div className="calendar-grid" role="grid" aria-label={formatMonth(visibleMonth)}>
-            {monthGrid.map((cell) => {
-              const dateTasks = cell.inCurrentMonth
-                ? tasksByDate.get(cell.key) || []
-                : [];
-              const selected = cell.key === selectedDateKey;
-              const isToday = cell.key === todayKey;
+            {weeks.map((week) => {
+              const rowKey = week[0].key;
+              const rowSegments = segmentsByWeek.get(rowKey) || [];
+              const visibleSegments = rowSegments.filter(
+                ({ lane }) => lane < visibleEventLimit
+              );
+              const visibleLaneCount = Math.min(
+                visibleEventLimit,
+                Math.max(0, ...rowSegments.map(({ lane }) => lane + 1))
+              );
 
               return (
                 <div
-                  className={`calendar-day ${
-                    cell.inCurrentMonth ? "" : "calendar-day-outside"
-                  } ${selected ? "calendar-day-selected" : ""}`}
-                  role="gridcell"
-                  aria-selected={selected}
-                  key={cell.key}
+                  className="calendar-week-row"
+                  role="row"
+                  key={rowKey}
+                  style={{ "--calendar-lane-count": visibleLaneCount }}
                 >
-                  <button
-                    className={`calendar-date-button ${isToday ? "is-today" : ""}`}
-                    type="button"
-                    onClick={() => selectDate(cell.key)}
-                    aria-label={`${formatSelectedDate(cell.key)}${
-                      dateTasks.length
-                        ? `, ${dateTasks.length} ${dateTasks.length === 1 ? "task" : "tasks"}`
-                        : ""
-                    }`}
-                  >
-                    {cell.day}
-                  </button>
+                  {week.map((cell) => {
+                    const dateTasks = agendaByDate.get(cell.key) || [];
+                    const singleDayTasks = dateTasks.filter(
+                      (task) => !isMultiDayTask(task)
+                    );
+                    const coveringSegments = visibleSegments.filter(
+                      (segment) =>
+                        segment.startDate <= cell.key && segment.endDate >= cell.key
+                    );
+                    const availableSingleSlots = Math.max(
+                      0,
+                      visibleEventLimit - coveringSegments.length
+                    );
+                    const visibleSingleTasks = singleDayTasks.slice(
+                      0,
+                      availableSingleSlots
+                    );
+                    const hiddenCount = Math.max(
+                      0,
+                      dateTasks.length -
+                        coveringSegments.length -
+                        visibleSingleTasks.length
+                    );
+                    const selected = cell.key === selectedDateKey;
+                    const isToday = cell.key === todayKey;
 
-                  {dateTasks.length > 0 && (
-                    <div className="calendar-day-tasks">
-                      {dateTasks.slice(0, 3).map((task) => (
+                    return (
+                      <div
+                        className={`calendar-day ${
+                          cell.inCurrentMonth ? "" : "calendar-day-outside"
+                        } ${selected ? "calendar-day-selected" : ""}`}
+                        role="gridcell"
+                        aria-selected={selected}
+                        key={cell.key}
+                      >
                         <button
-                          className={`calendar-task-chip ${
-                            isTaskComplete(task) ? "is-completed" : ""
-                          } priority-${task.priority}`}
+                          className="calendar-day-create-area"
                           type="button"
-                          key={task.id}
-                          onClick={(event) => {
-                            setSelectedDateKey(cell.key);
-                            openEditor(task, event.currentTarget);
-                          }}
-                          title={task.title}
-                        >
-                          <span aria-hidden="true" />
-                          {task.title}
-                        </button>
-                      ))}
-                      {dateTasks.length > 3 && (
+                          onClick={() => createOnDate(cell.key)}
+                          aria-label={`Create a task on ${formatSelectedDate(cell.key)}`}
+                          title={`Create a task on ${formatSelectedDate(cell.key)}`}
+                        />
                         <button
-                          className="calendar-more-button"
+                          className={`calendar-date-button ${isToday ? "is-today" : ""}`}
                           type="button"
                           onClick={() => selectDate(cell.key)}
+                          aria-label={`${formatSelectedDate(cell.key)}${
+                            dateTasks.length
+                              ? `, ${dateTasks.length} ${dateTasks.length === 1 ? "task" : "tasks"}`
+                              : ""
+                          }`}
                         >
-                          +{dateTasks.length - 3} more
+                          {cell.day}
                         </button>
-                      )}
+
+                        <div className="calendar-day-tasks">
+                          {visibleSingleTasks.map((task) => (
+                            <CalendarEvent
+                              key={task.id}
+                              task={task}
+                              viewContext="month"
+                              formatSettings={formatSettings}
+                              onClick={(event) => {
+                                setSelectedDateKey(cell.key);
+                                openEditor(task, event.currentTarget);
+                              }}
+                            />
+                          ))}
+                          {hiddenCount > 0 && (
+                            <button
+                              className="calendar-more-button"
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                selectDate(cell.key);
+                              }}
+                              aria-label={`Show ${hiddenCount} more tasks for ${formatSelectedDate(cell.key)} in the agenda`}
+                              title="Show all tasks in the selected-date agenda"
+                            >
+                              +{hiddenCount} more
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {visibleSegments.length > 0 && (
+                    <div className="calendar-multi-day-layer" aria-label="Multi-day tasks">
+                      {visibleSegments.map((segment) => (
+                        <CalendarEvent
+                          key={segment.segmentId}
+                          task={segment}
+                          segment={segment}
+                          viewContext="month"
+                          formatSettings={formatSettings}
+                          style={{
+                            gridColumn: `${segment.startColumn + 1} / ${
+                              segment.endColumn + 2
+                            }`,
+                            gridRow: segment.lane + 1,
+                          }}
+                          onClick={(event) => {
+                            setSelectedDateKey(segment.startDate);
+                            openEditor(segment, event.currentTarget);
+                          }}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
-        </div>
+          </div>
+        ) : calendarView === "week" ? (
+          <CalendarWeekView
+            tasks={normalizedTasks}
+            selectedDateKey={selectedDateKey}
+            onSelectDate={selectDate}
+            onCreateTask={onCreateTask}
+            onEditTask={openEditor}
+            weekStartsOn={weekStartsOn}
+            formatSettings={formatSettings}
+          />
+        ) : (
+          <CalendarDayView
+            tasks={normalizedTasks}
+            selectedDateKey={selectedDateKey}
+            onCreateTask={onCreateTask}
+            onEditTask={openEditor}
+            formatSettings={formatSettings}
+          />
+        )}
 
         <aside className="calendar-agenda" aria-labelledby="calendar-selected-date">
           <header className="calendar-agenda-header">
@@ -304,7 +575,7 @@ export default function CalendarPage({
             <button
               className="primary-btn compact-btn"
               type="button"
-              onClick={() => onCreateTask(selectedDateKey)}
+              onClick={() => createOnDate(selectedDateKey)}
             >
               + Task
             </button>
@@ -327,6 +598,8 @@ export default function CalendarPage({
                   selected={selectedTaskId === task.id}
                   onToggleCompletion={handleCompletionChange}
                   onEdit={openEditor}
+                  onArchive={handleArchiveTask}
+                  formatSettings={formatSettings}
                 />
               ))}
             </div>
@@ -349,6 +622,8 @@ export default function CalendarPage({
                     selected={selectedTaskId === task.id}
                     onToggleCompletion={handleCompletionChange}
                     onEdit={openEditor}
+                    onArchive={handleArchiveTask}
+                    formatSettings={formatSettings}
                   />
                 ))}
               </div>
@@ -356,6 +631,7 @@ export default function CalendarPage({
           )}
         </aside>
       </div>
+      )}
 
       {selectedTask && (
         <TaskEditModal
@@ -366,8 +642,10 @@ export default function CalendarPage({
           projectsLoading={projectsLoading}
           projectsError={projectsError}
           onRetryProjects={onRetryProjects}
+          browserNotificationsEnabled={browserNotificationsEnabled}
           onUpdateTask={onUpdateTask}
           onDeleteTask={onDeleteTask}
+          onArchiveTask={onArchiveTask}
           onClose={closeEditor}
           returnFocusElement={editTriggerRef.current}
         />

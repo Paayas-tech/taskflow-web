@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import TaskForm from "./TaskForm";
 import {
   buildTaskEditPayload,
+  isArchived,
   taskFormValuesFromTask,
 } from "./domain/taskDomain";
 
@@ -14,8 +15,11 @@ export default function TaskEditModal({
   onRetryProjects,
   onUpdateTask,
   onDeleteTask,
+  onArchiveTask,
+  onRestoreTask,
   onClose,
   returnFocusElement,
+  browserNotificationsEnabled = true,
 }) {
   const [values, setValues] = useState(() =>
     taskFormValuesFromTask(task, lists)
@@ -25,9 +29,12 @@ export default function TaskEditModal({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [lifecycleAction, setLifecycleAction] = useState("");
+  const [lifecycleError, setLifecycleError] = useState("");
   const dialogRef = useRef(null);
   const saveSubmissionRef = useRef(false);
   const deleteSubmissionRef = useRef(false);
+  const lifecycleSubmissionRef = useRef(false);
   const busyRef = useRef(false);
   const confirmingDeleteRef = useRef(false);
   const onCloseRef = useRef(onClose);
@@ -36,7 +43,8 @@ export default function TaskEditModal({
   const descriptionId = `${dialogId}-description`;
   const deleteTitleId = `${dialogId}-delete-title`;
   const deleteDescriptionId = `${dialogId}-delete-description`;
-  const busy = saving || deleting;
+  const archived = isArchived(task);
+  const busy = saving || deleting || Boolean(lifecycleAction);
 
   busyRef.current = busy;
   confirmingDeleteRef.current = confirmingDelete;
@@ -138,6 +146,30 @@ export default function TaskEditModal({
     setConfirmingDelete(true);
   };
 
+  const handleLifecycleAction = async () => {
+    if (lifecycleSubmissionRef.current || busy) return;
+
+    const action = archived ? onRestoreTask : onArchiveTask;
+    if (!action) return;
+
+    lifecycleSubmissionRef.current = true;
+    setLifecycleAction(archived ? "restore" : "archive");
+    setLifecycleError("");
+
+    try {
+      await action(task.id);
+      onClose();
+    } catch (error) {
+      console.error(`Error ${archived ? "restoring" : "archiving"} task:`, error);
+      setLifecycleError(
+        `We couldn't ${archived ? "restore" : "archive"} this task. Check your connection and try again.`
+      );
+    } finally {
+      lifecycleSubmissionRef.current = false;
+      setLifecycleAction("");
+    }
+  };
+
   const cancelDelete = () => {
     if (deleting) return;
     setDeleteError("");
@@ -191,13 +223,29 @@ export default function TaskEditModal({
             </div>
 
             <div className="edit-task-modal-actions">
+              {(archived ? onRestoreTask : onArchiveTask) && (
+                <button
+                  className={archived ? "secondary-btn" : "ghost-btn"}
+                  type="button"
+                  onClick={handleLifecycleAction}
+                  disabled={busy}
+                >
+                  {lifecycleAction
+                    ? archived
+                      ? "Restoring..."
+                      : "Archiving..."
+                    : archived
+                      ? "Restore task"
+                      : "Archive task"}
+                </button>
+              )}
               <button
                 className="danger-btn"
                 type="button"
                 onClick={requestDelete}
                 disabled={busy}
               >
-                Delete task
+                {archived ? "Delete permanently" : "Delete task"}
               </button>
               <button
                 className="ghost-btn compact-btn task-modal-close"
@@ -210,6 +258,12 @@ export default function TaskEditModal({
               </button>
             </div>
           </div>
+
+          {lifecycleError && (
+            <p className="form-error task-lifecycle-error" role="alert">
+              {lifecycleError}
+            </p>
+          )}
 
           <TaskForm
             values={values}
@@ -225,6 +279,7 @@ export default function TaskEditModal({
             projectsLoading={projectsLoading}
             projectsError={projectsError}
             onRetryProjects={onRetryProjects}
+            browserNotificationsEnabled={browserNotificationsEnabled}
           />
         </section>
       </div>
@@ -240,7 +295,9 @@ export default function TaskEditModal({
             aria-busy={deleting}
           >
             <p className="card-label">Permanent action</p>
-            <h3 id={deleteTitleId}>Delete this task?</h3>
+            <h3 id={deleteTitleId}>
+              {archived ? "Delete this archived task permanently?" : "Delete this task?"}
+            </h3>
             <p id={deleteDescriptionId}>
               “{task.title}” will be permanently removed from TaskFlow. This
               cannot be undone.
@@ -265,7 +322,11 @@ export default function TaskEditModal({
                 onClick={confirmDelete}
                 disabled={deleting}
               >
-                {deleting ? "Deleting..." : "Delete task"}
+                {deleting
+                  ? "Deleting..."
+                  : archived
+                    ? "Delete permanently"
+                    : "Delete task"}
               </button>
             </div>
           </section>

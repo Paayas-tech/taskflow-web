@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  archiveTask,
   buildTaskEditPayload,
   buildCalendarMonthGrid,
   calendarTasks,
@@ -11,8 +12,10 @@ import {
   filterTasks,
   filterTasksByProject,
   groupTasksForToday,
+  isArchived,
   isTaskComplete,
   isValidDateOnly,
+  isValidArchivedAt,
   localDateFromDateOnly,
   normalizeTaskDocument,
   normalizeTaskPriority,
@@ -24,7 +27,12 @@ import {
   taskFormValuesFromTask,
   taskMatchesSearch,
   upcomingCalendarTasks,
+  unarchiveTask,
 } from "./taskDomain";
+import {
+  getScheduleValidationError,
+  normalizeTaskSchedule,
+} from "./calendarDomain";
 
 const task = (overrides = {}) => ({
   id: "task-1",
@@ -35,9 +43,14 @@ const task = (overrides = {}) => ({
   completed: false,
   priority: "medium",
   dueDate: "",
+  endDate: "",
+  startTime: "",
+  endTime: "",
   reminder: false,
+  reminderAt: "",
   listId: null,
   projectId: null,
+  archivedAt: null,
   ...overrides,
 });
 
@@ -52,12 +65,18 @@ describe("legacy task normalization", () => {
       completed: false,
       priority: "medium",
       dueDate: "",
+      endDate: "",
+      startTime: "",
+      endTime: "",
+      isAllDay: true,
       reminder: false,
+      reminderAt: "",
       listId: null,
       projectId: null,
       createdAt: null,
       updatedAt: null,
       completedAt: null,
+      archivedAt: null,
     });
   });
 
@@ -72,6 +91,93 @@ describe("legacy task normalization", () => {
     expect(normalized.priority).toBe("high");
     expect(normalized.completed).toBe(false);
     expect(normalizeTaskPriority("unexpected")).toBe("medium");
+  });
+});
+
+describe("task archiving", () => {
+  it("archives a task with the current ISO timestamp", () => {
+    const archived = archiveTask(task(), () =>
+      new Date("2026-08-14T10:30:00.000Z")
+    );
+
+    expect(archived.archivedAt).toBe("2026-08-14T10:30:00.000Z");
+    expect(isArchived(archived)).toBe(true);
+    expect(() => archiveTask(archived)).toThrow("already archived");
+  });
+
+  it("restores an archived task and rejects invalid transitions", () => {
+    const archived = task({ archivedAt: "2026-08-14T10:30:00.000Z" });
+
+    expect(unarchiveTask(archived).archivedAt).toBeNull();
+    expect(() => unarchiveTask(task())).toThrow("not archived");
+  });
+
+  it("validates archive timestamps and treats legacy tasks as active", () => {
+    expect(isValidArchivedAt("2026-08-14T10:30:00.000Z")).toBe(true);
+    expect(isValidArchivedAt("August 14")).toBe(false);
+    expect(isArchived({ title: "Legacy" })).toBe(false);
+    expect(
+      normalizeTaskDocument("invalid-archive", {
+        title: "Invalid archive",
+        archivedAt: "not-a-date",
+      }).archivedAt
+    ).toBeNull();
+  });
+});
+
+describe("calendar schedule compatibility", () => {
+  it("normalizes all-day, timed, and multi-day task schedules", () => {
+    expect(normalizeTaskDocument("all-day", {
+      dueDate: "2026-08-14",
+    })).toMatchObject({
+      dueDate: "2026-08-14",
+      endDate: "",
+      startTime: "",
+      endTime: "",
+      isAllDay: true,
+    });
+
+    expect(normalizeTaskDocument("timed", {
+      dueDate: "2026-08-14",
+      startTime: "09:30",
+      endTime: "10:30",
+    })).toMatchObject({
+      dueDate: "2026-08-14",
+      endDate: "",
+      startTime: "09:30",
+      endTime: "10:30",
+      isAllDay: false,
+    });
+
+    expect(normalizeTaskDocument("multi-day", {
+      dueDate: "2026-08-14",
+      endDate: "2026-08-17",
+    })).toMatchObject({
+      dueDate: "2026-08-14",
+      endDate: "2026-08-17",
+      isAllDay: true,
+    });
+  });
+
+  it("rejects invalid calendar date and time combinations", () => {
+    expect(
+      getScheduleValidationError({ dueDate: "2026-02-29" })
+    ).toMatch(/valid YYYY-MM-DD/i);
+    expect(
+      getScheduleValidationError({
+        dueDate: "2026-08-14",
+        startTime: "09:00",
+      })
+    ).toMatch(/provided together/i);
+    expect(() =>
+      normalizeTaskSchedule(
+        {
+          dueDate: "2026-08-14",
+          endDate: "2026-08-13",
+        },
+        { validate: true }
+      )
+    ).toThrow(/earlier/i);
   });
 });
 
@@ -146,6 +252,13 @@ describe("calendar helpers", () => {
       inCurrentMonth: true,
     });
     expect(august[41].key).toBe("2026-09-05");
+
+    const mondayFirstAugust = buildCalendarMonthGrid(
+      new Date(2026, 7, 1),
+      1
+    );
+    expect(mondayFirstAugust[0].key).toBe("2026-07-27");
+    expect(mondayFirstAugust[5].key).toBe("2026-08-01");
   });
 
   it("handles leap years and month shifts across year boundaries", () => {
@@ -173,6 +286,11 @@ describe("calendar helpers", () => {
       task({ id: "september", dueDate: "2026-09-01" }),
       task({ id: "undated", dueDate: "" }),
       task({ id: "invalid", dueDate: "2026-02-29" }),
+      task({
+        id: "archived",
+        dueDate: "2026-08-20",
+        archivedAt: "2026-08-14T10:30:00.000Z",
+      }),
     ];
 
     expect(calendarTasks(candidates).map(({ id }) => id)).toEqual([
@@ -226,6 +344,11 @@ describe("Today grouping", () => {
     task({ id: "completed-past", dueDate: "2026-08-11", completed: true }),
     task({ id: "completed-undated", completed: true }),
     task({ id: "completed-future", dueDate: "2026-08-15", completed: true }),
+    task({
+      id: "archived-today",
+      dueDate: todayKey,
+      archivedAt: "2026-08-14T10:30:00.000Z",
+    }),
   ];
 
   it("groups overdue, today, upcoming, undated, and relevant completed tasks", () => {
@@ -276,6 +399,16 @@ describe("task search and filtering", () => {
       task({ id: "wrong-list", listId: "personal", dueDate: "2026-08-12" }),
       task({ id: "completed", listId: "work", dueDate: "2026-08-12", completed: true }),
       task({ id: "inbox", listId: "missing" }),
+      task({
+        id: "archived-match",
+        title: "Launch checklist",
+        listId: "work",
+        status: "in-progress",
+        priority: "high",
+        dueDate: "2026-08-12",
+        reminder: true,
+        archivedAt: "2026-08-14T10:30:00.000Z",
+      }),
     ];
 
     const result = filterTasks(candidates, {
@@ -310,7 +443,45 @@ describe("task editing and project scoping", () => {
 
     expect(values.projectId).toBe("project-a");
     expect(buildTaskEditPayload(values).projectId).toBe("project-a");
+    expect(buildTaskEditPayload(values)).toMatchObject({
+      dueDate: "",
+      endDate: "",
+      startTime: "",
+      endTime: "",
+    });
     expect(buildTaskEditPayload({ ...values, projectId: "" }).projectId).toBeNull();
+  });
+
+  it("preserves timed multi-day fields in edit form values and payloads", () => {
+    const values = taskFormValuesFromTask(
+      task({
+        dueDate: "2026-08-14",
+        endDate: "2026-08-15",
+        startTime: "16:00",
+        endTime: "11:00",
+      })
+    );
+
+    expect(buildTaskEditPayload(values)).toMatchObject({
+      dueDate: "2026-08-14",
+      endDate: "2026-08-15",
+      startTime: "16:00",
+      endTime: "11:00",
+    });
+  });
+
+  it("normalizes and preserves scheduled reminders in edit payloads", () => {
+    const reminderAt = "2026-08-14T11:30:00.000Z";
+    const normalized = normalizeTaskDocument("scheduled", {
+      title: "Scheduled reminder",
+      reminder: true,
+      reminderAt,
+    });
+    const values = taskFormValuesFromTask(normalized);
+    const payload = buildTaskEditPayload(values);
+
+    expect(normalized.reminderAt).toBe(reminderAt);
+    expect(payload).toMatchObject({ reminder: true, reminderAt });
   });
 
   it("returns only tasks whose projectId exactly matches", () => {
@@ -319,6 +490,11 @@ describe("task editing and project scoping", () => {
       task({ id: "other", projectId: "project-b" }),
       task({ id: "prefix", projectId: "project-a-extra" }),
       task({ id: "none", projectId: null }),
+      task({
+        id: "archived-project",
+        projectId: "project-a",
+        archivedAt: "2026-08-14T10:30:00.000Z",
+      }),
     ];
 
     expect(filterTasksByProject(tasks, "project-a").map(({ id }) => id)).toEqual([

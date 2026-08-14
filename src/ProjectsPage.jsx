@@ -57,6 +57,7 @@ export default function ProjectsPage({
   onRetry,
   onCreateProject,
   onOpenProject,
+  createRequest = 0,
 }) {
   const [showCreateProject, setShowCreateProject] = useState(false);
   const [values, setValues] = useState(emptyProjectForm);
@@ -65,6 +66,13 @@ export default function ProjectsPage({
   const createButtonRef = useRef(null);
   const dialogRef = useRef(null);
   const submissionRef = useRef(false);
+
+  useEffect(() => {
+    if (!createRequest) return;
+    setValues(emptyProjectForm);
+    setFormError("");
+    setShowCreateProject(true);
+  }, [createRequest]);
 
   const openCreateProject = () => {
     setValues(emptyProjectForm);

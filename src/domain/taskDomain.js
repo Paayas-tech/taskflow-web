@@ -1,5 +1,17 @@
+import { normalizeTaskSchedule } from "./calendarDomain";
+import {
+  dateTimeLocalToIso,
+  normalizeReminderAt,
+  toDateTimeLocalValue,
+} from "./reminderDomain";
+
+export { deriveIsAllDay } from "./calendarDomain";
+
 const hasOwn = (object, key) =>
   Object.prototype.hasOwnProperty.call(object, key);
+
+const ISO_TIMESTAMP_PATTERN =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 
 export const normalizeTaskStatus = (status, completed = false) => {
   if (completed) return "completed";
@@ -16,6 +28,47 @@ export const normalizeTaskStatus = (status, completed = false) => {
 export const normalizeTaskPriority = (priority) => {
   const value = String(priority || "").toLowerCase().trim();
   return value === "low" || value === "high" ? value : "medium";
+};
+
+export const isValidArchivedAt = (value) =>
+  typeof value === "string" &&
+  ISO_TIMESTAMP_PATTERN.test(value.trim()) &&
+  Number.isFinite(Date.parse(value.trim()));
+
+export const normalizeArchivedAt = (value) => {
+  if (!isValidArchivedAt(value)) return null;
+  return new Date(value.trim()).toISOString();
+};
+
+export const isArchived = (task = {}) =>
+  normalizeArchivedAt(task.archivedAt) !== null;
+
+export const archiveTask = (task, now = () => new Date()) => {
+  if (isArchived(task)) {
+    throw new Error("This task is already archived.");
+  }
+
+  const archivedDate = now();
+  const archivedAt =
+    archivedDate instanceof Date
+      ? Number.isNaN(archivedDate.getTime())
+        ? null
+        : archivedDate.toISOString()
+      : normalizeArchivedAt(archivedDate);
+
+  if (!archivedAt) {
+    throw new Error("Choose a valid archive timestamp.");
+  }
+
+  return { ...task, archivedAt };
+};
+
+export const unarchiveTask = (task) => {
+  if (!isArchived(task)) {
+    throw new Error("This task is not archived.");
+  }
+
+  return { ...task, archivedAt: null };
 };
 
 export const taskTimestampToMillis = (value) => {
@@ -46,6 +99,8 @@ export const taskTimestampToMillis = (value) => {
 
 export const normalizeTaskDocument = (id, data = {}) => {
   const status = normalizeTaskStatus(data.status, data.completed === true);
+  const schedule = normalizeTaskSchedule(data);
+
   return {
     id,
     title: data.title || "Untitled task",
@@ -54,13 +109,19 @@ export const normalizeTaskDocument = (id, data = {}) => {
     status,
     completed: status === "completed",
     priority: normalizeTaskPriority(data.priority),
-    dueDate: data.dueDate ?? "",
+    dueDate: schedule.dueDate,
+    endDate: schedule.endDate,
+    startTime: schedule.startTime,
+    endTime: schedule.endTime,
+    isAllDay: schedule.isAllDay,
     reminder: data.reminder === true,
+    reminderAt: normalizeReminderAt(data.reminderAt),
     listId: data.listId ?? null,
     projectId: data.projectId ?? null,
     createdAt: data.createdAt ?? null,
     updatedAt: data.updatedAt ?? null,
     completedAt: data.completedAt ?? null,
+    archivedAt: normalizeArchivedAt(data.archivedAt),
   };
 };
 
@@ -124,12 +185,14 @@ export const calendarMonthStart = (date = new Date()) =>
 export const shiftCalendarMonth = (date, amount) =>
   new Date(date.getFullYear(), date.getMonth() + amount, 1);
 
-export const buildCalendarMonthGrid = (visibleMonth) => {
+export const buildCalendarMonthGrid = (visibleMonth, weekStartsOn = 0) => {
   const monthStart = calendarMonthStart(visibleMonth);
+  const normalizedWeekStart = weekStartsOn === 1 ? 1 : 0;
+  const leadingDays = (monthStart.getDay() - normalizedWeekStart + 7) % 7;
   const gridStart = new Date(
     monthStart.getFullYear(),
     monthStart.getMonth(),
-    1 - monthStart.getDay()
+    1 - leadingDays
   );
 
   return Array.from({ length: 42 }, (_, index) => {
@@ -150,7 +213,9 @@ export const buildCalendarMonthGrid = (visibleMonth) => {
 };
 
 export const calendarTasks = (tasks) =>
-  tasks.filter((task) => isValidDateOnly(task.dueDate));
+  tasks.filter(
+    (task) => !isArchived(task) && isValidDateOnly(task.dueDate)
+  );
 
 export const calendarTasksByDate = (tasks) => {
   const tasksByDate = new Map();
@@ -234,14 +299,15 @@ export const formatTaskDueDate = (value) => {
 };
 
 export const groupTasksForToday = (tasks, todayKey) => {
-  const activeTasks = tasks.filter((task) => !isTaskComplete(task));
+  const visibleTasks = tasks.filter((task) => !isArchived(task));
+  const activeTasks = visibleTasks.filter((task) => !isTaskComplete(task));
   const overdue = activeTasks
     .filter((task) => classifyDateOnly(task.dueDate, todayKey) === "overdue")
     .sort((firstTask, secondTask) => compareDateOnly(firstTask.dueDate, secondTask.dueDate));
   const today = activeTasks.filter((task) => classifyDateOnly(task.dueDate, todayKey) === "today");
   const upcoming = activeTasks.filter((task) => classifyDateOnly(task.dueDate, todayKey) === "upcoming");
   const undated = activeTasks.filter((task) => classifyDateOnly(task.dueDate, todayKey) === "undated");
-  const completed = tasks.filter(
+  const completed = visibleTasks.filter(
     (task) => isTaskComplete(task) && (!task.dueDate || compareDateOnly(task.dueDate, todayKey) <= 0)
   );
   return { overdue, today, upcoming, undated, completed };
@@ -269,6 +335,8 @@ export const filterTasks = (
     todayKey,
   } = {}
 ) => tasks.filter((task) => {
+  if (isArchived(task)) return false;
+
   const belongsToSelectedList =
     selectedListKey === "all" ||
     (selectedListKey === "inbox"
@@ -291,18 +359,24 @@ export const filterTasks = (
 });
 
 export const filterTasksByProject = (tasks, projectId) =>
-  tasks.filter((task) => task.projectId === projectId);
+  tasks.filter((task) => !isArchived(task) && task.projectId === projectId);
 
 export const taskFormValuesFromTask = (task, lists = []) => {
   const knownListIds = new Set(lists.map((list) => list.id));
+  const schedule = normalizeTaskSchedule(task);
+
   return {
     title: task.title || "",
     description: task.description || "",
     notes: task.notes || "",
     status: task.status || "todo",
     priority: task.priority || "medium",
-    dueDate: task.dueDate || "",
+    dueDate: schedule.dueDate,
+    endDate: schedule.endDate,
+    startTime: schedule.startTime,
+    endTime: schedule.endTime,
     reminder: task.reminder === true,
+    reminderAt: toDateTimeLocalValue(task.reminderAt),
     listId: knownListIds.has(task.listId) ? task.listId : "",
     projectId: task.projectId || "",
   };
@@ -316,7 +390,13 @@ export const buildTaskEditPayload = (values) => ({
   completed: values.status === "completed",
   priority: values.priority,
   dueDate: values.dueDate,
+  endDate: values.endDate || "",
+  startTime: values.startTime || "",
+  endTime: values.endTime || "",
   reminder: values.reminder,
+  reminderAt: values.reminder
+    ? dateTimeLocalToIso(values.reminderAt) || normalizeReminderAt(values.reminderAt)
+    : "",
   listId: values.listId || null,
   projectId: values.projectId || null,
 });

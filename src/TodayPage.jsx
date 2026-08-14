@@ -6,6 +6,7 @@ import {
   groupTasksForToday,
   isTaskComplete,
 } from "./domain/taskDomain";
+import { effectiveMyDayDate } from "./domain/settingsDomain";
 
 function TodayTaskGroup({
   title,
@@ -18,6 +19,8 @@ function TodayTaskGroup({
   completionTaskIds,
   onToggleCompletion,
   onEdit,
+  onArchive,
+  formatSettings,
   emptyMessage,
 }) {
   return (
@@ -44,6 +47,8 @@ function TodayTaskGroup({
               selected={selectedTaskId === task.id}
               onToggleCompletion={onToggleCompletion}
               onEdit={onEdit}
+              onArchive={onArchive}
+              formatSettings={formatSettings}
             />
           ))}
         </div>
@@ -61,17 +66,21 @@ export default function TodayPage({
   onQuickUpdateTask,
   quickTaskPendingIds,
   onDeleteTask,
+  onArchiveTask,
   lists,
   projects,
   projectsLoading,
   projectsError,
   onRetryProjects,
+  browserNotificationsEnabled,
+  formatSettings,
+  myDaySettings,
 }) {
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [mutationError, setMutationError] = useState("");
   const editTriggerRef = useRef(null);
 
-  const now = new Date();
+  const now = effectiveMyDayDate(new Date(), myDaySettings);
   const todayKey = dateOnlyKey(now);
   const currentDate = new Intl.DateTimeFormat(undefined, {
     weekday: "long",
@@ -111,6 +120,16 @@ export default function TodayPage({
       setMutationError(
         `We couldn't ${completed ? "complete" : "reopen"} “${task.title}”. Try again.`
       );
+    }
+  };
+
+  const handleArchiveTask = async (task) => {
+    setMutationError("");
+    try {
+      await onArchiveTask(task.id);
+    } catch (error) {
+      console.error("Error archiving task from Today:", error);
+      setMutationError(`We couldn't archive “${task.title}”. Try again.`);
     }
   };
 
@@ -156,8 +175,10 @@ export default function TodayPage({
           projectsLoading={projectsLoading}
           projectsError={projectsError}
           onRetryProjects={onRetryProjects}
+          browserNotificationsEnabled={browserNotificationsEnabled}
           onUpdateTask={onUpdateTask}
           onDeleteTask={onDeleteTask}
+          onArchiveTask={onArchiveTask}
           onClose={closeEditor}
           returnFocusElement={editTriggerRef.current}
         />
@@ -195,6 +216,8 @@ export default function TodayPage({
             completionTaskIds={quickTaskPendingIds}
             onToggleCompletion={handleCompletionChange}
             onEdit={openEditor}
+            onArchive={handleArchiveTask}
+            formatSettings={formatSettings}
             emptyMessage="No overdue tasks."
           />
           <TodayTaskGroup
@@ -208,6 +231,8 @@ export default function TodayPage({
             completionTaskIds={quickTaskPendingIds}
             onToggleCompletion={handleCompletionChange}
             onEdit={openEditor}
+            onArchive={handleArchiveTask}
+            formatSettings={formatSettings}
             emptyMessage="Nothing else is due today."
           />
           {anytimeTasks.length > 0 && (
@@ -222,6 +247,8 @@ export default function TodayPage({
               completionTaskIds={quickTaskPendingIds}
               onToggleCompletion={handleCompletionChange}
               onEdit={openEditor}
+              onArchive={handleArchiveTask}
+              formatSettings={formatSettings}
             />
           )}
           {completedTasks.length > 0 && (
@@ -236,6 +263,8 @@ export default function TodayPage({
               completionTaskIds={quickTaskPendingIds}
               onToggleCompletion={handleCompletionChange}
               onEdit={openEditor}
+              onArchive={handleArchiveTask}
+              formatSettings={formatSettings}
             />
           )}
         </div>
