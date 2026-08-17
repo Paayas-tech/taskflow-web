@@ -215,6 +215,7 @@ export default function CalendarPage({
   };
 
   const createOnDate = (dateKey) => {
+    if (!onCreateTask) return;
     setSelectedDateKey(dateKey);
     onCreateTask(createCalendarTaskInitialValues({ date: dateKey }));
   };
@@ -247,6 +248,7 @@ export default function CalendarPage({
   };
 
   const openEditor = (task, triggerElement) => {
+    if (!onUpdateTask) return;
     editTriggerRef.current = triggerElement || null;
     setSelectedTaskId(task.id);
     setMutationError("");
@@ -257,6 +259,7 @@ export default function CalendarPage({
   };
 
   const handleCompletionChange = async (task) => {
+    if (!onQuickUpdateTask) return;
     const completed = !isTaskComplete(task);
     setMutationError("");
 
@@ -274,6 +277,7 @@ export default function CalendarPage({
   };
 
   const handleArchiveTask = async (task) => {
+    if (!onArchiveTask) return;
     setMutationError("");
     try {
       await onArchiveTask(task.id);
@@ -289,7 +293,7 @@ export default function CalendarPage({
         <div className="calendar-state" role="status" aria-live="polite">
           <div className="state-spinner" aria-hidden="true" />
           <h2>Loading calendar...</h2>
-          <p>Your dated tasks are being retrieved from Firestore.</p>
+          <p>Your dated tasks are being retrieved securely.</p>
         </div>
       </section>
     );
@@ -572,13 +576,9 @@ export default function CalendarPage({
                 {selectedDateTasks.length} {selectedDateTasks.length === 1 ? "task" : "tasks"}
               </p>
             </div>
-            <button
-              className="primary-btn compact-btn"
-              type="button"
-              onClick={() => createOnDate(selectedDateKey)}
-            >
-              + Task
-            </button>
+            {onCreateTask && (
+              <button className="primary-btn compact-btn" type="button" onClick={() => createOnDate(selectedDateKey)}>+ Task</button>
+            )}
           </header>
 
           {selectedDateTasks.length === 0 ? (
@@ -596,9 +596,9 @@ export default function CalendarPage({
                   projects={projects}
                   completionBusy={quickTaskPendingIds.has(task.id)}
                   selected={selectedTaskId === task.id}
-                  onToggleCompletion={handleCompletionChange}
-                  onEdit={openEditor}
-                  onArchive={handleArchiveTask}
+                  onToggleCompletion={onQuickUpdateTask ? handleCompletionChange : undefined}
+                  onEdit={onUpdateTask ? openEditor : undefined}
+                  onArchive={onArchiveTask ? handleArchiveTask : undefined}
                   formatSettings={formatSettings}
                 />
               ))}
@@ -620,9 +620,9 @@ export default function CalendarPage({
                     projects={projects}
                     completionBusy={quickTaskPendingIds.has(task.id)}
                     selected={selectedTaskId === task.id}
-                    onToggleCompletion={handleCompletionChange}
-                    onEdit={openEditor}
-                    onArchive={handleArchiveTask}
+                    onToggleCompletion={onQuickUpdateTask ? handleCompletionChange : undefined}
+                    onEdit={onUpdateTask ? openEditor : undefined}
+                    onArchive={onArchiveTask ? handleArchiveTask : undefined}
                     formatSettings={formatSettings}
                   />
                 ))}

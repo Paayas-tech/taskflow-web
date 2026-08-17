@@ -351,7 +351,7 @@ export default function SettingsPage({
             <label className="settings-field">
               <span>Email</span>
               <input type="email" value={settings.profile.email} disabled readOnly />
-              <small>Email is managed by Firebase Authentication.</small>
+              <small>Email is managed by your TaskFlow authentication account.</small>
             </label>
           </div>
         </SettingsDetail>
@@ -900,7 +900,7 @@ export default function SettingsPage({
           <div className="settings-about-copy">
             <p><strong>TaskFlow</strong></p>
             <p>Version 0.0.0</p>
-            <p>React, Vite, and Firebase productivity application.</p>
+            <p>React, Vite, and Supabase productivity application.</p>
             <p>No verified Terms or Privacy links are configured.</p>
           </div>
         </SettingsDetail>

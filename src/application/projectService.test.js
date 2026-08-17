@@ -1,0 +1,140 @@
+import { describe, expect, it, vi } from "vitest";
+import { createProjectService } from "./projectService";
+
+const projectRow = (overrides = {}) => ({
+  id: "project-a",
+  ownerId: "user-a",
+  name: "Launch",
+  description: "",
+  color: "#6657c8",
+  status: "active",
+  dueDate: "",
+  ...overrides,
+});
+
+describe("Supabase project application service", () => {
+  it("creates a trimmed owner project", async () => {
+    const repository = {
+      createProject: vi.fn().mockResolvedValue(projectRow()),
+    };
+    const service = createProjectService(repository);
+
+    await service.createProject("user-a", {
+      name: " Launch ",
+      description: "Ship it",
+      color: "#6657c8",
+    });
+
+    expect(repository.createProject).toHaveBeenCalledWith(
+      "user-a",
+      expect.objectContaining({ name: "Launch", status: "active" })
+    );
+  });
+
+  it("rejects an empty project name before reaching the repository", async () => {
+    const repository = { createProject: vi.fn() };
+    const service = createProjectService(repository);
+
+    await expect(service.createProject("user-a", { name: "  " })).rejects.toThrow(
+      "Project name cannot be empty"
+    );
+    expect(repository.createProject).not.toHaveBeenCalled();
+  });
+
+  it("normalizes invitation email and role", async () => {
+    const repository = { createProjectInvitation: vi.fn().mockResolvedValue({ id: "invite-a" }) };
+    const service = createProjectService(repository);
+
+    await service.createProjectInvitation("owner-a", "project-a", {
+      email: " Member@Example.COM ", role: "viewer",
+    });
+
+    expect(repository.createProjectInvitation).toHaveBeenCalledWith(
+      "owner-a",
+      "project-a",
+      expect.objectContaining({ email: "member@example.com", role: "viewer" })
+    );
+  });
+
+  it("rejects invalid invitation inputs before the repository", async () => {
+    const repository = { createProjectInvitation: vi.fn() };
+    const service = createProjectService(repository);
+
+    await expect(service.createProjectInvitation("owner-a", "project-a", {
+      email: "not-an-email", role: "admin",
+    })).rejects.toThrow("valid email");
+    expect(repository.createProjectInvitation).not.toHaveBeenCalled();
+  });
+
+  it("forwards invitation responses and member role changes", async () => {
+    const repository = {
+      respondToInvitation: vi.fn(),
+      updateProjectMemberRole: vi.fn(),
+    };
+    const service = createProjectService(repository);
+
+    await service.acceptProjectInvitation("member-a", "invite-a");
+    await service.updateProjectMemberRole("owner-a", "project-a", "member-a", "editor");
+
+    expect(repository.respondToInvitation).toHaveBeenCalledWith("member-a", "invite-a", "accepted");
+    expect(repository.updateProjectMemberRole).toHaveBeenCalledWith(
+      "owner-a", "project-a", "member-a", "editor"
+    );
+  });
+
+  it("normalizes optional task assignees and forwards assignment changes", async () => {
+    const repository = { setTaskAssignee: vi.fn() };
+    const service = createProjectService(repository);
+
+    await expect(
+      service.setTaskAssignee("owner-a", "project-a", "task-a", " member-a ")
+    ).resolves.toBe("member-a");
+    await expect(
+      service.setTaskAssignee("owner-a", "project-a", "task-a", "")
+    ).resolves.toBeNull();
+
+    expect(repository.setTaskAssignee).toHaveBeenNthCalledWith(
+      1, "owner-a", "project-a", "task-a", "member-a"
+    );
+    expect(repository.setTaskAssignee).toHaveBeenNthCalledWith(
+      2, "owner-a", "project-a", "task-a", null
+    );
+  });
+
+  it("validates comment content before repository writes", async () => {
+    const repository = {
+      createTaskComment: vi.fn().mockResolvedValue({ id: "comment-a" }),
+      updateTaskComment: vi.fn(),
+    };
+    const service = createProjectService(repository);
+
+    await service.createTaskComment("user-a", "task-a", "  Ready for review  ");
+    expect(repository.createTaskComment).toHaveBeenCalledWith(
+      "user-a", "task-a", "Ready for review"
+    );
+    await expect(service.createTaskComment("user-a", "task-a", "  ")).rejects.toThrow(
+      "Write a comment"
+    );
+    await expect(service.updateTaskComment("user-a", "comment-a", "")).rejects.toThrow(
+      "cannot be empty"
+    );
+  });
+
+  it("forwards collaboration reads and realtime subscriptions", async () => {
+    const unsubscribe = vi.fn();
+    const repository = {
+      getTaskComments: vi.fn().mockResolvedValue([]),
+      getProjectActivity: vi.fn().mockResolvedValue([]),
+      getTaskActivity: vi.fn().mockResolvedValue([]),
+      subscribeToTaskComments: vi.fn().mockReturnValue(unsubscribe),
+      subscribeToProjectActivity: vi.fn().mockReturnValue(unsubscribe),
+    };
+    const service = createProjectService(repository);
+
+    await service.getTaskComments("user-a", "task-a");
+    await service.getProjectActivity("user-a", "project-a", 10);
+    await service.getTaskActivity("user-a", "task-a", 5);
+    expect(service.subscribeToTaskComments("task-a", vi.fn())).toBe(unsubscribe);
+    expect(service.subscribeToProjectActivity("project-a", vi.fn())).toBe(unsubscribe);
+  });
+});

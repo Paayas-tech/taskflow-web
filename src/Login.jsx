@@ -1,41 +1,25 @@
 import { useState } from "react";
-import { auth } from "./firebase";
 import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword
-} from "firebase/auth";
-
-const friendlyAuthError = (error, isLogin) => {
-  switch (error?.code) {
-    case "auth/invalid-email":
-      return "Enter a valid email address and try again.";
-    case "auth/missing-password":
-      return "Enter your password to continue.";
-    case "auth/invalid-credential":
-    case "auth/user-not-found":
-    case "auth/wrong-password":
-      return "The email or password you entered is incorrect.";
-    case "auth/email-already-in-use":
-      return "An account already exists for this email address.";
-    case "auth/weak-password":
-      return "Choose a stronger password with at least six characters.";
-    case "auth/too-many-requests":
-      return "Too many attempts. Please wait a moment and try again.";
-    case "auth/network-request-failed":
-      return "We couldn't connect. Check your internet connection and try again.";
-    default:
-      return isLogin
-        ? "We couldn't sign you in. Please try again."
-        : "We couldn't create your account. Please try again.";
-  }
-};
+  resendConfirmation,
+  signIn,
+  signUp,
+} from "./application/authService";
+import {
+  friendlyAuthError,
+  getSignUpOutcome,
+  isEmailConfirmationError,
+  isInvalidCredentialsError,
+} from "./domain/authDomain";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLogin, setIsLogin] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResending, setIsResending] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [authNotice, setAuthNotice] = useState("");
+  const [confirmationEmail, setConfirmationEmail] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -44,26 +28,65 @@ export default function Login() {
 
     setIsSubmitting(true);
     setAuthError("");
+    setAuthNotice("");
 
     try {
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
+        await signIn(email, password);
       } else {
-        await createUserWithEmailAndPassword(auth, email, password);
-        alert("Account created");
+        const result = await signUp(email, password, "", {
+          emailRedirectTo: window.location.origin,
+        });
+        const signUpOutcome = getSignUpOutcome(result);
+
+        if (signUpOutcome === "confirmation_required") {
+          const normalizedEmail = email.trim();
+          setConfirmationEmail(normalizedEmail);
+          setPassword("");
+          setIsLogin(true);
+          setAuthNotice(
+            "Check your inbox and confirm your email address before signing in."
+          );
+        }
       }
     } catch (error) {
+      if (
+        isLogin &&
+        (isEmailConfirmationError(error) || isInvalidCredentialsError(error))
+      ) {
+        setConfirmationEmail(email.trim());
+      }
       setAuthError(friendlyAuthError(error, isLogin));
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleResendConfirmation = async () => {
+    if (!confirmationEmail || isSubmitting || isResending) return;
+
+    setIsResending(true);
+    setAuthError("");
+    setAuthNotice("");
+
+    try {
+      await resendConfirmation(confirmationEmail, {
+        emailRedirectTo: window.location.origin,
+      });
+      setAuthNotice("A new confirmation email has been sent. Check your inbox.");
+    } catch (error) {
+      setAuthError(friendlyAuthError(error, false));
+    } finally {
+      setIsResending(false);
+    }
+  };
+
   const switchMode = () => {
-    if (isSubmitting) return;
+    if (isSubmitting || isResending) return;
 
     setIsLogin((previous) => !previous);
     setAuthError("");
+    setAuthNotice("");
   };
 
   return (
@@ -80,7 +103,7 @@ export default function Login() {
         <form
           onSubmit={handleSubmit}
           className="auth-form"
-          aria-busy={isSubmitting}
+          aria-busy={isSubmitting || isResending}
         >
           <label className="auth-label">
             Email
@@ -88,8 +111,19 @@ export default function Login() {
               type="email"
               placeholder="you@example.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={isSubmitting}
+              onChange={(e) => {
+                const nextEmail = e.target.value;
+                setEmail(nextEmail);
+                if (
+                  confirmationEmail &&
+                  nextEmail.trim().toLowerCase() !==
+                    confirmationEmail.toLowerCase()
+                ) {
+                  setConfirmationEmail("");
+                  setAuthNotice("");
+                }
+              }}
+              disabled={isSubmitting || isResending}
             />
           </label>
 
@@ -100,7 +134,7 @@ export default function Login() {
               placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isResending}
             />
           </label>
 
@@ -110,11 +144,17 @@ export default function Login() {
             </p>
           )}
 
+          {authNotice && (
+            <p className="auth-notice" role="status">
+              {authNotice}
+            </p>
+          )}
+
           <button
             type="submit"
             className="auth-button"
-            disabled={isSubmitting}
-            aria-busy={isSubmitting}
+            disabled={isSubmitting || isResending}
+            aria-busy={isSubmitting || isResending}
           >
             <span className="auth-button-content">
               {isSubmitting && (
@@ -133,11 +173,22 @@ export default function Login() {
           </button>
         </form>
 
+        {confirmationEmail && isLogin && (
+          <button
+            type="button"
+            className="auth-switch auth-resend"
+            onClick={handleResendConfirmation}
+            disabled={isSubmitting || isResending}
+          >
+            {isResending ? "Sending confirmation..." : "Resend confirmation email"}
+          </button>
+        )}
+
         <button
           type="button"
           className="auth-switch"
           onClick={switchMode}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isResending}
         >
           {isLogin ? "Need an account? Create one" : "Already have an account? Sign in"}
         </button>

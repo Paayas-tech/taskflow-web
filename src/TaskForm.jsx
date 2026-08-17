@@ -407,8 +407,8 @@ export default function TaskForm({
             </button>
 
             {!values.reminderAt && (
-              <p className="task-reminder-legacy-note">
-                This legacy reminder remains visual-only until a time is selected.
+              <p className="task-reminder-note">
+                This reminder remains visual-only until a time is selected.
               </p>
             )}
             {reminderPresetError && (

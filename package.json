@@ -8,16 +8,20 @@
     "build": "vite build",
     "lint": "oxlint",
     "test": "vitest run src",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-taskflow \"vitest run tests/firestore.rules.test.js\"",
+    "test:db": "npx supabase test db",
+    "test:collaboration:local": "node scripts/phase5-local-smoke.mjs",
+    "test:all": "npm test && npm run test:db && npm run lint && npm run build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "firebase": "^12.17.0",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@supabase/supabase-js": "^2.112.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@firebase/rules-unit-testing": "^5.0.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",

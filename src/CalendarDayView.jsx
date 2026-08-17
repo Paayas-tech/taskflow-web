@@ -62,10 +62,12 @@ export default function CalendarDayView({
   );
 
   const createAllDay = () => {
+    if (!onCreateTask) return;
     onCreateTask(createCalendarTaskInitialValues({ date: selectedDateKey }));
   };
 
   const createTimed = (startTime) => {
+    if (!onCreateTask) return;
     onCreateTask(
       createCalendarTaskInitialValues({ date: selectedDateKey, startTime })
     );
@@ -78,6 +80,7 @@ export default function CalendarDayView({
           className="calendar-day-all-day-create"
           type="button"
           onClick={createAllDay}
+          disabled={!onCreateTask}
         >
           <span>All day</span>
           <small>+ Add task</small>
@@ -102,7 +105,7 @@ export default function CalendarDayView({
                   segment={segment}
                   viewContext="day"
                   formatSettings={formatSettings}
-                  onClick={(event) => onEditTask(task, event.currentTarget)}
+                  onClick={(event) => onEditTask?.(task, event.currentTarget)}
                 />
               );
             })
@@ -134,6 +137,7 @@ export default function CalendarDayView({
                 type="button"
                 key={minutes}
                 onClick={() => createTimed(time)}
+                disabled={!onCreateTask}
                 aria-label={`Create a one-hour task at ${formatTimeForDisplay(time, formatSettings.format)}`}
               />
             ))}
@@ -145,7 +149,7 @@ export default function CalendarDayView({
                 displayTime={displayTimeForSegment(task, formatSettings.format)}
                 formatSettings={formatSettings}
                 style={timedEventStyle(task)}
-                onClick={(event) => onEditTask(task, event.currentTarget)}
+                onClick={(event) => onEditTask?.(task, event.currentTarget)}
               />
             ))}
           </div>

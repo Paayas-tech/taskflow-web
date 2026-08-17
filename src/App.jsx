@@ -4,14 +4,17 @@ import ArchivedTasksPage from "./ArchivedTasksPage";
 import CalendarPage from "./CalendarPage";
 import Dashboard from "./Dashboard";
 import Login from "./Login";
+import NotificationsPanel from "./NotificationsPanel";
 import ProjectsPage from "./ProjectsPage";
 import ProjectTasksPage from "./ProjectTasksPage";
 import SettingsPage from "./SettingsPage";
 import TaskForm from "./TaskForm";
 import TasksPage from "./TasksPage";
 import TodayPage from "./TodayPage";
-import { auth } from "./firebase";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import {
+  onAuthStateChange,
+  signOut,
+} from "./application/authService";
 import {
   getTasks,
   createTask,
@@ -19,26 +22,32 @@ import {
   deleteTask,
   archiveTask,
   unarchiveTask,
-} from "./services/taskService";
+} from "./application/taskService";
 import {
   getLists,
   createList,
   updateList,
   deleteList,
-} from "./services/listService";
+} from "./application/listService";
 import {
   createProject,
+  createProjectTask,
+  acceptProjectInvitation,
+  declineProjectInvitation,
+  deleteProject,
   getProjects,
+  getUserInvitations,
   updateProject,
-} from "./services/projectService";
+} from "./application/projectService";
 import { createReminderScheduler } from "./services/reminderService";
-import { getSettings, saveSettings } from "./services/settingsService";
+import { getSettings, saveSettings } from "./application/settingsService";
 import {
   defaultViewPath,
   normalizeSettings,
   resolveThemeMode,
   weekStartIndex,
 } from "./domain/settingsDomain";
+import { isCurrentAuthRequest } from "./domain/authDomain";
 import {
   filterActiveTasks,
   filterArchivedTasks,
@@ -182,7 +191,11 @@ function App() {
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [projectsError, setProjectsError] = useState("");
   const [projectCreateRequest, setProjectCreateRequest] = useState(0);
+  const [projectTaskRefreshToken, setProjectTaskRefreshToken] = useState(0);
   const [projects, setProjects] = useState([]);
+  const [projectInvitations, setProjectInvitations] = useState([]);
+  const [projectInvitationsLoading, setProjectInvitationsLoading] = useState(false);
+  const [projectInvitationsError, setProjectInvitationsError] = useState("");
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskFormSaving, setTaskFormSaving] = useState(false);
   const [taskFormError, setTaskFormError] = useState("");
@@ -204,6 +217,7 @@ function App() {
   const notifiedReminderIdsRef = useRef(new Set());
   const quickTaskMutationsRef = useRef(new Map());
   const defaultRouteAppliedRef = useRef(false);
+  const authenticatedUserIdRef = useRef(null);
 
   const syncQuickTaskPendingIds = useCallback(() => {
     setQuickTaskPendingIds(
@@ -217,12 +231,16 @@ function App() {
 
   const loadTasks = useCallback(async () => {
     if (!user) return;
+    const requestUserId = user.uid;
 
     setTasksLoading(true);
     setTasksError("");
 
     try {
-      const userTasks = await getTasks(user.uid);
+      const userTasks = await getTasks(requestUserId);
+      if (!isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        return;
+      }
       const tasksWithPendingChanges = userTasks.map((task) => {
         const pendingMutation = quickTaskMutationsRef.current.get(task.id);
 
@@ -234,6 +252,9 @@ function App() {
       tasksRef.current = tasksWithPendingChanges;
       setTasks(tasksWithPendingChanges);
     } catch (error) {
+      if (!isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        return;
+      }
       console.error("Error loading tasks:", error);
       tasksRef.current = [];
       setTasks([]);
@@ -241,54 +262,102 @@ function App() {
         "We couldn't load your tasks. Check your connection and try again."
       );
     } finally {
-      setTasksLoading(false);
+      if (isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        setTasksLoading(false);
+      }
     }
   }, [user]);
 
   const loadLists = useCallback(async () => {
     if (!user) return;
+    const requestUserId = user.uid;
 
     setListsLoading(true);
     setListsLoaded(false);
     setListsError("");
 
     try {
-      const userLists = await getLists(user.uid);
+      const userLists = await getLists(requestUserId);
+      if (!isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        return;
+      }
       setLists(userLists);
     } catch (error) {
+      if (!isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        return;
+      }
       console.error("Error loading lists:", error);
       setLists([]);
       setListsError(
         "We couldn't load your lists. Check your connection and try again."
       );
     } finally {
-      setListsLoading(false);
-      setListsLoaded(true);
+      if (isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        setListsLoading(false);
+        setListsLoaded(true);
+      }
     }
   }, [user]);
 
   const loadProjects = useCallback(async () => {
     if (!user) return;
+    const requestUserId = user.uid;
 
     setProjectsLoading(true);
     setProjectsError("");
 
     try {
-      const userProjects = await getProjects(user.uid);
+      const userProjects = await getProjects(requestUserId);
+      if (!isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        return;
+      }
       setProjects(userProjects);
     } catch (error) {
+      if (!isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        return;
+      }
       console.error("Error loading projects:", error);
       setProjects([]);
       setProjectsError(
         "We couldn't load your projects. Check your connection and try again."
       );
     } finally {
-      setProjectsLoading(false);
+      if (isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        setProjectsLoading(false);
+      }
+    }
+  }, [user]);
+
+  const loadProjectInvitations = useCallback(async () => {
+    if (!user?.email) return;
+    const requestUserId = user.uid;
+    setProjectInvitationsLoading(true);
+    setProjectInvitationsError("");
+    try {
+      const invitations = await getUserInvitations(requestUserId, user.email);
+      if (!isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        return;
+      }
+      setProjectInvitations(invitations);
+    } catch (error) {
+      if (!isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        return;
+      }
+      console.error("Error loading project invitations:", error);
+      setProjectInvitations([]);
+      setProjectInvitationsError(
+        "We couldn't load your project invitations. Try again."
+      );
+    } finally {
+      if (isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        setProjectInvitationsLoading(false);
+      }
     }
   }, [user]);
 
   const loadSettings = useCallback(async () => {
     if (!user) return;
+    const requestUserId = user.uid;
 
     setSettingsLoading(true);
     setSettingsError("");
@@ -296,6 +365,9 @@ function App() {
 
     try {
       const userSettings = await getSettings(user);
+      if (!isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        return;
+      }
       settingsRef.current = userSettings;
       setSettings(userSettings);
 
@@ -313,6 +385,9 @@ function App() {
         }
       }
     } catch (error) {
+      if (!isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        return;
+      }
       console.error("Error loading settings:", error);
       const fallback = normalizeSettings({}, user);
       settingsRef.current = fallback;
@@ -321,22 +396,60 @@ function App() {
         "We couldn't load your saved settings. Safe defaults are active."
       );
     } finally {
-      setSettingsLoading(false);
+      if (isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        setSettingsLoading(false);
+      }
     }
   }, [user]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (!currentUser || currentUser.uid !== user?.uid) {
+    const unsubscribe = onAuthStateChange((_event, currentUser) => {
+      const nextUserId = currentUser?.uid || null;
+      const userChanged = nextUserId !== authenticatedUserIdRef.current;
+
+      if (userChanged) {
         defaultRouteAppliedRef.current = false;
+        tasksRef.current = [];
+        quickTaskMutationsRef.current.clear();
+        notifiedReminderIdsRef.current.clear();
+        setTasks([]);
+        setTasksError("");
+        setTasksLoading(false);
+        setQuickTaskPendingIds(new Set());
+        setLists([]);
         setListsLoaded(false);
+        setListsError("");
+        setListsLoading(false);
+        setProjects([]);
+        setProjectsError("");
+        setProjectsLoading(false);
+        setProjectInvitations([]);
+        setProjectInvitationsError("");
+        setProjectInvitationsLoading(false);
+        setShowTaskForm(false);
+        setTaskForm(emptyTaskForm);
+        setTaskFormError("");
+        setTaskFormSaving(false);
+        setReminderNotice(null);
+
+        const fallbackSettings = normalizeSettings(
+          {},
+          currentUser || undefined
+        );
+        settingsRef.current = fallbackSettings;
+        setSettings(fallbackSettings);
+        setSettingsError("");
+        setSettingsSaveMessage("");
+        setSettingsLoading(false);
+        setSettingsSaving(false);
       }
+      authenticatedUserIdRef.current = nextUserId;
       setUser(currentUser);
       setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [user?.uid]);
+  }, []);
 
   useEffect(() => {
     const syncPathFromBrowser = () => {
@@ -360,9 +473,10 @@ function App() {
       loadTasks();
       loadLists();
       loadProjects();
+      loadProjectInvitations();
       loadSettings();
     }
-  }, [user, loadTasks, loadLists, loadProjects, loadSettings]);
+  }, [user, loadTasks, loadLists, loadProjects, loadProjectInvitations, loadSettings]);
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -468,7 +582,7 @@ function App() {
     setTaskFormSaving(true);
 
     try {
-      await createTask(user.uid, {
+      const taskData = {
         title: taskForm.title,
         description: taskForm.description,
         notes: taskForm.notes,
@@ -483,11 +597,18 @@ function App() {
         reminderAt: taskForm.reminderAt,
         listId: taskForm.listId || null,
         projectId: taskForm.projectId || null,
-      });
+      };
+
+      if (taskData.projectId) {
+        await createProjectTask(user.uid, taskData.projectId, taskData);
+        setProjectTaskRefreshToken((token) => token + 1);
+      } else {
+        await createTask(user.uid, taskData);
+      }
 
       setTaskForm(emptyTaskForm);
       setShowTaskForm(false);
-      await loadTasks();
+      if (!taskData.projectId) await loadTasks();
     } catch (error) {
       console.error("Error creating task:", error);
       setTaskFormError(
@@ -507,6 +628,7 @@ function App() {
 
       await updateTask(user.uid, taskId, data);
       await loadTasks();
+      if (data.projectId) setProjectTaskRefreshToken((token) => token + 1);
     },
     [user, loadTasks]
   );
@@ -706,6 +828,42 @@ function App() {
     [user, loadProjects]
   );
 
+  const handleUpdateProject = useCallback(
+    async (projectId, data) => {
+      if (!user) throw new Error("You must be signed in to update a project.");
+      await updateProject(user.uid, projectId, data);
+      await loadProjects();
+    },
+    [user, loadProjects]
+  );
+
+  const handleDeleteProject = useCallback(
+    async (projectId) => {
+      if (!user) throw new Error("You must be signed in to delete a project.");
+      await deleteProject(user.uid, projectId);
+      await loadProjects();
+    },
+    [user, loadProjects]
+  );
+
+  const handleAcceptProjectInvitation = useCallback(
+    async (invitationId) => {
+      if (!user) throw new Error("You must be signed in to accept an invitation.");
+      await acceptProjectInvitation(user.uid, invitationId);
+      await Promise.all([loadProjects(), loadProjectInvitations()]);
+    },
+    [loadProjectInvitations, loadProjects, user]
+  );
+
+  const handleDeclineProjectInvitation = useCallback(
+    async (invitationId) => {
+      if (!user) throw new Error("You must be signed in to decline an invitation.");
+      await declineProjectInvitation(user.uid, invitationId);
+      await loadProjectInvitations();
+    },
+    [loadProjectInvitations, user]
+  );
+
   const handleSettingsChange = (nextSettings) => {
     settingsRef.current = nextSettings;
     setSettings(nextSettings);
@@ -726,8 +884,8 @@ function App() {
       setSettings(result.settings);
       setSettingsSaveMessage(
         result.profileUpdated
-          ? "Settings saved in this browser."
-          : "Settings saved locally. Your display name will sync when you're online."
+          ? "Settings saved to your TaskFlow account."
+          : "Settings saved. Your display name will sync when you're online."
       );
       return result.settings;
     } catch (error) {
@@ -839,12 +997,12 @@ function App() {
   const selectedProject = projects.find(
     (project) => project.id === selectedProjectId
   );
+  const editableProjects = projects.filter((project) =>
+    ["owner", "editor"].includes(project.viewerRole)
+  );
   const currentView = selectedProjectId
     ? "project"
     : routeViews[currentPath];
-  const selectedProjectTaskCount = selectedProject
-    ? activeTasks.filter((task) => task.projectId === selectedProject.id).length
-    : 0;
   const pageTitle =
     currentView === "tasks"
       ? "Tasks"
@@ -876,7 +1034,7 @@ function App() {
           ? `${projects.length} ${projects.length === 1 ? "project" : "projects"}`
           : currentView === "project"
             ? selectedProject
-              ? `${selectedProjectTaskCount} ${selectedProjectTaskCount === 1 ? "task" : "tasks"} in this project`
+              ? "Board, list, and calendar views for this project."
               : projectsLoading
                 ? "Loading project..."
                 : "Project unavailable"
@@ -914,6 +1072,11 @@ function App() {
                 <span>{item.label}</span>
               </span>
               {!item.enabled && <small>Soon</small>}
+              {item.label === "Projects" && projectInvitations.length > 0 && (
+                <small aria-label={`${projectInvitations.length} pending invitations`}>
+                  {projectInvitations.length}
+                </small>
+              )}
               </button>
             );
           })}
@@ -930,7 +1093,7 @@ function App() {
           <button
             className="sidebar-logout"
             type="button"
-            onClick={() => signOut(auth)}
+            onClick={() => signOut()}
           >
             Log out
           </button>
@@ -944,7 +1107,10 @@ function App() {
             <p>{pageSubtitle}</p>
           </div>
 
-          {currentView !== "settings" && currentView !== "archived" && (
+          <NotificationsPanel userId={user.uid} onNavigate={navigate} />
+
+          {currentView !== "settings" && currentView !== "archived" &&
+            !(currentView === "project" && selectedProject?.viewerRole === "viewer") && (
             <div className="topbar-actions">
               <button
                 ref={newTaskButtonRef}
@@ -1012,7 +1178,7 @@ function App() {
                 busy={taskFormSaving}
                 error={taskFormError}
                 lists={lists}
-                projects={projects}
+                projects={editableProjects}
                 projectsLoading={projectsLoading}
                 projectsError={projectsError}
                 onRetryProjects={loadProjects}
@@ -1068,7 +1234,7 @@ function App() {
             lists={lists}
             formatSettings={settings.time}
             myDaySettings={settings.myDay}
-            projects={projects}
+            projects={editableProjects}
             projectsLoading={projectsLoading}
             projectsError={projectsError}
             onRetryProjects={loadProjects}
@@ -1111,43 +1277,44 @@ function App() {
 
         <div className="route-content" hidden={currentView !== "projects"}>
           <ProjectsPage
-            projects={projects}
+            userId={user.uid}
+            projects={editableProjects}
             loading={projectsLoading}
             error={projectsError}
             onRetry={loadProjects}
             onCreateProject={handleCreateProject}
+            onUpdateProject={handleUpdateProject}
+            onDeleteProject={handleDeleteProject}
             createRequest={projectCreateRequest}
             onOpenProject={(projectId) =>
               navigate(`/projects/${encodeURIComponent(projectId)}`)
             }
+            invitations={projectInvitations}
+            invitationsLoading={projectInvitationsLoading}
+            invitationsError={projectInvitationsError}
+            onRetryInvitations={loadProjectInvitations}
+            onAcceptInvitation={handleAcceptProjectInvitation}
+            onDeclineInvitation={handleDeclineProjectInvitation}
           />
         </div>
 
         {currentView === "project" && (
           <ProjectTasksPage
+            userId={user.uid}
             projectId={selectedProjectId}
             project={selectedProject}
             projects={projects}
             projectsLoading={projectsLoading}
             projectsError={projectsError}
             onRetryProjects={loadProjects}
-            tasks={activeTasks}
-            tasksLoading={tasksLoading}
-            tasksError={tasksError}
-            onRetryTasks={loadTasks}
-            onUpdateTask={handleUpdateTask}
-            onQuickUpdateTask={handleQuickUpdateTask}
-            quickTaskPendingIds={quickTaskPendingIds}
-            onDeleteTask={handleDeleteTask}
-            onArchiveTask={handleArchiveTask}
             lists={lists}
             formatSettings={settings.time}
+            weekStartsOn={weekStartIndex(settings.time.weekStartsOn)}
+            refreshToken={projectTaskRefreshToken}
             onBack={() => navigate("/projects")}
             onCreateTask={() =>
               openTaskForm({ projectId: selectedProject.id })
             }
-            ownerId={user.uid}
-            ownerEmail={user.email || ""}
             browserNotificationsEnabled={
               settings.reminder.enableBrowserNotifications
             }
@@ -1175,7 +1342,7 @@ function App() {
             onChange={handleSettingsChange}
             onSave={handleSaveSettings}
             onCommit={handleSaveSettings}
-            onSignOut={() => signOut(auth)}
+            onSignOut={() => signOut()}
             onNavigate={navigate}
             onOpenProjectCreate={() => {
               setProjectCreateRequest((request) => request + 1);
@@ -1204,7 +1371,7 @@ function App() {
             onDeleteTask={handleDeleteTask}
             onBack={() => navigate("/settings")}
             lists={lists}
-            projects={projects}
+            projects={editableProjects}
             projectsLoading={projectsLoading}
             projectsError={projectsError}
             onRetryProjects={loadProjects}

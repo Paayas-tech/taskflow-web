@@ -2486,13 +2486,13 @@ a:focus-visible {
   white-space: nowrap;
 }
 
-.task-reminder-legacy-note,
+.task-reminder-note,
 .task-reminder-controls .form-error {
   grid-column: 1 / -1;
   margin: 0;
 }
 
-.task-reminder-legacy-note {
+.task-reminder-note {
   color: var(--text-muted);
   font-size: 0.72rem;
   line-height: 1.5;
@@ -2740,6 +2740,17 @@ a:focus-visible {
   line-height: 1.45;
 }
 
+.auth-notice {
+  margin: -2px 0 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .auth-switch {
   width: 100%;
   min-height: 42px;
@@ -2759,6 +2770,10 @@ a:focus-visible {
 .auth-switch:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.auth-resend {
+  margin-top: 8px;
 }
 
 /* Calendar */
@@ -4540,6 +4555,291 @@ a:focus-visible {
   }
 }
 
+/* Supabase project workspace */
+.project-view-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 24px 0 16px;
+}
+
+.project-view-switcher {
+  display: inline-flex;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  background: var(--surface-soft);
+}
+
+.project-view-switcher button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.project-view-switcher button:hover,
+.project-view-switcher button.active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.project-list-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.project-list-controls input,
+.project-list-controls select {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 11px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.project-list-controls input {
+  width: min(230px, 100%);
+}
+
+.project-board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(250px, 1fr));
+  align-items: start;
+  gap: 14px;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 2px 2px 14px;
+  scrollbar-width: thin;
+}
+
+.project-board-column {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-soft);
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.project-board-column.is-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.project-board-column > header {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+}
+
+.project-board-column > header > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-board-column h3 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 0.88rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-board-column > header span {
+  display: grid;
+  min-width: 23px;
+  height: 23px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.project-board-column > header button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.15rem;
+}
+
+.project-board-column > header button:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.project-board-column-list {
+  display: grid;
+  min-height: 110px;
+  align-content: start;
+  gap: 8px;
+  padding: 10px;
+}
+
+.project-column-empty {
+  margin: 20px 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.project-task-card {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.project-task-card:hover {
+  border-color: var(--border-strong);
+}
+
+.project-task-card.is-dragging {
+  opacity: 0.42;
+}
+
+.project-task-drag-handle {
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  touch-action: none;
+}
+
+.project-task-drag-handle:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.project-task-card-content {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  border: 0;
+  padding: 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.project-task-card-content strong,
+.project-task-card-content > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-task-card-content strong {
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.project-task-card-content > span:not(.project-task-card-meta) {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.project-task-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.drag-overlay-card {
+  width: 260px;
+  grid-template-columns: minmax(0, 1fr);
+  padding: 14px;
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+@media (max-width: 1024px) {
+  .project-view-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .project-list-controls {
+    justify-content: flex-start;
+  }
+
+  .project-board {
+    grid-template-columns: repeat(3, minmax(270px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .project-view-switcher {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .project-list-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(130px, 0.55fr));
+  }
+
+  .project-list-controls input {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .project-view-toolbar {
+    margin-top: 18px;
+  }
+
+  .project-list-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-list-controls input,
+  .project-list-controls select {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .project-board {
+    grid-template-columns: repeat(3, minmax(82vw, 1fr));
+    margin-right: -2px;
+  }
+
+  .project-card-actions {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+}
+
 :root[data-background="calm"] .main-content {
   background-color: #fbfbfd;
   background-image: radial-gradient(circle at 86% 4%, rgba(102, 87, 200, 0.035), transparent 30%);
@@ -4706,7 +5006,7 @@ a:focus-visible {
   }
 
   .task-reminder-clear,
-  .task-reminder-legacy-note,
+  .task-reminder-note,
   .task-reminder-controls .form-error {
     grid-column: 1;
   }

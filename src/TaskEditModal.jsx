@@ -1,5 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import TaskForm from "./TaskForm";
+import ActivityFeed from "./ActivityFeed";
+import TaskAssigneeSelector from "./TaskAssigneeSelector";
+import TaskComments from "./TaskComments";
 import {
   buildTaskEditPayload,
   isArchived,
@@ -20,6 +23,12 @@ export default function TaskEditModal({
   onClose,
   returnFocusElement,
   browserNotificationsEnabled = true,
+  userId = null,
+  projectId = null,
+  projectMembers = [],
+  canAssign = false,
+  onAssigneeChange,
+  readOnly = false,
 }) {
   const [values, setValues] = useState(() =>
     taskFormValuesFromTask(task, lists)
@@ -31,6 +40,9 @@ export default function TaskEditModal({
   const [deleteError, setDeleteError] = useState("");
   const [lifecycleAction, setLifecycleAction] = useState("");
   const [lifecycleError, setLifecycleError] = useState("");
+  const [assigneeId, setAssigneeId] = useState(task.assigneeId || null);
+  const [assigneeBusy, setAssigneeBusy] = useState(false);
+  const [assigneeError, setAssigneeError] = useState("");
   const dialogRef = useRef(null);
   const saveSubmissionRef = useRef(false);
   const deleteSubmissionRef = useRef(false);
@@ -44,7 +56,7 @@ export default function TaskEditModal({
   const deleteTitleId = `${dialogId}-delete-title`;
   const deleteDescriptionId = `${dialogId}-delete-description`;
   const archived = isArchived(task);
-  const busy = saving || deleting || Boolean(lifecycleAction);
+  const busy = saving || deleting || assigneeBusy || Boolean(lifecycleAction);
 
   busyRef.current = busy;
   confirmingDeleteRef.current = confirmingDelete;
@@ -198,6 +210,24 @@ export default function TaskEditModal({
     }
   };
 
+  const handleAssigneeChange = async (nextAssigneeId) => {
+    if (!onAssigneeChange || assigneeBusy) return;
+    const previous = assigneeId;
+    setAssigneeId(nextAssigneeId);
+    setAssigneeBusy(true);
+    setAssigneeError("");
+    try {
+      await onAssigneeChange(task.id, nextAssigneeId);
+    } catch (error) {
+      setAssigneeId(previous);
+      setAssigneeError(
+        error.message || "We couldn't update this task's assignee."
+      );
+    } finally {
+      setAssigneeBusy(false);
+    }
+  };
+
   return (
     <>
       <div
@@ -239,14 +269,16 @@ export default function TaskEditModal({
                       : "Archive task"}
                 </button>
               )}
-              <button
-                className="danger-btn"
-                type="button"
-                onClick={requestDelete}
-                disabled={busy}
-              >
-                {archived ? "Delete permanently" : "Delete task"}
-              </button>
+              {onDeleteTask && (
+                <button
+                  className="danger-btn"
+                  type="button"
+                  onClick={requestDelete}
+                  disabled={busy}
+                >
+                  {archived ? "Delete permanently" : "Delete task"}
+                </button>
+              )}
               <button
                 className="ghost-btn compact-btn task-modal-close"
                 type="button"
@@ -265,22 +297,56 @@ export default function TaskEditModal({
             </p>
           )}
 
-          <TaskForm
-            values={values}
-            onChange={handleChange}
-            onSubmit={handleSubmit}
-            onCancel={closeModal}
-            submitLabel="Save changes"
-            busyLabel="Saving..."
-            busy={busy}
-            error={saveError}
-            lists={lists}
-            projects={projects}
-            projectsLoading={projectsLoading}
-            projectsError={projectsError}
-            onRetryProjects={onRetryProjects}
-            browserNotificationsEnabled={browserNotificationsEnabled}
-          />
+          {readOnly ? (
+            <section className="settings-section" aria-label="Read-only task details">
+              <p className="form-hint">You have view-only access to this task.</p>
+              <h3>{task.title}</h3>
+              {task.description && <p>{task.description}</p>}
+              {task.notes && <p><strong>Notes:</strong> {task.notes}</p>}
+              <p className="form-hint">Status: {task.status} · Priority: {task.priority}{task.dueDate ? ` · Due ${task.dueDate}` : ""}</p>
+            </section>
+          ) : (
+            <TaskForm
+              values={values}
+              onChange={handleChange}
+              onSubmit={handleSubmit}
+              onCancel={closeModal}
+              submitLabel="Save changes"
+              busyLabel="Saving..."
+              busy={busy}
+              error={saveError}
+              lists={lists}
+              projects={projects}
+              projectsLoading={projectsLoading}
+              projectsError={projectsError}
+              onRetryProjects={onRetryProjects}
+              browserNotificationsEnabled={browserNotificationsEnabled}
+            />
+          )}
+
+          {userId && projectId && (
+            <>
+              <TaskAssigneeSelector
+                assigneeId={assigneeId}
+                members={projectMembers}
+                disabled={!canAssign || !onAssigneeChange}
+                busy={assigneeBusy}
+                error={assigneeError}
+                onChange={handleAssigneeChange}
+              />
+              <TaskComments
+                userId={userId}
+                taskId={task.id}
+                members={projectMembers}
+              />
+              <ActivityFeed
+                userId={userId}
+                projectId={projectId}
+                taskId={task.id}
+                compact
+              />
+            </>
+          )}
         </section>
       </div>
 

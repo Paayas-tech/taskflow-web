@@ -104,7 +104,7 @@ export default function ArchivedTasksPage({
         <div className="tasks-state" role="status" aria-live="polite">
           <div className="state-spinner" aria-hidden="true" />
           <h3>Loading archived tasks...</h3>
-          <p>Your archived tasks are being retrieved from Firestore.</p>
+          <p>Your archived tasks are being retrieved securely.</p>
         </div>
       ) : error ? (
         <div className="tasks-state error-state" role="alert">

@@ -89,11 +89,13 @@ export default function CalendarWeekView({
   );
 
   const createAllDay = (date) => {
+    if (!onCreateTask) return;
     onSelectDate(date);
     onCreateTask(createCalendarTaskInitialValues({ date }));
   };
 
   const createTimed = (date, startTime) => {
+    if (!onCreateTask) return;
     onSelectDate(date);
     onCreateTask(createCalendarTaskInitialValues({ date, startTime }));
   };
@@ -129,6 +131,7 @@ export default function CalendarWeekView({
                   type="button"
                   key={key}
                   onClick={() => createAllDay(key)}
+                  disabled={!onCreateTask}
                   aria-label={`Create an all-day task on ${formatDay(key)}`}
                 />
               ))}
@@ -147,7 +150,7 @@ export default function CalendarWeekView({
                     }}
                     onClick={(event) => {
                       onSelectDate(segment.startDate);
-                      onEditTask(segment, event.currentTarget);
+                      onEditTask?.(segment, event.currentTarget);
                     }}
                     formatSettings={formatSettings}
                   />
@@ -187,6 +190,7 @@ export default function CalendarWeekView({
                           type="button"
                           key={minutes}
                           onClick={() => createTimed(key, time)}
+                          disabled={!onCreateTask}
                           aria-label={`Create a one-hour task on ${formatDay(key)} at ${formatTimeForDisplay(time, formatSettings.format)}`}
                         />
                       ))}
@@ -203,7 +207,7 @@ export default function CalendarWeekView({
                           style={timedEventStyle(task)}
                           onClick={(event) => {
                             onSelectDate(key);
-                            onEditTask(task, event.currentTarget);
+                            onEditTask?.(task, event.currentTarget);
                           }}
                         />
                       ))}

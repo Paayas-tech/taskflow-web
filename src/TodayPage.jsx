@@ -188,7 +188,7 @@ export default function TodayPage({
         <div className="tasks-state" role="status" aria-live="polite">
           <div className="state-spinner" aria-hidden="true" />
           <h3>Loading today...</h3>
-          <p>Your saved tasks are being retrieved from Firestore.</p>
+          <p>Your saved tasks are being retrieved securely.</p>
         </div>
       ) : tasksError ? (
         <div className="tasks-state error-state" role="alert">

@@ -1,0 +1,3 @@
+-- Seed fixtures are versioned in migrations/004_seed_data.sql for this isolated
+-- Stage 2 database. This conventional seed entry point remains intentionally
+-- empty so `supabase db reset` does not load the fixtures twice.

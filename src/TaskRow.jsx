@@ -120,8 +120,8 @@ export default function TaskRow({
               : `Mark ${task.title} complete`
           }
           aria-pressed={completed}
-          onClick={() => onToggleCompletion(task)}
-          disabled={lifecycleBusy}
+          onClick={() => onToggleCompletion?.(task)}
+          disabled={lifecycleBusy || !onToggleCompletion}
         >
           {completionBusy ? (
             <span className="completion-spinner" />
@@ -165,6 +165,14 @@ export default function TaskRow({
                 aria-hidden="true"
               />
               {taskProject.name}
+            </span>
+          )}
+          {task.assigneeId && (
+            <span className="task-project-badge" title={`Assigned to ${task.assigneeId}`}>
+              <span className="sidebar-avatar" aria-hidden="true">
+                {task.assigneeId.slice(0, 1).toUpperCase()}
+              </span>
+              {task.assigneeId}
             </span>
           )}
           <span className={`task-due-meta task-due-${dueDateMeta.tone}`}>
