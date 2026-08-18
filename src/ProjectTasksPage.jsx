@@ -67,7 +67,11 @@ export default function ProjectTasksPage({
   const [creating, setCreating] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
   const createSubmissionRef = useRef(false);
+  const createDialogRef = useRef(null);
+  const createTriggerRef = useRef(null);
+  const creatingRef = useRef(false);
   const editTriggerRef = useRef(null);
+  const membersButtonRef = useRef(null);
   const workspaceRequestRef = useRef(0);
 
   const loadWorkspace = useCallback(async () => {
@@ -142,6 +146,7 @@ export default function ProjectTasksPage({
 
   const openCreate = (column = null, schedule = {}) => {
     if (!canEditTasks) return;
+    createTriggerRef.current = document.activeElement;
     setCreateError("");
     setCreateValues({
       ...emptyTaskForm, ...schedule, projectId, status: statusForColumn(column),
@@ -153,6 +158,49 @@ export default function ProjectTasksPage({
     setShowCreate(false);
     setCreateError("");
   };
+
+  useEffect(() => {
+    creatingRef.current = creating;
+  }, [creating]);
+
+  useEffect(() => {
+    if (!showCreate) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !creatingRef.current) {
+        event.preventDefault();
+        setShowCreate(false);
+        setCreateError("");
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+      const focusableElements = createDialogRef.current?.querySelectorAll(
+        'input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled)'
+      );
+      if (!focusableElements?.length) return;
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+      window.requestAnimationFrame(() => createTriggerRef.current?.focus({ preventScroll: true }));
+    };
+  }, [showCreate]);
   const handleCreateChange = (event) => {
     const { name, value, type, checked } = event.target;
     setCreateValues((previous) => ({
@@ -287,7 +335,7 @@ export default function ProjectTasksPage({
           <div><p className="card-label">Project workspace</p><h2 id="project-task-title">{project.name}</h2>{project.description && <p>{project.description}</p>}</div>
         </div>
         <div className="project-card-actions">
-          <button className="ghost-btn compact-btn" type="button" onClick={() => setShowMembers(true)}>Members</button>
+          <button ref={membersButtonRef} className="ghost-btn compact-btn" type="button" onClick={() => setShowMembers(true)}>Members</button>
           {canEditTasks && <button className="primary-btn" type="button" onClick={() => openCreate()}>+ New project task</button>}
         </div>
       </header>
@@ -339,7 +387,7 @@ export default function ProjectTasksPage({
 
       {showCreate && (
         <div className="task-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeCreate()}>
-          <section className="task-modal" role="dialog" aria-modal="true" aria-labelledby="project-create-task-title" aria-busy={creating}>
+          <section ref={createDialogRef} className="task-modal" role="dialog" aria-modal="true" aria-labelledby="project-create-task-title" aria-busy={creating}>
             <div className="task-modal-header"><div><p className="card-label">Project task</p><h2 id="project-create-task-title">Create Task</h2><p>This task will be added to {project.name}.</p></div><button className="ghost-btn compact-btn" type="button" onClick={closeCreate} disabled={creating}>Close</button></div>
             <TaskForm values={createValues} onChange={handleCreateChange} onSubmit={handleCreate} onCancel={closeCreate} submitLabel="Create Task" busyLabel="Creating..." busy={creating} error={createError} lists={lists} projects={editableProjects} projectsLoading={projectsLoading} projectsError={projectsError} onRetryProjects={onRetryProjects} browserNotificationsEnabled={browserNotificationsEnabled} />
           </section>
@@ -347,7 +395,7 @@ export default function ProjectTasksPage({
       )}
 
       {selectedTask && <TaskEditModal key={selectedTask.id} task={selectedTask} lists={lists} projects={editableProjects} projectsLoading={projectsLoading} projectsError={projectsError} onRetryProjects={onRetryProjects} browserNotificationsEnabled={browserNotificationsEnabled} onUpdateTask={canEditTasks ? handleUpdate : undefined} onDeleteTask={canEditTasks ? handleDelete : undefined} onArchiveTask={canEditTasks ? handleArchive : undefined} onClose={() => setSelectedTaskId(null)} returnFocusElement={editTriggerRef.current} userId={userId} projectId={projectId} projectMembers={members} canAssign={canEditTasks} onAssigneeChange={canEditTasks ? handleAssigneeChange : undefined} readOnly={!canEditTasks} />}
-      {showMembers && <ProjectMembersModal userId={userId} project={project} onClose={() => setShowMembers(false)} />}
+      {showMembers && <ProjectMembersModal userId={userId} project={project} onClose={() => setShowMembers(false)} returnFocusElement={membersButtonRef.current} />}
     </section>
   );
 }

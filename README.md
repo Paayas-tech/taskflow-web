@@ -52,6 +52,20 @@ npm run build
 git diff --check
 ```
 
+### Local resilience checks
+
+In addition to the automated suite, verify these failure paths before a release:
+
+- Temporarily omit each browser configuration variable in an isolated local
+  shell and confirm TaskFlow shows the generic configuration screen without
+  attempting authentication or data requests.
+- Exercise sign-out success, a controlled rejected sign-out request, and a
+  successful retry. A failed request must keep the session active and show only
+  the safe retry message.
+- Open a protected route while signed out and confirm the login screen appears.
+- Use only local mocks or the local Supabase stack for failure testing. Never
+  alter production credentials or sessions to simulate an outage.
+
 The optional three-user collaboration smoke test is local-only and refuses to
 run against a non-local URL:
 
@@ -97,6 +111,21 @@ to `/today`, `/tasks`, `/projects`, `/calendar`, and `/settings` works.
   not a production delivery service.
 - Keep email confirmation enabled when custom SMTP is introduced, and validate
   confirmation delivery with a fresh inbox before announcing public signup.
+
+### Production pre-launch checklist
+
+- Confirm `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` exist in the intended
+  deployment environments.
+- Confirm all reviewed migrations are applied and RLS remains enabled and
+  covered by the database-policy tests.
+- Keep custom SMTP disabled until `mail.bohaus.in` is verified; DNS verification
+  remains an external prerequisite.
+- Complete owner, editor, and viewer smoke tests with separate accounts.
+- Verify sign-out failure leaves the current session intact, retry succeeds,
+  expired sessions return to login, and protected routes never render account
+  data while signed out.
+- Confirm no Supabase service-role key, secret key, provider secret, or token is
+  present in any frontend `VITE_` variable.
 
 ## Security
 

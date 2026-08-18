@@ -10,7 +10,12 @@ import {
   updateProjectMemberRole,
 } from "./application/projectService";
 
-export default function ProjectMembersModal({ userId, project, onClose }) {
+export default function ProjectMembersModal({
+  userId,
+  project,
+  onClose,
+  returnFocusElement,
+}) {
   const [members, setMembers] = useState([]);
   const [invitations, setInvitations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,7 +26,12 @@ export default function ProjectMembersModal({ userId, project, onClose }) {
   const [busyId, setBusyId] = useState("");
   const [memberToRemove, setMemberToRemove] = useState(null);
   const dialogRef = useRef(null);
+  const confirmationDialogRef = useRef(null);
+  const removeTriggerRef = useRef(null);
+  const memberToRemoveRef = useRef(null);
   const canManage = project.viewerRole === "owner";
+
+  memberToRemoveRef.current = memberToRemove;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,15 +56,33 @@ export default function ProjectMembersModal({ userId, project, onClose }) {
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     const handleKeyDown = (event) => {
-      if (event.key === "Escape" && !busyId) onClose();
+      if (event.key === "Escape" && !busyId) {
+        if (memberToRemoveRef.current) {
+          setMemberToRemove(null);
+          window.requestAnimationFrame(() => removeTriggerRef.current?.focus());
+        } else {
+          onClose();
+        }
+        return;
+      }
       if (event.key !== "Tab") return;
-      const elements = dialogRef.current?.querySelectorAll(
+      const activeDialog = memberToRemoveRef.current
+        ? confirmationDialogRef.current
+        : dialogRef.current;
+      const elements = activeDialog?.querySelectorAll(
         'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
       );
-      if (!elements?.length) return;
+      if (!elements?.length) {
+        event.preventDefault();
+        activeDialog?.focus();
+        return;
+      }
       const first = elements[0];
       const last = elements[elements.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (
+        event.shiftKey &&
+        (document.activeElement === first || document.activeElement === activeDialog)
+      ) {
         event.preventDefault(); last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
         event.preventDefault(); first.focus();
@@ -66,7 +94,25 @@ export default function ProjectMembersModal({ userId, project, onClose }) {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [busyId, onClose]);
+  }, [busyId, onClose, returnFocusElement]);
+
+  useEffect(() => {
+    const focusFrame = window.requestAnimationFrame(() => dialogRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.requestAnimationFrame(() => returnFocusElement?.focus());
+    };
+  }, [returnFocusElement]);
+
+  useEffect(() => {
+    if (!memberToRemove) return undefined;
+    const focusFrame = window.requestAnimationFrame(() => {
+      confirmationDialogRef.current
+        ?.querySelector('button:not(:disabled)')
+        ?.focus();
+    });
+    return () => window.cancelAnimationFrame(focusFrame);
+  }, [memberToRemove]);
 
   const runAction = async (id, action) => {
     if (busyId) return;
@@ -104,6 +150,7 @@ export default function ProjectMembersModal({ userId, project, onClose }) {
         aria-modal="true"
         aria-labelledby="project-members-title"
         aria-busy={Boolean(busyId)}
+        tabIndex={-1}
       >
         <div className="task-modal-header">
           <div>
@@ -133,7 +180,10 @@ export default function ProjectMembersModal({ userId, project, onClose }) {
                     selected.userId,
                     () => updateProjectMemberRole(userId, project.id, selected.userId, nextRole)
                   )}
-                  onRemove={setMemberToRemove}
+                  onRemove={(member, triggerElement) => {
+                    removeTriggerRef.current = triggerElement;
+                    setMemberToRemove(member);
+                  }}
                 />
               ))}
             </div>
@@ -179,11 +229,11 @@ export default function ProjectMembersModal({ userId, project, onClose }) {
 
         {memberToRemove && (
           <div className="confirmation-backdrop">
-            <section className="confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-member-title">
+            <section ref={confirmationDialogRef} className="confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-member-title" tabIndex={-1}>
               <h3 id="remove-member-title">Remove this member?</h3>
               <p>{memberToRemove.userId} will immediately lose access to this project.</p>
               <div className="confirmation-actions">
-                <button className="ghost-btn" type="button" onClick={() => setMemberToRemove(null)}>Cancel</button>
+                <button className="ghost-btn" type="button" onClick={() => { setMemberToRemove(null); window.requestAnimationFrame(() => removeTriggerRef.current?.focus()); }}>Cancel</button>
                 <button className="danger-btn" type="button" onClick={() => {
                   const selected = memberToRemove;
                   setMemberToRemove(null);

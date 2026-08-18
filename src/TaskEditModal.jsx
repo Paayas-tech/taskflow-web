@@ -44,6 +44,8 @@ export default function TaskEditModal({
   const [assigneeBusy, setAssigneeBusy] = useState(false);
   const [assigneeError, setAssigneeError] = useState("");
   const dialogRef = useRef(null);
+  const confirmationDialogRef = useRef(null);
+  const deleteButtonRef = useRef(null);
   const saveSubmissionRef = useRef(false);
   const deleteSubmissionRef = useRef(false);
   const lifecycleSubmissionRef = useRef(false);
@@ -67,25 +69,40 @@ export default function TaskEditModal({
     const previousScrollX = window.scrollX;
     const previousScrollY = window.scrollY;
     const handleKeyDown = (event) => {
-      if (confirmingDeleteRef.current) return;
-
       if (event.key === "Escape" && !busyRef.current) {
-        onCloseRef.current();
+        if (confirmingDeleteRef.current) {
+          setDeleteError("");
+          setConfirmingDelete(false);
+          window.requestAnimationFrame(() => deleteButtonRef.current?.focus());
+        } else {
+          onCloseRef.current();
+        }
         return;
       }
 
       if (event.key !== "Tab") return;
 
-      const focusableElements = dialogRef.current?.querySelectorAll(
+      const activeDialog = confirmingDeleteRef.current
+        ? confirmationDialogRef.current
+        : dialogRef.current;
+      const focusableElements = activeDialog?.querySelectorAll(
         'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
       );
 
-      if (!focusableElements?.length) return;
+      if (!focusableElements?.length) {
+        event.preventDefault();
+        activeDialog?.focus();
+        return;
+      }
 
       const firstElement = focusableElements[0];
       const lastElement = focusableElements[focusableElements.length - 1];
 
-      if (event.shiftKey && document.activeElement === firstElement) {
+      if (
+        event.shiftKey &&
+        (document.activeElement === firstElement ||
+          document.activeElement === activeDialog)
+      ) {
         event.preventDefault();
         lastElement.focus();
       } else if (!event.shiftKey && document.activeElement === lastElement) {
@@ -95,9 +112,17 @@ export default function TaskEditModal({
     };
 
     document.body.style.overflow = "hidden";
+    const focusFrame = window.requestAnimationFrame(() => {
+      dialogRef.current
+        ?.querySelector(
+          'input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled)'
+        )
+        ?.focus();
+    });
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
       window.requestAnimationFrame(() => {
@@ -106,6 +131,16 @@ export default function TaskEditModal({
       });
     };
   }, [returnFocusElement]);
+
+  useEffect(() => {
+    if (!confirmingDelete) return undefined;
+    const focusFrame = window.requestAnimationFrame(() => {
+      confirmationDialogRef.current
+        ?.querySelector('button:not(:disabled)')
+        ?.focus();
+    });
+    return () => window.cancelAnimationFrame(focusFrame);
+  }, [confirmingDelete]);
 
   const closeModal = () => {
     if (busy) return;
@@ -186,6 +221,7 @@ export default function TaskEditModal({
     if (deleting) return;
     setDeleteError("");
     setConfirmingDelete(false);
+    window.requestAnimationFrame(() => deleteButtonRef.current?.focus());
   };
 
   const confirmDelete = async () => {
@@ -271,6 +307,7 @@ export default function TaskEditModal({
               )}
               {onDeleteTask && (
                 <button
+                  ref={deleteButtonRef}
                   className="danger-btn"
                   type="button"
                   onClick={requestDelete}
@@ -353,12 +390,14 @@ export default function TaskEditModal({
       {confirmingDelete && (
         <div className="confirmation-backdrop">
           <section
+            ref={confirmationDialogRef}
             className="confirmation-dialog"
             role="alertdialog"
             aria-modal="true"
             aria-labelledby={deleteTitleId}
             aria-describedby={deleteDescriptionId}
             aria-busy={deleting}
+            tabIndex={-1}
           >
             <p className="card-label">Permanent action</p>
             <h3 id={deleteTitleId}>

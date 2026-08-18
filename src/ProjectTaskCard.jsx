@@ -17,19 +17,20 @@ export default function ProjectTaskCard({ task, onEdit, readOnly = false }) {
   return (
     <article
       ref={setNodeRef}
-      className={`project-task-card${isDragging ? " is-dragging" : ""}`}
+      className={`project-task-card${isDragging ? " is-dragging" : ""}${readOnly ? " is-read-only" : ""}`}
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
-      <button
-        className="project-task-drag-handle"
-        type="button"
-        aria-label={`Move ${task.title}`}
-        disabled={readOnly}
-        {...attributes}
-        {...listeners}
-      >
-        <span aria-hidden="true">⋮⋮</span>
-      </button>
+      {!readOnly && (
+        <button
+          className="project-task-drag-handle"
+          type="button"
+          aria-label={`Move ${task.title}`}
+          {...attributes}
+          {...listeners}
+        >
+          <span aria-hidden="true">⋮⋮</span>
+        </button>
+      )}
       <button
         className="project-task-card-content"
         type="button"

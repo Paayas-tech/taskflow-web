@@ -116,6 +116,36 @@ a:focus-visible {
   letter-spacing: 0.02em;
 }
 
+.configuration-error-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.configuration-error-card {
+  width: min(520px, 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: clamp(24px, 5vw, 40px);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.configuration-error-card h1 {
+  margin: 8px 0 0;
+  color: var(--text-primary);
+  font-size: clamp(1.65rem, 5vw, 2.2rem);
+  letter-spacing: -0.035em;
+}
+
+.configuration-error-card > p:not(.card-label) {
+  margin: 14px 0 24px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
 /* Application shell */
 
 .app-shell {
@@ -317,6 +347,17 @@ a:focus-visible {
 .sidebar-logout:hover {
   background: var(--surface-muted);
   color: var(--danger);
+}
+
+.signout-error {
+  margin: 8px 0 0;
+  color: var(--danger);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.sidebar-signout-error {
+  grid-column: 1 / -1;
 }
 
 .main-content {
@@ -2621,6 +2662,12 @@ a:focus-visible {
   margin-top: 14px;
 }
 
+.notification-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .confirmation-actions {
   margin-top: 22px;
 }
@@ -4715,6 +4762,10 @@ a:focus-visible {
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 
+.project-task-card.is-read-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .project-task-card:hover {
   border-color: var(--border-strong);
 }
@@ -5734,6 +5785,9 @@ button.settings-list-row:hover,
   margin-top: 24px;
   border-top: 1px solid var(--border);
   padding-top: 18px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
 }
 
 .settings-detail-navigation {

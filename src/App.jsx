@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import ArchivedTasksPage from "./ArchivedTasksPage";
 import CalendarPage from "./CalendarPage";
+import ConfigurationErrorScreen from "./ConfigurationErrorScreen";
 import Dashboard from "./Dashboard";
 import Login from "./Login";
 import NotificationsPanel from "./NotificationsPanel";
@@ -15,6 +16,7 @@ import {
   onAuthStateChange,
   signOut,
 } from "./application/authService";
+import { createSignOutController } from "./application/signOutController";
 import {
   getTasks,
   createTask,
@@ -52,6 +54,7 @@ import {
   filterActiveTasks,
   filterArchivedTasks,
 } from "./domain/archivedTasksDomain";
+import { isSupabaseConfigured } from "./infrastructure/supabase/client";
 
 const navItems = [
   { label: "Dashboard", path: "/", enabled: true, icon: "dashboard" },
@@ -178,6 +181,13 @@ const emptyTaskForm = {
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [configurationUnavailable, setConfigurationUnavailable] = useState(
+    !isSupabaseConfigured
+  );
+  const [signOutState, setSignOutState] = useState({
+    pending: false,
+    error: "",
+  });
   const [currentPath, setCurrentPath] = useState(() =>
     normalizePath(window.location.pathname)
   );
@@ -218,6 +228,18 @@ function App() {
   const quickTaskMutationsRef = useRef(new Map());
   const defaultRouteAppliedRef = useRef(false);
   const authenticatedUserIdRef = useRef(null);
+  const signOutControllerRef = useRef(null);
+
+  if (!signOutControllerRef.current) {
+    signOutControllerRef.current = createSignOutController({
+      performSignOut: signOut,
+      onStateChange: setSignOutState,
+    });
+  }
+
+  const handleSignOut = useCallback(() => {
+    void signOutControllerRef.current.run();
+  }, []);
 
   const syncQuickTaskPendingIds = useCallback(() => {
     setQuickTaskPendingIds(
@@ -403,11 +425,20 @@ function App() {
   }, [user]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChange((_event, currentUser) => {
+    if (!isSupabaseConfigured) {
+      setConfigurationUnavailable(true);
+      setLoading(false);
+      return undefined;
+    }
+
+    let unsubscribe;
+    try {
+      unsubscribe = onAuthStateChange((_event, currentUser) => {
       const nextUserId = currentUser?.uid || null;
       const userChanged = nextUserId !== authenticatedUserIdRef.current;
 
       if (userChanged) {
+        signOutControllerRef.current.reset();
         defaultRouteAppliedRef.current = false;
         tasksRef.current = [];
         quickTaskMutationsRef.current.clear();
@@ -446,7 +477,12 @@ function App() {
       authenticatedUserIdRef.current = nextUserId;
       setUser(currentUser);
       setLoading(false);
-    });
+      });
+    } catch {
+      setConfigurationUnavailable(true);
+      setLoading(false);
+      return undefined;
+    }
 
     return () => unsubscribe();
   }, []);
@@ -955,9 +991,18 @@ function App() {
     };
 
     document.body.style.overflow = "hidden";
+    const focusFrame = window.requestAnimationFrame(() => {
+      document
+        .getElementById("create-task-dialog")
+        ?.querySelector(
+          'input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled)'
+        )
+        ?.focus();
+    });
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
+      window.cancelAnimationFrame(focusFrame);
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
@@ -982,6 +1027,12 @@ function App() {
       });
     }
   };
+
+  if (configurationUnavailable) {
+    return (
+      <ConfigurationErrorScreen onRetry={() => window.location.reload()} />
+    );
+  }
 
   if (loading) {
     return <div className="loading-screen">Loading...</div>;
@@ -1093,10 +1144,24 @@ function App() {
           <button
             className="sidebar-logout"
             type="button"
-            onClick={() => signOut()}
+            onClick={handleSignOut}
+            disabled={signOutState.pending}
+            aria-busy={signOutState.pending}
+            aria-describedby={
+              signOutState.error ? "sidebar-signout-error" : undefined
+            }
           >
-            Log out
+            {signOutState.pending ? "Signing out..." : "Log out"}
           </button>
+          {signOutState.error && (
+            <p
+              className="signout-error sidebar-signout-error"
+              id="sidebar-signout-error"
+              role="alert"
+            >
+              {signOutState.error}
+            </p>
+          )}
         </div>
       </aside>
 
@@ -1342,7 +1407,9 @@ function App() {
             onChange={handleSettingsChange}
             onSave={handleSaveSettings}
             onCommit={handleSaveSettings}
-            onSignOut={() => signOut()}
+            onSignOut={handleSignOut}
+            signOutPending={signOutState.pending}
+            signOutError={signOutState.error}
             onNavigate={navigate}
             onOpenProjectCreate={() => {
               setProjectCreateRequest((request) => request + 1);

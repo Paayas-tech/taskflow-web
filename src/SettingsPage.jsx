@@ -167,6 +167,8 @@ export default function SettingsPage({
   onSave,
   onCommit,
   onSignOut,
+  signOutPending = false,
+  signOutError = "",
   onNavigate,
   onOpenProjectCreate,
   onRestoreProject,
@@ -993,9 +995,25 @@ export default function SettingsPage({
       </form>
 
       <div className="settings-signout-row">
-        <button className="ghost-btn settings-signout" type="button" onClick={onSignOut}>
-          Sign out of TaskFlow
+        <button
+          className="ghost-btn settings-signout"
+          type="button"
+          onClick={onSignOut}
+          disabled={signOutPending}
+          aria-busy={signOutPending}
+          aria-describedby={signOutError ? "settings-signout-error" : undefined}
+        >
+          {signOutPending ? "Signing out..." : "Sign out of TaskFlow"}
         </button>
+        {signOutError && (
+          <p
+            className="signout-error"
+            id="settings-signout-error"
+            role="alert"
+          >
+            {signOutError}
+          </p>
+        )}
       </div>
     </div>
   );

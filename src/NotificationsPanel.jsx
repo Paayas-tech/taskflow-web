@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   deleteNotification,
   getNotifications,
@@ -22,6 +22,7 @@ export default function NotificationsPanel({ userId, onNavigate }) {
   const panelRef = useRef(null);
   const dialogRef = useRef(null);
   const triggerRef = useRef(null);
+  const dialogId = useId();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,9 +52,36 @@ export default function NotificationsPanel({ userId, onNavigate }) {
       if (!panelRef.current?.contains(event.target)) setOpen(false);
     };
     const closeOnEscape = (event) => {
-      if (event.key !== "Escape") return;
-      setOpen(false);
-      triggerRef.current?.focus();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        triggerRef.current?.focus();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+      const focusableElements = dialogRef.current?.querySelectorAll(
+        'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusableElements?.length) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+      if (
+        event.shiftKey &&
+        (document.activeElement === firstElement ||
+          document.activeElement === dialogRef.current)
+      ) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
     };
     const focusFrame = window.requestAnimationFrame(() => {
       dialogRef.current?.focus();
@@ -103,19 +131,19 @@ export default function NotificationsPanel({ userId, onNavigate }) {
 
   return (
     <div ref={panelRef} className="notification-center">
-      <button ref={triggerRef} className="ghost-btn compact-btn" type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-haspopup="dialog">
+      <button ref={triggerRef} className="ghost-btn compact-btn" type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-haspopup="dialog" aria-controls={dialogId}>
         Notifications{unreadCount > 0 ? ` (${unreadCount})` : ""}
       </button>
       {open && (
-        <section ref={dialogRef} className="confirmation-dialog" role="dialog" aria-label="Notifications" tabIndex={-1}>
-          <div className="section-heading-row"><h3>Notifications</h3><button className="ghost-btn compact-btn" type="button" onClick={() => void markAllRead()} disabled={!unreadCount}>Mark all read</button></div>
+        <section id={dialogId} ref={dialogRef} className="confirmation-dialog" role="dialog" aria-label="Notifications" tabIndex={-1}>
+          <div className="section-heading-row"><h3>Notifications</h3><div className="notification-dialog-actions"><button className="ghost-btn compact-btn" type="button" onClick={() => void markAllRead()} disabled={!unreadCount}>Mark all read</button><button className="ghost-btn compact-btn" type="button" onClick={() => { setOpen(false); triggerRef.current?.focus(); }} aria-label="Close notifications">Close</button></div></div>
           {loading ? <p role="status">Loading notifications...</p> : error ? <div><p className="form-error" role="alert">{error}</p><button className="ghost-btn compact-btn" type="button" onClick={() => void load()}>Try again</button></div> : notifications.length === 0 ? <p className="form-hint">You're all caught up.</p> : (
             <div className="settings-list">
               {notifications.map((notification) => (
                 <article className="settings-card" key={notification.id}>
                   <button className="task-title-button" type="button" onClick={() => void openNotification(notification)}><strong>{notificationLabel(notification)}</strong></button>
                   <p className="form-hint">{notification.createdAt ? new Date(notification.createdAt).toLocaleString() : "Just now"}</p>
-                  <button className="ghost-btn compact-btn" type="button" onClick={() => void dismissNotification(notification.id)}>Dismiss</button>
+                  <button className="ghost-btn compact-btn" type="button" onClick={() => void dismissNotification(notification.id)} aria-label={`Dismiss notification: ${notificationLabel(notification)}`}>Dismiss</button>
                 </article>
               ))}
             </div>

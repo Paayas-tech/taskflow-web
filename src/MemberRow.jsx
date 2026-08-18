@@ -36,7 +36,7 @@ export default function MemberRow({
             className="danger-btn compact-btn"
             type="button"
             disabled={busy}
-            onClick={() => onRemove(member)}
+            onClick={(event) => onRemove(member, event.currentTarget)}
           >
             Remove
           </button>
