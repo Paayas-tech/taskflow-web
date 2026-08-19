@@ -63,7 +63,16 @@ select extensions.is((select count(*)::integer from public.lists), 1, 'owner rea
 select extensions.is((select count(*)::integer from public.project_invitations), 1, 'owner reads project invitations');
 select extensions.is((select count(*)::integer from public.project_columns), 3, 'owner reads project columns');
 select extensions.is((select count(*)::integer from public.task_comments), 1, 'owner reads project task comments');
-select extensions.is((select count(*)::integer from public.activity_events), 1, 'owner reads project activity');
+select extensions.is(
+  (
+    select count(*)::integer
+    from public.activity_events
+    where id = '00000000-0000-0000-0000-000000000901'
+      and event_type = 'task.updated'
+  ),
+  1,
+  'owner reads project activity'
+);
 select extensions.is((select count(*)::integer from public.project_documents), 1, 'owner reads project documents');
 
 select extensions.results_eq(

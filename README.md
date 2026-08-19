@@ -39,8 +39,11 @@ npx supabase db reset --local
 npm run dev
 ```
 
-The application uses the Supabase URL and anon key from `.env`. The local
-database schema is defined by the ordered files in `supabase/migrations/`.
+The application uses the Supabase URL and anon key from `.env`. Database schema
+and policy history is defined by the ordered, data-free files in
+`supabase/migrations/`. A local `supabase db reset` applies those migrations and
+then loads the deterministic development fixtures from `supabase/seed.sql`.
+Local fixtures must never be loaded into a production database.
 
 ## Validation
 
@@ -91,6 +94,11 @@ npx supabase db push
 
 Always verify the linked project reference before running the final command.
 Production data must not be seeded with deterministic local fixtures.
+Before applying this migration history to an existing cloud project, inspect
+its recorded migration versions and determine whether the historical migration
+`004_seed_data.sql` was previously applied. Making the local file data-free does
+not remove fixture records from a database that already executed the earlier
+version; any such records require a separate, reviewed data audit.
 
 ## Vercel deployment
 
