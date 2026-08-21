@@ -31,3 +31,36 @@ describe("Supabase auth repository signup contract", () => {
     ).rejects.toMatchObject({ code: "unexpected_signup_response" });
   });
 });
+
+describe("Supabase password recovery contract", () => {
+  it("requests a reset with the supplied recovery redirect", async () => {
+    const resetPasswordForEmail = vi.fn().mockResolvedValue({
+      data: {},
+      error: null,
+    });
+    const repository = createAuthRepository({
+      auth: { resetPasswordForEmail },
+    });
+
+    await repository.requestPasswordReset({
+      email: "user@example.test",
+      redirectTo: "https://taskflow.example/recover",
+    });
+
+    expect(resetPasswordForEmail).toHaveBeenCalledWith("user@example.test", {
+      redirectTo: "https://taskflow.example/recover",
+    });
+  });
+
+  it("updates the signed-in recovery user's password", async () => {
+    const updateUser = vi.fn().mockResolvedValue({
+      data: { user: { id: "user-a" } },
+      error: null,
+    });
+    const repository = createAuthRepository({ auth: { updateUser } });
+
+    await repository.updatePassword("new-password");
+
+    expect(updateUser).toHaveBeenCalledWith({ password: "new-password" });
+  });
+});

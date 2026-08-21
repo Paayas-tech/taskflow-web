@@ -1,7 +1,12 @@
-import { normalizeTaskDocument, sortTasksNewestFirst } from "../domain/taskDomain";
+import {
+  dateOnlyKey,
+  normalizeTaskDocument,
+  sortTasksNewestFirst,
+} from "../domain/taskDomain";
 import { taskRepository } from "../infrastructure/supabase/taskRepository";
 import { projectRepository } from "../infrastructure/supabase/projectRepository";
 import { createTaskService } from "./taskService";
+import { sortAssignedTasksForAttention } from "../domain/assignmentDomain";
 
 const normalizeProjectStatus = (status) =>
   String(status || "").trim().toLowerCase() === "archived"
@@ -97,11 +102,10 @@ export const createProjectService = (
     repository.deleteProject(userId, projectId),
 
   async createProjectInvitation(userId, projectId, invitation = {}) {
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     return repository.createProjectInvitation(userId, projectId, {
       email: normalizeInvitationEmail(invitation.email),
       role: normalizeInvitationRole(invitation.role),
-      expiresAt,
+      projectName: String(invitation.projectName || "").trim(),
     });
   },
 
@@ -147,6 +151,19 @@ export const createProjectService = (
         version: Number.isFinite(row.version) ? row.version : 1,
       }))
     );
+  },
+
+  async getAssignedProjectTasks(userId, now = new Date()) {
+    const rows = await repository.getAssignedProjectTasks(userId);
+    const assignments = rows.map((row) => ({
+      ...normalizeTaskDocument(row.id, repository.taskRowToDocument(row)),
+      assigneeId: row.task_assignments?.[0]?.user_id || userId,
+      assignedAt: row.task_assignments?.[0]?.assigned_at || null,
+      projectName: row.projects?.name || "Untitled project",
+      projectStatus: row.projects?.status || "active",
+      columnId: row.column_id || null,
+    }));
+    return sortAssignedTasksForAttention(assignments, dateOnlyKey(now));
   },
 
   createProjectTask(userId, projectId, taskData) {
@@ -267,6 +284,8 @@ export const updateProjectMemberRole = (...args) =>
 export const removeProjectMember = (...args) =>
   supabaseProjectService.removeProjectMember(...args);
 export const getProjectTasks = (...args) => supabaseProjectService.getProjectTasks(...args);
+export const getAssignedProjectTasks = (...args) =>
+  supabaseProjectService.getAssignedProjectTasks(...args);
 export const createProjectTask = (...args) => supabaseProjectService.createProjectTask(...args);
 export const updateProjectTask = (...args) => supabaseProjectService.updateProjectTask(...args);
 export const archiveProjectTask = (...args) => supabaseProjectService.archiveProjectTask(...args);

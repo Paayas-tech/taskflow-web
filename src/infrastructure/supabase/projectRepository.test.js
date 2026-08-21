@@ -50,32 +50,69 @@ describe("Supabase project repository", () => {
     expect(query.calls).not.toContainEqual(["eq", "created_by", "user-a"]);
   });
 
-  it("creates normalized owner invitations", async () => {
+  it("filters assigned project tasks by the authenticated user", async () => {
     const query = queryResult({
-      data: {
-        id: "invite-a", project_id: "project-a", email: "member@example.com",
-        role: "editor", inviter_id: "owner-a", status: "pending",
-      },
+      data: [{ id: "task-a", task_assignments: [{ user_id: "user-a" }] }],
       error: null,
     });
-    query.insert = function insert(...args) { this.calls.push(["insert", ...args]); return this; };
-    query.single = function single() { this.calls.push(["single"]); return Promise.resolve(this.result); };
-    query.result = {
-      data: {
-        id: "invite-a", project_id: "project-a", email: "member@example.com",
-        role: "editor", inviter_id: "owner-a", status: "pending",
-      },
-      error: null,
-    };
+    const client = { from: vi.fn(() => query) };
+    const repository = createProjectRepository(client);
+
+    const tasks = await repository.getAssignedProjectTasks("user-a");
+
+    expect(client.from).toHaveBeenCalledWith("tasks");
+    expect(query.calls).toContainEqual([
+      "eq",
+      "task_assignments.user_id",
+      "user-a",
+    ]);
+    expect(tasks).toHaveLength(1);
+  });
+
+  it("propagates assigned-task provider failures", async () => {
+    const providerError = new Error("provider unavailable");
+    const query = queryResult({ data: null, error: providerError });
     const repository = createProjectRepository({ from: vi.fn(() => query) });
 
+    await expect(
+      repository.getAssignedProjectTasks("user-a")
+    ).rejects.toBe(providerError);
+  });
+
+  it("invokes the authenticated invitation email function", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      data: { success: true },
+      error: null,
+    });
+    const repository = createProjectRepository({ functions: { invoke } });
+
     const invitation = await repository.createProjectInvitation("owner-a", "project-a", {
-      email: "member@example.com", role: "editor", expiresAt: "2030-01-01T00:00:00.000Z",
+      email: "member@example.com", role: "editor", projectName: "Launch",
     });
 
-    expect(invitation).toEqual(expect.objectContaining({ id: "invite-a", role: "editor" }));
-    expect(query.calls).toContainEqual(["insert", expect.objectContaining({
-      project_id: "project-a", email_normalized: "member@example.com",
-    })]);
+    expect(invitation).toEqual({ success: true });
+    expect(invoke).toHaveBeenCalledWith("send-invitation-email", {
+      body: {
+        projectId: "project-a",
+        inviteeEmail: "member@example.com",
+        role: "editor",
+        projectName: "Launch",
+      },
+    });
+  });
+
+  it("does not expose raw function errors", async () => {
+    const repository = createProjectRepository({
+      functions: {
+        invoke: vi.fn().mockResolvedValue({
+          data: null,
+          error: new Error("sensitive provider detail"),
+        }),
+      },
+    });
+
+    await expect(repository.createProjectInvitation("owner-a", "project-a", {
+      email: "member@example.com", role: "editor",
+    })).rejects.toThrow("We couldn't send this invitation. Try again.");
   });
 });

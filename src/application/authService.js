@@ -41,6 +41,12 @@ export const signIn = async (email, password) => {
   return { ...data, user: normalizeAuthUser(data.user) };
 };
 
+export const requestPasswordReset = (email, redirectTo) =>
+  repository.requestPasswordReset({ email, redirectTo });
+
+export const updatePassword = (password) =>
+  repository.updatePassword(password);
+
 export const signOut = () => repository.signOut();
 
 export const getUser = async () => normalizeAuthUser(await repository.getUser());

@@ -14,6 +14,15 @@ const projectTaskSelect = `
   task_assignments(user_id, assigned_at)
 `;
 
+const assignedProjectTaskSelect = `
+  id, project_id, created_by, title, description, notes, priority, status,
+  column_id, position, version, due_date, start_date, start_time, end_date,
+  end_time, reminder_enabled, reminder_at, completed_at, archived_at,
+  created_at, updated_at, task_list_placements(list_id),
+  task_assignments!inner(user_id, assigned_at),
+  projects(id, name, status)
+`;
+
 const defaultColumnDefinitions = [
   { name: "To Do", category: "todo", position: 0, is_terminal: false },
   { name: "In Progress", category: "in_progress", position: 1, is_terminal: false },
@@ -263,6 +272,16 @@ export const createProjectRepository = (client = null) => {
       return data || [];
     },
 
+    async getAssignedProjectTasks(userId) {
+      const { data, error } = await database()
+        .from("tasks")
+        .select(assignedProjectTaskSelect)
+        .eq("task_assignments.user_id", userId)
+        .order("due_date", { ascending: true, nullsFirst: false });
+      throwIfError(error);
+      return data || [];
+    },
+
     async getProjectTask(userId, projectId, taskId) {
       const { data, error } = await database()
         .from("tasks")
@@ -457,25 +476,22 @@ export const createProjectRepository = (client = null) => {
       return (data || []).map(normalizeInvitationRow);
     },
 
-    async createProjectInvitation(userId, projectId, invitation) {
-      const { data, error } = await database()
-        .from("project_invitations")
-        .insert({
-          project_id: projectId,
-          email: invitation.email,
-          email_normalized: invitation.email.toLowerCase(),
-          role: invitation.role,
-          inviter_id: userId,
-          status: "pending",
-          expires_at: invitation.expiresAt,
-        })
-        .select("id, project_id, email, role, inviter_id, status, expires_at, accepted_by, accepted_at, created_at")
-        .single();
-      if (error?.code === "23505") {
-        throw new Error("A pending invitation already exists for this email address.");
+    async createProjectInvitation(_userId, projectId, invitation) {
+      const { data, error } = await database().functions.invoke(
+        "send-invitation-email",
+        {
+          body: {
+            projectId,
+            inviteeEmail: invitation.email,
+            role: invitation.role,
+            projectName: invitation.projectName || undefined,
+          },
+        }
+      );
+      if (error || data?.success !== true) {
+        throw new Error("We couldn't send this invitation. Try again.");
       }
-      throwIfError(error);
-      return normalizeInvitationRow(data);
+      return data;
     },
 
     async respondToInvitation(userId, invitationId, status) {

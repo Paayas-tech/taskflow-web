@@ -21,6 +21,7 @@ export default function ProjectMembersModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("editor");
   const [busyId, setBusyId] = useState("");
@@ -118,6 +119,7 @@ export default function ProjectMembersModal({
     if (busyId) return;
     setBusyId(id);
     setActionError("");
+    setActionNotice("");
     try {
       await action();
       await load();
@@ -132,9 +134,14 @@ export default function ProjectMembersModal({
   const submitInvitation = async (event) => {
     event.preventDefault();
     await runAction("invite", async () => {
-      await createProjectInvitation(userId, project.id, { email, role });
+      await createProjectInvitation(userId, project.id, {
+        email,
+        role,
+        projectName: project.name,
+      });
       setEmail("");
       setRole("editor");
+      setActionNotice("Invitation sent.");
     });
   };
 
@@ -162,6 +169,7 @@ export default function ProjectMembersModal({
         </div>
 
         {actionError && <p className="form-error" role="alert">{actionError}</p>}
+        {actionNotice && <p className="form-success" role="status">{actionNotice}</p>}
         {loading ? (
           <div className="projects-state" role="status"><div className="state-spinner" /><p>Loading members...</p></div>
         ) : error ? (
@@ -206,7 +214,7 @@ export default function ProjectMembersModal({
                     <button className="primary-btn" type="submit" disabled={Boolean(busyId)}>{busyId === "invite" ? "Sending..." : "Send invitation"}</button>
                   </div>
                 </form>
-                <p className="project-description">Invitations appear inside TaskFlow. External email delivery is not enabled in this phase.</p>
+                <p className="project-description">Invitees receive an email and can accept after signing in with the invited address.</p>
                 {invitations.length > 0 && (
                   <div className="projects-grid" aria-label="Project invitations">
                     {invitations.map((invitation) => (

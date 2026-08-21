@@ -46,13 +46,15 @@ describe("Supabase project application service", () => {
     const service = createProjectService(repository);
 
     await service.createProjectInvitation("owner-a", "project-a", {
-      email: " Member@Example.COM ", role: "viewer",
+      email: " Member@Example.COM ", role: "viewer", projectName: " Launch ",
     });
 
     expect(repository.createProjectInvitation).toHaveBeenCalledWith(
       "owner-a",
       "project-a",
-      expect.objectContaining({ email: "member@example.com", role: "viewer" })
+      expect.objectContaining({
+        email: "member@example.com", role: "viewer", projectName: "Launch",
+      })
     );
   });
 
@@ -99,6 +101,67 @@ describe("Supabase project application service", () => {
     expect(repository.setTaskAssignee).toHaveBeenNthCalledWith(
       2, "owner-a", "project-a", "task-a", null
     );
+  });
+
+  it("normalizes and orders assigned project task metadata", async () => {
+    const repository = {
+      getAssignedProjectTasks: vi.fn().mockResolvedValue([
+        {
+          id: "task-upcoming",
+          title: "Upcoming",
+          status: "todo",
+          priority: "low",
+          due_date: "2026-08-22",
+          project_id: "project-a",
+          projects: { name: "Launch", status: "active" },
+          task_assignments: [
+            { user_id: "user-a", assigned_at: "2026-08-19T10:00:00.000Z" },
+          ],
+        },
+        {
+          id: "task-overdue",
+          title: "Overdue",
+          status: "in_progress",
+          priority: "high",
+          due_date: "2026-08-19",
+          project_id: "project-b",
+          projects: { name: "Website", status: "active" },
+          task_assignments: [{ user_id: "user-a", assigned_at: null }],
+        },
+      ]),
+      taskRowToDocument: (row) => ({
+        ...row,
+        projectId: row.project_id,
+        dueDate: row.due_date,
+      }),
+    };
+    const service = createProjectService(repository);
+
+    const tasks = await service.getAssignedProjectTasks(
+      "user-a",
+      new Date(2026, 7, 20)
+    );
+
+    expect(tasks.map(({ id }) => id)).toEqual(["task-overdue", "task-upcoming"]);
+    expect(tasks[0]).toEqual(
+      expect.objectContaining({
+        projectId: "project-b",
+        projectName: "Website",
+        projectStatus: "active",
+        assigneeId: "user-a",
+      })
+    );
+  });
+
+  it("returns an empty assigned-task list", async () => {
+    const service = createProjectService({
+      getAssignedProjectTasks: vi.fn().mockResolvedValue([]),
+      taskRowToDocument: vi.fn(),
+    });
+
+    await expect(
+      service.getAssignedProjectTasks("user-a", new Date(2026, 7, 20))
+    ).resolves.toEqual([]);
   });
 
   it("validates comment content before repository writes", async () => {

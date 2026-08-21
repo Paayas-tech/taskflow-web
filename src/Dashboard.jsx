@@ -33,12 +33,72 @@ function DashboardTaskRow({ task, dateLabel }) {
   );
 }
 
+const assignmentDueLabel = (task, todayKey) => {
+  const group = classifyDateOnly(task.dueDate, todayKey);
+  if (group === "overdue") {
+    return `Overdue · ${formatTaskDueDate(task.dueDate)}`;
+  }
+  if (group === "today") return "Due today";
+  return formatTaskDueDate(task.dueDate);
+};
+
+const assignmentStatusLabel = (status) =>
+  status === "in-progress" || status === "in_progress"
+    ? "In progress"
+    : status === "completed" || status === "done"
+      ? "Completed"
+      : "To do";
+
+function DashboardAssignmentRow({ task, todayKey, onOpenProject }) {
+  const overdue = classifyDateOnly(task.dueDate, todayKey) === "overdue";
+
+  return (
+    <button
+      className="dashboard-assignment-row"
+      type="button"
+      onClick={() => onOpenProject(task.projectId)}
+      aria-label={`Open ${task.title} in ${task.projectName}`}
+    >
+      <span
+        className={`dashboard-task-marker ${overdue ? "is-overdue" : ""}`}
+        aria-hidden="true"
+      />
+      <span className="dashboard-task-copy">
+        <strong>{task.title}</strong>
+        <span className="dashboard-task-meta">
+          <span>{task.projectName}</span>
+          <span className={overdue ? "dashboard-overdue" : ""}>
+            {assignmentDueLabel(task, todayKey)}
+          </span>
+          <span>{assignmentStatusLabel(task.status)}</span>
+          <span className={task.priority === "high" ? "dashboard-priority" : ""}>
+            {task.priority === "high"
+              ? "High priority"
+              : `${task.priority[0]?.toUpperCase() || "M"}${task.priority.slice(1)} priority`}
+          </span>
+        </span>
+      </span>
+      <span className="dashboard-assignment-arrow" aria-hidden="true">›</span>
+    </button>
+  );
+}
+
 export default function Dashboard({
   tasks,
   tasksLoading,
   tasksError,
   onRetry,
   myDaySettings,
+  assignedTasks = [],
+  assignedTasksLoading = false,
+  assignedTasksError = "",
+  onRetryAssignedTasks,
+  accessibleProjectCount = 0,
+  pendingInvitations = [],
+  invitationsLoading = false,
+  invitationsError = "",
+  onOpenProject,
+  onOpenInvitations,
 }) {
   const now = effectiveMyDayDate(new Date(), myDaySettings);
   const todayKey = dateOnlyKey(now);
@@ -198,6 +258,111 @@ export default function Dashboard({
           </div>
         </>
       )}
+
+      <section
+        className="dashboard-collaboration"
+        aria-labelledby="collaboration-heading"
+      >
+        <header className="dashboard-section-header dashboard-collaboration-header">
+          <div>
+            <p className="dashboard-kicker">Collaboration</p>
+            <h2 id="collaboration-heading">My work</h2>
+          </div>
+        </header>
+
+        <div className="dashboard-collaboration-summary" aria-label="Collaboration summary">
+          <div className="dashboard-collaboration-stat">
+            <strong>{accessibleProjectCount}</strong>
+            <span>Accessible projects</span>
+          </div>
+          <div className="dashboard-collaboration-stat">
+            <strong>{assignedTasks.length}</strong>
+            <span>Tasks needing attention</span>
+          </div>
+          <div className="dashboard-collaboration-stat">
+            <strong>{invitationsLoading ? "…" : pendingInvitations.length}</strong>
+            <span>Pending invitations</span>
+          </div>
+        </div>
+
+        <div className="dashboard-collaboration-layout">
+          <section
+            className="dashboard-collaboration-panel dashboard-assignments"
+            aria-labelledby="assigned-tasks-heading"
+          >
+            <div className="dashboard-group-heading">
+              <h3 id="assigned-tasks-heading">Assigned to me</h3>
+              <span aria-label={`${assignedTasks.length} assigned tasks`}>
+                {assignedTasks.length}
+              </span>
+            </div>
+
+            {assignedTasksLoading ? (
+              <div className="dashboard-collaboration-state" role="status">
+                <span className="dashboard-loading-indicator" aria-hidden="true" />
+                <span>Loading assigned tasks…</span>
+              </div>
+            ) : assignedTasksError ? (
+              <div className="dashboard-collaboration-state dashboard-collaboration-error" role="alert">
+                <span>{assignedTasksError}</span>
+                <button className="ghost-btn compact-btn" type="button" onClick={onRetryAssignedTasks}>
+                  Try again
+                </button>
+              </div>
+            ) : assignedTasks.length === 0 ? (
+              <p className="dashboard-group-empty">
+                No active project tasks are assigned to you.
+              </p>
+            ) : (
+              <div className="dashboard-assignment-list">
+                {assignedTasks.slice(0, 6).map((task) => (
+                  <DashboardAssignmentRow
+                    key={task.id}
+                    task={task}
+                    todayKey={todayKey}
+                    onOpenProject={onOpenProject}
+                  />
+                ))}
+                {assignedTasks.length > 6 && (
+                  <p className="dashboard-assignment-more">
+                    {assignedTasks.length - 6} more assigned tasks are available in your projects.
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section
+            className="dashboard-collaboration-panel dashboard-invitations"
+            aria-labelledby="dashboard-invitations-heading"
+          >
+            <div className="dashboard-group-heading">
+              <h3 id="dashboard-invitations-heading">Invitations</h3>
+              <span>{invitationsLoading ? "…" : pendingInvitations.length}</span>
+            </div>
+            {invitationsLoading ? (
+              <p className="dashboard-group-empty" role="status">
+                Loading invitations…
+              </p>
+            ) : invitationsError ? (
+              <p className="dashboard-collaboration-inline-error" role="alert">
+                Invitations are temporarily unavailable.
+              </p>
+            ) : pendingInvitations.length === 0 ? (
+              <p className="dashboard-group-empty">No invitations need your response.</p>
+            ) : (
+              <>
+                <p className="dashboard-invitation-copy">
+                  You have {pendingInvitations.length} project {pendingInvitations.length === 1 ? "invitation" : "invitations"} waiting.
+                </p>
+                <button className="primary-btn compact-btn" type="button" onClick={onOpenInvitations}>
+                  Review invitations
+                </button>
+              </>
+            )}
+          </section>
+        </div>
+      </section>
 
       <footer className="dashboard-footer">
         © {now.getFullYear()} TaskFlow

@@ -516,6 +516,17 @@ a:focus-visible {
   line-height: 1.45;
 }
 
+.form-success {
+  margin: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
 .inline-error {
   display: flex;
   align-items: center;
@@ -2662,6 +2673,181 @@ a:focus-visible {
   margin-top: 14px;
 }
 
+.dashboard-collaboration {
+  margin-top: clamp(38px, 6vw, 64px);
+}
+
+.dashboard-collaboration-header {
+  margin-bottom: 18px;
+}
+
+.dashboard-collaboration-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.dashboard-collaboration-stat {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 18px 20px;
+}
+
+.dashboard-collaboration-stat + .dashboard-collaboration-stat {
+  border-left: 1px solid var(--border);
+}
+
+.dashboard-collaboration-stat strong {
+  color: var(--text-primary);
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.dashboard-collaboration-stat span {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.dashboard-collaboration-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(240px, 0.7fr);
+  gap: 22px;
+  margin-top: 22px;
+  align-items: start;
+}
+
+.dashboard-collaboration-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.dashboard-collaboration-panel > .dashboard-group-heading {
+  margin: 0;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-assignment-row {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 15px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 15px 20px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  transition: background var(--transition);
+}
+
+.dashboard-assignment-row:hover {
+  background: #f8f8fc;
+}
+
+.dashboard-assignment-row:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 3px solid var(--accent-soft);
+  outline-offset: -3px;
+}
+
+.dashboard-assignment-row .dashboard-task-copy > strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.dashboard-assignment-arrow {
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.dashboard-assignment-more {
+  margin: 0;
+  padding: 13px 20px;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.dashboard-collaboration-state {
+  display: flex;
+  min-height: 110px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 22px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.dashboard-collaboration-error {
+  flex-wrap: wrap;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.dashboard-collaboration-inline-error {
+  margin: 0;
+  padding: 20px;
+  color: var(--danger);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.dashboard-invitations > .dashboard-group-empty {
+  padding: 20px;
+}
+
+.dashboard-invitation-copy {
+  margin: 0;
+  padding: 20px 20px 14px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.dashboard-invitations > .primary-btn {
+  margin: 0 20px 20px;
+}
+
+.auth-forgot {
+  justify-self: end;
+  margin-top: -9px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.auth-forgot:hover {
+  color: var(--accent-hover);
+}
+
+.auth-forgot:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .notification-dialog-actions {
   display: flex;
   align-items: center;
@@ -3918,6 +4104,10 @@ a:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .dashboard-collaboration-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .dashboard-agenda {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4837,6 +5027,23 @@ a:focus-visible {
   .project-view-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .dashboard-collaboration-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard-collaboration-stat {
+    padding: 14px 16px;
+  }
+
+  .dashboard-collaboration-stat + .dashboard-collaboration-stat {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .dashboard-assignment-row {
+    padding: 14px 16px;
   }
 
   .project-list-controls {

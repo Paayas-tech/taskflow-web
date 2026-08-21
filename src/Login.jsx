@@ -11,7 +11,7 @@ import {
   isInvalidCredentialsError,
 } from "./domain/authDomain";
 
-export default function Login() {
+export default function Login({ onSignInSuccess, onRecoverPassword }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLogin, setIsLogin] = useState(true);
@@ -33,6 +33,7 @@ export default function Login() {
     try {
       if (isLogin) {
         await signIn(email, password);
+        onSignInSuccess?.();
       } else {
         const result = await signUp(email, password, "", {
           emailRedirectTo: window.location.origin,
@@ -137,6 +138,17 @@ export default function Login() {
               disabled={isSubmitting || isResending}
             />
           </label>
+
+          {isLogin && (
+            <button
+              type="button"
+              className="auth-forgot"
+              onClick={onRecoverPassword}
+              disabled={isSubmitting || isResending}
+            >
+              Forgot password?
+            </button>
+          )}
 
           {authError && (
             <p className="auth-error" role="alert">

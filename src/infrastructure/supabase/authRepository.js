@@ -59,6 +59,20 @@ export const createAuthRepository = (client = null) => {
     return data;
   },
 
+  async requestPasswordReset({ email, redirectTo }) {
+    const { data, error } = await database().auth.resetPasswordForEmail(email, {
+      redirectTo,
+    });
+    throwIfError(error);
+    return data;
+  },
+
+  async updatePassword(password) {
+    const { data, error } = await database().auth.updateUser({ password });
+    throwIfError(error);
+    return data;
+  },
+
   async signOut() {
     const { error } = await database().auth.signOut();
     throwIfError(error);

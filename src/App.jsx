@@ -8,6 +8,7 @@ import Login from "./Login";
 import NotificationsPanel from "./NotificationsPanel";
 import ProjectsPage from "./ProjectsPage";
 import ProjectTasksPage from "./ProjectTasksPage";
+import Recover from "./Recover";
 import SettingsPage from "./SettingsPage";
 import TaskForm from "./TaskForm";
 import TasksPage from "./TasksPage";
@@ -37,6 +38,7 @@ import {
   acceptProjectInvitation,
   declineProjectInvitation,
   deleteProject,
+  getAssignedProjectTasks,
   getProjects,
   getUserInvitations,
   updateProject,
@@ -129,6 +131,7 @@ const routeViews = {
   "/calendar": "calendar",
   "/settings": "settings",
   "/archived-tasks": "archived",
+  "/recover": "recover",
 };
 
 const updateSettingsLastViewed = (settings, path) => ({
@@ -188,6 +191,7 @@ function App() {
     pending: false,
     error: "",
   });
+  const [passwordRecoverySession, setPasswordRecoverySession] = useState(false);
   const [currentPath, setCurrentPath] = useState(() =>
     normalizePath(window.location.pathname)
   );
@@ -203,6 +207,9 @@ function App() {
   const [projectCreateRequest, setProjectCreateRequest] = useState(0);
   const [projectTaskRefreshToken, setProjectTaskRefreshToken] = useState(0);
   const [projects, setProjects] = useState([]);
+  const [assignedProjectTasks, setAssignedProjectTasks] = useState([]);
+  const [assignedProjectTasksLoading, setAssignedProjectTasksLoading] = useState(false);
+  const [assignedProjectTasksError, setAssignedProjectTasksError] = useState("");
   const [projectInvitations, setProjectInvitations] = useState([]);
   const [projectInvitationsLoading, setProjectInvitationsLoading] = useState(false);
   const [projectInvitationsError, setProjectInvitationsError] = useState("");
@@ -239,6 +246,21 @@ function App() {
 
   const handleSignOut = useCallback(() => {
     void signOutControllerRef.current.run();
+  }, []);
+
+  const handleSignInSuccess = useCallback(() => {
+    defaultRouteAppliedRef.current = true;
+    window.history.replaceState({}, "", "/");
+    setCurrentPath("/");
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, []);
+
+  const handleRecoveryComplete = useCallback(() => {
+    setPasswordRecoverySession(false);
+    defaultRouteAppliedRef.current = true;
+    window.history.replaceState({}, "", "/");
+    setCurrentPath("/");
+    window.scrollTo({ top: 0, behavior: "auto" });
   }, []);
 
   const syncQuickTaskPendingIds = useCallback(() => {
@@ -350,6 +372,35 @@ function App() {
     }
   }, [user]);
 
+  const loadAssignedProjectTasks = useCallback(async () => {
+    if (!user) return;
+    const requestUserId = user.uid;
+
+    setAssignedProjectTasksLoading(true);
+    setAssignedProjectTasksError("");
+
+    try {
+      const assignments = await getAssignedProjectTasks(requestUserId);
+      if (!isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        return;
+      }
+      setAssignedProjectTasks(assignments);
+    } catch (error) {
+      if (!isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        return;
+      }
+      console.error("Error loading assigned project tasks:", error);
+      setAssignedProjectTasks([]);
+      setAssignedProjectTasksError(
+        "We couldn't load your assigned project tasks. Try again."
+      );
+    } finally {
+      if (isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
+        setAssignedProjectTasksLoading(false);
+      }
+    }
+  }, [user]);
+
   const loadProjectInvitations = useCallback(async () => {
     if (!user?.email) return;
     const requestUserId = user.uid;
@@ -433,9 +484,17 @@ function App() {
 
     let unsubscribe;
     try {
-      unsubscribe = onAuthStateChange((_event, currentUser) => {
+      unsubscribe = onAuthStateChange((event, currentUser) => {
       const nextUserId = currentUser?.uid || null;
       const userChanged = nextUserId !== authenticatedUserIdRef.current;
+
+      if (event === "PASSWORD_RECOVERY") {
+        setPasswordRecoverySession(true);
+        window.history.replaceState({}, "", "/recover");
+        setCurrentPath("/recover");
+      } else if (!currentUser) {
+        setPasswordRecoverySession(false);
+      }
 
       if (userChanged) {
         signOutControllerRef.current.reset();
@@ -454,6 +513,9 @@ function App() {
         setProjects([]);
         setProjectsError("");
         setProjectsLoading(false);
+        setAssignedProjectTasks([]);
+        setAssignedProjectTasksError("");
+        setAssignedProjectTasksLoading(false);
         setProjectInvitations([]);
         setProjectInvitationsError("");
         setProjectInvitationsLoading(false);
@@ -509,10 +571,19 @@ function App() {
       loadTasks();
       loadLists();
       loadProjects();
+      loadAssignedProjectTasks();
       loadProjectInvitations();
       loadSettings();
     }
-  }, [user, loadTasks, loadLists, loadProjects, loadProjectInvitations, loadSettings]);
+  }, [
+    user,
+    loadTasks,
+    loadLists,
+    loadProjects,
+    loadAssignedProjectTasks,
+    loadProjectInvitations,
+    loadSettings,
+  ]);
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -859,36 +930,40 @@ function App() {
     async (projectId) => {
       if (!user) throw new Error("You must be signed in to restore a project.");
       await updateProject(user.uid, projectId, { status: "active" });
-      await loadProjects();
+      await Promise.all([loadProjects(), loadAssignedProjectTasks()]);
     },
-    [user, loadProjects]
+    [user, loadAssignedProjectTasks, loadProjects]
   );
 
   const handleUpdateProject = useCallback(
     async (projectId, data) => {
       if (!user) throw new Error("You must be signed in to update a project.");
       await updateProject(user.uid, projectId, data);
-      await loadProjects();
+      await Promise.all([loadProjects(), loadAssignedProjectTasks()]);
     },
-    [user, loadProjects]
+    [user, loadAssignedProjectTasks, loadProjects]
   );
 
   const handleDeleteProject = useCallback(
     async (projectId) => {
       if (!user) throw new Error("You must be signed in to delete a project.");
       await deleteProject(user.uid, projectId);
-      await loadProjects();
+      await Promise.all([loadProjects(), loadAssignedProjectTasks()]);
     },
-    [user, loadProjects]
+    [user, loadAssignedProjectTasks, loadProjects]
   );
 
   const handleAcceptProjectInvitation = useCallback(
     async (invitationId) => {
       if (!user) throw new Error("You must be signed in to accept an invitation.");
       await acceptProjectInvitation(user.uid, invitationId);
-      await Promise.all([loadProjects(), loadProjectInvitations()]);
+      await Promise.all([
+        loadProjects(),
+        loadAssignedProjectTasks(),
+        loadProjectInvitations(),
+      ]);
     },
-    [loadProjectInvitations, loadProjects, user]
+    [loadAssignedProjectTasks, loadProjectInvitations, loadProjects, user]
   );
 
   const handleDeclineProjectInvitation = useCallback(
@@ -1015,6 +1090,10 @@ function App() {
     setCurrentPath(path);
     window.scrollTo({ top: 0, behavior: "auto" });
 
+    if (path === "/" && user) {
+      void loadAssignedProjectTasks();
+    }
+
     if (
       user &&
       ["/", "/today", "/tasks", "/projects", "/calendar"].includes(path)
@@ -1038,8 +1117,23 @@ function App() {
     return <div className="loading-screen">Loading...</div>;
   }
 
+  if (currentPath === "/recover") {
+    return (
+      <Recover
+        recoverySession={passwordRecoverySession}
+        onBack={() => navigate("/")}
+        onComplete={handleRecoveryComplete}
+      />
+    );
+  }
+
   if (!user) {
-    return <Login />;
+    return (
+      <Login
+        onSignInSuccess={handleSignInSuccess}
+        onRecoverPassword={() => navigate("/recover")}
+      />
+    );
   }
 
   const selectedProjectId = projectIdFromPath(currentPath);
@@ -1393,6 +1487,18 @@ function App() {
             tasksError={tasksError}
             onRetry={loadTasks}
             myDaySettings={settings.myDay}
+            assignedTasks={assignedProjectTasks}
+            assignedTasksLoading={assignedProjectTasksLoading}
+            assignedTasksError={assignedProjectTasksError}
+            onRetryAssignedTasks={loadAssignedProjectTasks}
+            accessibleProjectCount={projects.length}
+            pendingInvitations={projectInvitations}
+            invitationsLoading={projectInvitationsLoading}
+            invitationsError={projectInvitationsError}
+            onOpenProject={(projectId) =>
+              navigate(`/projects/${encodeURIComponent(projectId)}`)
+            }
+            onOpenInvitations={() => navigate("/projects")}
           />
         </div>
 
