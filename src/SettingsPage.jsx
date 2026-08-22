@@ -14,6 +14,23 @@ import {
 } from "./domain/calendarConnectionDomain";
 import { requestNotificationPermission } from "./services/reminderService";
 import { useModalLifecycle } from "./components/modal/useModalLifecycle";
+import {
+  PlaceholderPanel,
+  SelectionRows,
+  SettingsDetail,
+  SettingsRow,
+  ToggleRow,
+  UnavailableProviders,
+} from "./settings/SettingsControls";
+import {
+  AccountSettingsSection,
+  PreferencesSettingsSection,
+  ProjectsSettingsSection,
+  TaskflowSettingsSection,
+} from "./settings/SettingsOverviewSections";
+import ProfileSettingsPanel from "./settings/ProfileSettingsPanel";
+import CalendarConnectionSection from "./settings/CalendarConnectionSection";
+import SettingsSignOutSection from "./settings/SettingsSignOutSection";
 
 const updateSection = (settings, section, patch) => ({
   ...settings,
@@ -34,128 +51,6 @@ const defaultViewOptions = [
   ["calendar", "Calendar"],
   ["last-viewed", "Last Viewed"],
 ].filter(([value]) => SETTINGS_DEFAULT_VIEWS.includes(value));
-
-function SettingsGroup({ title, children }) {
-  return (
-    <section className="settings-list-section" aria-labelledby={`settings-${title}`}>
-      <h2 id={`settings-${title}`}>{title}</h2>
-      <div className="settings-list">{children}</div>
-    </section>
-  );
-}
-
-function SettingsRow({ label, value, onClick, disabled = false, selected = false }) {
-  return (
-    <button
-      className="settings-list-row"
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-    >
-      <span>{label}</span>
-      <span className="settings-row-end">
-        {value && <small>{value}</small>}
-        {selected ? (
-          <span className="settings-check" aria-label="Selected">✓</span>
-        ) : (
-          !disabled && <span className="settings-chevron" aria-hidden="true">›</span>
-        )}
-      </span>
-    </button>
-  );
-}
-
-function ToggleRow({ label, description, checked, onChange, disabled = false, status }) {
-  return (
-    <label className={`settings-list-row settings-list-toggle ${disabled ? "is-disabled" : ""}`}>
-      <span className="settings-toggle-copy">
-        <strong>{label}</strong>
-        {description && <small>{description}</small>}
-      </span>
-      <span className="settings-row-end">
-        {status && <small>{status}</small>}
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(event) => onChange?.(event.target.checked)}
-          disabled={disabled}
-        />
-      </span>
-    </label>
-  );
-}
-
-function SettingsDetail({ title, description, onBack, children, headerAction }) {
-  return (
-    <section className="settings-detail" aria-labelledby="settings-detail-title">
-      <header className="settings-detail-navigation">
-        <button className="settings-back" type="button" onClick={onBack} aria-label={`Back from ${title}`}>
-          <span aria-hidden="true">←</span>
-        </button>
-        <h2 id="settings-detail-title">{title}</h2>
-        <span className="settings-detail-header-action">{headerAction}</span>
-      </header>
-      {description && <p className="settings-detail-description">{description}</p>}
-      {children}
-    </section>
-  );
-}
-
-function SelectionRows({ options, value, onSelect, ariaLabel }) {
-  return (
-    <div className="settings-compact-list" role="radiogroup" aria-label={ariaLabel}>
-      {options.map(([optionValue, label, description]) => (
-        <label
-          className={`settings-choice-row ${value === optionValue ? "is-selected" : ""}`}
-          key={optionValue}
-        >
-          <span>
-            <strong>{label}</strong>
-            {description && <small>{description}</small>}
-          </span>
-          <input
-            type="radio"
-            name={ariaLabel}
-            value={optionValue}
-            checked={value === optionValue}
-            onChange={() => onSelect(optionValue)}
-          />
-          <span className="settings-check" aria-hidden="true">
-            {value === optionValue ? "✓" : ""}
-          </span>
-        </label>
-      ))}
-    </div>
-  );
-}
-
-function UnavailableProviders({ providers }) {
-  return (
-    <div className="settings-compact-list">
-      {providers.map((provider) => (
-        <div className="settings-provider-row" key={provider}>
-          <span>
-            <strong>{provider}</strong>
-            <small>No connection is configured.</small>
-          </span>
-          <button className="ghost-btn compact-btn" type="button" disabled>
-            Not available
-          </button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function PlaceholderPanel({ title, description, onBack, children }) {
-  return (
-    <SettingsDetail title={title} description={description} onBack={onBack}>
-      <div className="settings-placeholder-panel">
-        {children || <p>This capability is not connected in TaskFlow yet.</p>}
-      </div>
-    </SettingsDetail>
-  );
-}
 
 export default function SettingsPage({
   settings,
@@ -326,34 +221,12 @@ export default function SettingsPage({
   const renderPanel = () => {
     if (activePanel === "profile") {
       return (
-        <SettingsDetail title="My Profile" description="Account details shown by TaskFlow." onBack={closePanel}>
-          <div className="settings-profile-panel">
-            <div className="settings-profile-summary" aria-label="Profile avatar">
-              <span aria-hidden="true">
-                {(settings.profile.displayName || settings.profile.email)?.[0]?.toUpperCase() || "U"}
-              </span>
-              <p>TaskFlow currently uses your initial. Custom avatar uploads are not supported.</p>
-            </div>
-            <label className="settings-field">
-              <span>Display name</span>
-              <input
-                type="text"
-                maxLength="80"
-                value={settings.profile.displayName}
-                onChange={(event) =>
-                  onChange(updateSection(settings, "profile", { displayName: event.target.value }))
-                }
-                placeholder="How TaskFlow should address you"
-                disabled={saving}
-              />
-            </label>
-            <label className="settings-field">
-              <span>Email</span>
-              <input type="email" value={settings.profile.email} disabled readOnly />
-              <small>Email is managed by your TaskFlow authentication account.</small>
-            </label>
-          </div>
-        </SettingsDetail>
+        <ProfileSettingsPanel
+          settings={settings}
+          saving={saving}
+          onChange={onChange}
+          onBack={closePanel}
+        />
       );
     }
 
@@ -475,109 +348,18 @@ export default function SettingsPage({
         ? calendarProviderSetup(selectedCalendarProvider, import.meta.env)
         : null;
       return (
-        <SettingsDetail
-          title="Calendar Settings"
-          description="Connect controls show the exact provider configuration TaskFlow still requires."
+        <CalendarConnectionSection
+          settings={settings}
+          saving={saving}
+          selectedProvider={selectedCalendarProvider}
+          setup={setup}
+          dialogRef={calendarDialogRef}
+          onBackdropMouseDown={onCalendarBackdropMouseDown}
           onBack={closePanel}
-        >
-          <div className="settings-compact-list settings-calendar-providers">
-            {CALENDAR_PROVIDERS.map((provider) => {
-              const connection = settings.calendarConnections[provider.id];
-              return (
-                <div className="settings-provider-row" key={provider.id}>
-                  <span>
-                    <strong>{provider.name}</strong>
-                    <small>
-                      {connection.connected
-                        ? connection.accountLabel || "Connected account"
-                        : "Not connected"}
-                    </small>
-                  </span>
-                  {connection.connected ? (
-                    <button
-                      className="ghost-btn compact-btn"
-                      type="button"
-                      onClick={() => void disconnectCalendar(provider)}
-                      disabled={saving}
-                    >
-                      Disconnect
-                    </button>
-                  ) : (
-                    <button
-                      className="secondary-btn compact-btn"
-                      type="button"
-                      onClick={() => setCalendarSetupProviderId(provider.id)}
-                    >
-                      Connect
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {selectedCalendarProvider && setup && (
-            <div
-              className="settings-connection-backdrop"
-              onMouseDown={onCalendarBackdropMouseDown}
-            >
-              <section
-                ref={calendarDialogRef}
-                className="settings-connection-dialog"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="calendar-connection-title"
-              >
-                <header>
-                  <div>
-                    <p className="card-label">Calendar connection</p>
-                    <h3 id="calendar-connection-title">
-                      Connect {selectedCalendarProvider.name}
-                    </h3>
-                  </div>
-                  <button
-                    className="ghost-btn compact-btn"
-                    type="button"
-                    onClick={() => setCalendarSetupProviderId("")}
-                    aria-label="Close calendar connection setup"
-                  >
-                    Close
-                  </button>
-                </header>
-                <div className="settings-connection-content">
-                  <p>
-                    TaskFlow cannot start this authorization securely until
-                    its provider configuration and server-side token handler
-                    are available.
-                  </p>
-                  {setup.missingVariables.length > 0 && (
-                    <div className="settings-connection-requirements">
-                      <strong>Required configuration</strong>
-                      <ul>
-                        {setup.missingVariables.map((variableName) => (
-                          <li key={variableName}>
-                            <code>{variableName}</code>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  <p>{selectedCalendarProvider.setup}</p>
-                  <p className="settings-connection-security-note">
-                    Client secrets, access tokens, refresh tokens, passwords,
-                    and Apple app-specific passwords must not be stored in
-                    Vite variables or TaskFlow local settings.
-                  </p>
-                </div>
-                <footer>
-                  <button className="primary-btn" type="button" disabled>
-                    Authorization unavailable
-                  </button>
-                </footer>
-              </section>
-            </div>
-          )}
-        </SettingsDetail>
+          onConnect={setCalendarSetupProviderId}
+          onDisconnect={(provider) => void disconnectCalendar(provider)}
+          onCloseSetup={() => setCalendarSetupProviderId("")}
+        />
       );
     }
 
@@ -924,50 +706,45 @@ export default function SettingsPage({
       >
         {activePanel ? renderPanel() : (
           <div className="settings-overview">
-            <SettingsGroup title="account">
-              <SettingsRow label="My Profile" value={settings.profile.displayName || "Account details"} onClick={() => openPanel("profile")} />
-              <SettingsRow label="Integrations" value="Not connected" onClick={() => openPanel("integrations")} />
-              <SettingsRow label="Archived Tasks" onClick={() => onNavigate?.("/archived-tasks")} />
-              <SettingsRow label="Import Data" value="Not available" onClick={() => openPanel("importData")} />
-            </SettingsGroup>
-
-            <SettingsGroup title="projects">
-              <SettingsRow label="Project Reminders" value={`${settings.reminder.defaultTime} min`} onClick={() => openPanel("projectReminders")} />
-              <SettingsRow label="Archived Projects" value={String(archivedProjects.length)} onClick={() => openPanel("archivedProjects")} />
-              <SettingsRow label="Create a New Project" onClick={onOpenProjectCreate} />
-            </SettingsGroup>
-
-            <SettingsGroup title="preferences">
-              <SettingsRow label="My Day" value={settings.myDay.resetMode === "midnight" ? "Midnight" : titleCase(settings.myDay.resetMode)} onClick={() => openPanel("myDay")} />
-              <SettingsRow
-                label="Calendars"
-                value={
-                  connectedCalendarCount
-                    ? `${connectedCalendarCount} connected`
-                    : "Not connected"
-                }
-                onClick={() => openPanel("calendars")}
-              />
-              <SettingsRow label="Theme" value={themeLabel} onClick={() => openPanel("theme")} />
-              <SettingsRow label="Background" value={backgroundLabel} onClick={() => openPanel("background")} />
-              <ToggleRow
-                label="Desktop Notifications"
-                checked={settings.reminder.enableBrowserNotifications}
-                onChange={(enabled) => void enableBrowserNotifications(enabled)}
-                status={settings.reminder.enableBrowserNotifications ? "ON" : "OFF"}
-              />
-              <SettingsRow label="Default View" value={defaultViewLabel} onClick={() => openPanel("defaultView")} />
-              <SettingsRow label="Default List" value={selectedList?.name || "Inbox"} onClick={() => openPanel("defaultList")} />
-              <SettingsRow label="Time Settings" value={`${settings.time.format === "12-hour" ? "12 Hour" : "24 Hour"} · ${weekStartLabel}`} onClick={() => openPanel("timeSettings")} />
-              <SettingsRow label="Language" value="English" onClick={() => openPanel("language")} />
-            </SettingsGroup>
-
-            <SettingsGroup title="taskflow">
-              <SettingsRow label="What's New?" onClick={() => openPanel("whatsNew")} />
-              <SettingsRow label="Keyboard Shortcuts" onClick={() => openPanel("shortcuts")} />
-              <SettingsRow label="Support" value="Not available" onClick={() => openPanel("support")} />
-              <SettingsRow label="About" value="0.0.0" onClick={() => openPanel("about")} />
-            </SettingsGroup>
+            <AccountSettingsSection
+              displayName={settings.profile.displayName}
+              onOpenProfile={() => openPanel("profile")}
+              onOpenIntegrations={() => openPanel("integrations")}
+              onOpenArchivedTasks={() => onNavigate?.("/archived-tasks")}
+              onOpenImportData={() => openPanel("importData")}
+            />
+            <ProjectsSettingsSection
+              defaultReminderTime={settings.reminder.defaultTime}
+              archivedProjectCount={archivedProjects.length}
+              onOpenProjectReminders={() => openPanel("projectReminders")}
+              onOpenArchivedProjects={() => openPanel("archivedProjects")}
+              onOpenProjectCreate={onOpenProjectCreate}
+            />
+            <PreferencesSettingsSection
+              myDayLabel={settings.myDay.resetMode === "midnight" ? "Midnight" : titleCase(settings.myDay.resetMode)}
+              connectedCalendarCount={connectedCalendarCount}
+              themeLabel={themeLabel}
+              backgroundLabel={backgroundLabel}
+              browserNotificationsEnabled={settings.reminder.enableBrowserNotifications}
+              defaultViewLabel={defaultViewLabel}
+              defaultListLabel={selectedList?.name || "Inbox"}
+              timeSettingsLabel={`${settings.time.format === "12-hour" ? "12 Hour" : "24 Hour"} · ${weekStartLabel}`}
+              onOpenMyDay={() => openPanel("myDay")}
+              onOpenCalendars={() => openPanel("calendars")}
+              onOpenTheme={() => openPanel("theme")}
+              onOpenBackground={() => openPanel("background")}
+              onToggleBrowserNotifications={(enabled) => void enableBrowserNotifications(enabled)}
+              onOpenDefaultView={() => openPanel("defaultView")}
+              onOpenDefaultList={() => openPanel("defaultList")}
+              onOpenTimeSettings={() => openPanel("timeSettings")}
+              onOpenLanguage={() => openPanel("language")}
+            />
+            <TaskflowSettingsSection
+              onOpenWhatsNew={() => openPanel("whatsNew")}
+              onOpenShortcuts={() => openPanel("shortcuts")}
+              onOpenSupport={() => openPanel("support")}
+              onOpenAbout={() => openPanel("about")}
+            />
           </div>
         )}
 
@@ -988,27 +765,11 @@ export default function SettingsPage({
         )}
       </form>
 
-      <div className="settings-signout-row">
-        <button
-          className="ghost-btn settings-signout"
-          type="button"
-          onClick={onSignOut}
-          disabled={signOutPending}
-          aria-busy={signOutPending}
-          aria-describedby={signOutError ? "settings-signout-error" : undefined}
-        >
-          {signOutPending ? "Signing out..." : "Sign out of TaskFlow"}
-        </button>
-        {signOutError && (
-          <p
-            className="signout-error"
-            id="settings-signout-error"
-            role="alert"
-          >
-            {signOutError}
-          </p>
-        )}
-      </div>
+      <SettingsSignOutSection
+        onSignOut={onSignOut}
+        pending={signOutPending}
+        error={signOutError}
+      />
     </div>
   );
 }
