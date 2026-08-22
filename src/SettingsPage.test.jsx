@@ -369,3 +369,41 @@ describe("SettingsPage calendar modal lifecycle integration", () => {
     expect(findElement(runner.output, (node) => node.props?.role === "alert")).toBeUndefined();
   });
 });
+
+describe("SettingsPage project reminders coordination", () => {
+  it("keeps offset edits draft-only and commits the full immediate-toggle payload", () => {
+    const props = baseProps();
+    const runner = createRunner(props);
+    const projectReminders = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node).startsWith("Project Reminders")
+    );
+
+    projectReminders.props.onClick();
+    runner.render();
+
+    const defaultTime = findElement(
+      runner.output,
+      (node) => node.props?.type === "number"
+    );
+    defaultTime.props.onChange({ target: { value: "45" } });
+    expect(props.onChange).toHaveBeenCalledWith({
+      ...DEFAULT_SETTINGS,
+      reminder: { ...DEFAULT_SETTINGS.reminder, defaultTime: 45 },
+    });
+    expect(props.onCommit).not.toHaveBeenCalled();
+
+    props.onChange.mockClear();
+    const inAppReminders = findElement(
+      runner.output,
+      (node) => node.props?.type === "checkbox"
+    );
+    inAppReminders.props.onChange({ target: { checked: false } });
+    const expectedSettings = {
+      ...DEFAULT_SETTINGS,
+      reminder: { ...DEFAULT_SETTINGS.reminder, enableInAppReminders: false },
+    };
+    expect(props.onChange).toHaveBeenCalledWith(expectedSettings);
+    expect(props.onCommit).toHaveBeenCalledWith(expectedSettings);
+  });
+});

@@ -31,6 +31,7 @@ import {
 import ProfileSettingsPanel from "./settings/ProfileSettingsPanel";
 import CalendarConnectionSection from "./settings/CalendarConnectionSection";
 import SettingsSignOutSection from "./settings/SettingsSignOutSection";
+import ProjectRemindersPanel from "./settings/ProjectRemindersPanel";
 
 const updateSection = (settings, section, patch) => ({
   ...settings,
@@ -559,42 +560,19 @@ export default function SettingsPage({
 
     if (activePanel === "projectReminders") {
       return (
-        <SettingsDetail
-          title="Project Reminders"
-          description="TaskFlow currently supports a shared reminder default, not project-specific policies."
+        <ProjectRemindersPanel
+          reminder={settings.reminder}
           onBack={closePanel}
-        >
-          <div className="settings-reminder-preferences">
-            <label className="settings-inline-field">
-              <span>Default reminder (minutes before)</span>
-              <input
-                type="number"
-                min="1"
-                max="1440"
-                value={settings.reminder.defaultTime}
-                onChange={(event) =>
-                  onChange(updateSection(settings, "reminder", { defaultTime: Number(event.target.value) }))
-                }
-              />
-            </label>
-            <ToggleRow
-              label="In-app reminders"
-              description="Show TaskFlow reminders while the app is open."
-              checked={settings.reminder.enableInAppReminders}
-              onChange={(enableInAppReminders) =>
-                void commitSection("reminder", { enableInAppReminders }, "Reminder preference saved.")
-              }
-            />
-            <ToggleRow
-              label="Reminder sound"
-              description="Play a subtle sound for delivered reminders."
-              checked={settings.reminder.enableSound}
-              onChange={(enableSound) =>
-                void commitSection("reminder", { enableSound }, "Reminder sound preference saved.")
-              }
-            />
-          </div>
-        </SettingsDetail>
+          onDefaultTimeChange={(defaultTime) =>
+            onChange(updateSection(settings, "reminder", { defaultTime }))
+          }
+          onInAppRemindersChange={(enableInAppReminders) =>
+            void commitSection("reminder", { enableInAppReminders }, "Reminder preference saved.")
+          }
+          onSoundChange={(enableSound) =>
+            void commitSection("reminder", { enableSound }, "Reminder sound preference saved.")
+          }
+        />
       );
     }
 
