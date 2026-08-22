@@ -32,6 +32,7 @@ import ProfileSettingsPanel from "./settings/ProfileSettingsPanel";
 import CalendarConnectionSection from "./settings/CalendarConnectionSection";
 import SettingsSignOutSection from "./settings/SettingsSignOutSection";
 import ProjectRemindersPanel from "./settings/ProjectRemindersPanel";
+import BackgroundSettingsPanel from "./settings/BackgroundSettingsPanel";
 
 const updateSection = (settings, section, patch) => ({
   ...settings,
@@ -382,63 +383,24 @@ export default function SettingsPage({
     }
 
     if (activePanel === "background") {
-      const normalizedSearch = backgroundSearch.trim().toLowerCase();
-      const visibleBackgrounds = TASKFLOW_BACKGROUNDS.filter(
-        ({ name, category, description }) =>
-          `${name} ${category} ${description}`
-            .toLowerCase()
-            .includes(normalizedSearch)
-      );
       return (
-        <SettingsDetail
-          title="Choose Background"
-          description="TaskFlow-created abstract surfaces; selection applies immediately."
+        <BackgroundSettingsPanel
+          backgrounds={TASKFLOW_BACKGROUNDS}
+          selectedBackgroundId={settings.background.selected}
+          searchValue={backgroundSearch}
+          onSearchChange={setBackgroundSearch}
           onBack={closePanel}
-          headerAction={<span aria-hidden="true">⌕</span>}
-        >
-          <label className="settings-background-search">
-            <span className="sr-only">Search backgrounds</span>
-            <input
-              type="search"
-              value={backgroundSearch}
-              onChange={(event) => setBackgroundSearch(event.target.value)}
-              placeholder="Search backgrounds"
-            />
-          </label>
-          <div className="settings-background-grid">
-            {visibleBackgrounds.map(({ id, name, category, description }) => (
-              <button
-                key={id}
-                className={`settings-background-option background-${id} ${
-                  settings.background.selected === id ? "is-selected" : ""
-                }`}
-                type="button"
-                onClick={() =>
-                  void commitSettings(
-                    {
-                      ...settings,
-                      background: { selected: id },
-                      appearance: { ...settings.appearance, background: id },
-                    },
-                    `${name} background saved.`
-                  )
-                }
-              >
-                <span className="settings-background-preview" aria-hidden="true" />
-                <span>
-                  <strong>{name}</strong>
-                  <small>{category} · {description}</small>
-                </span>
-                {settings.background.selected === id && <span className="settings-background-check">✓</span>}
-              </button>
-            ))}
-          </div>
-          {visibleBackgrounds.length === 0 && (
-            <div className="settings-background-empty" role="status">
-              No backgrounds match your search.
-            </div>
-          )}
-        </SettingsDetail>
+          onSelectBackground={({ id, name }) =>
+            void commitSettings(
+              {
+                ...settings,
+                background: { selected: id },
+                appearance: { ...settings.appearance, background: id },
+              },
+              `${name} background saved.`
+            )
+          }
+        />
       );
     }
 

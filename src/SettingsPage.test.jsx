@@ -407,3 +407,50 @@ describe("SettingsPage project reminders coordination", () => {
     expect(props.onCommit).toHaveBeenCalledWith(expectedSettings);
   });
 });
+
+describe("SettingsPage background coordination", () => {
+  it("commits the complete coupled background and appearance payload", async () => {
+    const props = baseProps();
+    const runner = createRunner(props);
+    const background = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node).startsWith("Background")
+    );
+
+    background.props.onClick();
+    runner.render();
+
+    const options = [];
+    walk(runner.output, (node) => {
+      if (
+        node.type === "button" &&
+        String(node.props?.className || "").includes("settings-background-option")
+      ) {
+        options.push(node);
+      }
+    });
+    const nextOption = options.find(
+      (option) => !option.props.className.includes("is-selected")
+    );
+    const nextBackgroundId = nextOption.props.className.match(
+      /background-(?!option)([^ ]+)/
+    )[1];
+    const nextBackgroundName = textContent(
+      findElement(nextOption, (node) => node.type === "strong")
+    );
+
+    nextOption.props.onClick();
+    const expectedSettings = {
+      ...DEFAULT_SETTINGS,
+      background: { selected: nextBackgroundId },
+      appearance: { ...DEFAULT_SETTINGS.appearance, background: nextBackgroundId },
+    };
+    expect(props.onChange).toHaveBeenCalledWith(expectedSettings);
+    expect(props.onCommit).toHaveBeenCalledWith(expectedSettings);
+    await Promise.resolve();
+    runner.render();
+    expect(
+      textContent(findElement(runner.output, (node) => node.props?.role === "status"))
+    ).toContain(`${nextBackgroundName} background saved.`);
+  });
+});
