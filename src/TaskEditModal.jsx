@@ -3,6 +3,7 @@ import TaskForm from "./TaskForm";
 import ActivityFeed from "./ActivityFeed";
 import TaskAssigneeSelector from "./TaskAssigneeSelector";
 import TaskComments from "./TaskComments";
+import { useModalLifecycle } from "./components/modal/useModalLifecycle";
 import {
   buildTaskEditPayload,
   isArchived,
@@ -50,8 +51,6 @@ export default function TaskEditModal({
   const deleteSubmissionRef = useRef(false);
   const lifecycleSubmissionRef = useRef(false);
   const busyRef = useRef(false);
-  const confirmingDeleteRef = useRef(false);
-  const onCloseRef = useRef(onClose);
   const dialogId = useId();
   const titleId = `${dialogId}-title`;
   const descriptionId = `${dialogId}-description`;
@@ -61,34 +60,42 @@ export default function TaskEditModal({
   const busy = saving || deleting || assigneeBusy || Boolean(lifecycleAction);
 
   busyRef.current = busy;
-  confirmingDeleteRef.current = confirmingDelete;
-  onCloseRef.current = onClose;
 
   useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
     const previousScrollX = window.scrollX;
     const previousScrollY = window.scrollY;
+    const focusFrame = window.requestAnimationFrame(() => {
+      dialogRef.current
+        ?.querySelector(
+          'input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled)'
+        )
+        ?.focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.requestAnimationFrame(() => {
+        window.scrollTo(previousScrollX, previousScrollY);
+        returnFocusElement?.focus({ preventScroll: true });
+      });
+    };
+  }, [returnFocusElement]);
+
+  useEffect(() => {
+    if (!confirmingDelete) return undefined;
     const handleKeyDown = (event) => {
       if (event.key === "Escape" && !busyRef.current) {
-        if (confirmingDeleteRef.current) {
-          setDeleteError("");
-          setConfirmingDelete(false);
-          window.requestAnimationFrame(() => deleteButtonRef.current?.focus());
-        } else {
-          onCloseRef.current();
-        }
+        setDeleteError("");
+        setConfirmingDelete(false);
+        window.requestAnimationFrame(() => deleteButtonRef.current?.focus());
         return;
       }
 
       if (event.key !== "Tab") return;
-
-      const activeDialog = confirmingDeleteRef.current
-        ? confirmationDialogRef.current
-        : dialogRef.current;
+      const activeDialog = confirmationDialogRef.current;
       const focusableElements = activeDialog?.querySelectorAll(
         'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
       );
-
       if (!focusableElements?.length) {
         event.preventDefault();
         activeDialog?.focus();
@@ -97,7 +104,6 @@ export default function TaskEditModal({
 
       const firstElement = focusableElements[0];
       const lastElement = focusableElements[focusableElements.length - 1];
-
       if (
         event.shiftKey &&
         (document.activeElement === firstElement ||
@@ -110,45 +116,31 @@ export default function TaskEditModal({
         firstElement.focus();
       }
     };
-
-    document.body.style.overflow = "hidden";
-    const focusFrame = window.requestAnimationFrame(() => {
-      dialogRef.current
-        ?.querySelector(
-          'input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled)'
-        )
-        ?.focus();
-    });
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-      window.requestAnimationFrame(() => {
-        window.scrollTo(previousScrollX, previousScrollY);
-        returnFocusElement?.focus({ preventScroll: true });
-      });
-    };
-  }, [returnFocusElement]);
-
-  useEffect(() => {
-    if (!confirmingDelete) return undefined;
     const focusFrame = window.requestAnimationFrame(() => {
       confirmationDialogRef.current
         ?.querySelector('button:not(:disabled)')
         ?.focus();
     });
-    return () => window.cancelAnimationFrame(focusFrame);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [confirmingDelete]);
+
+  const { onBackdropMouseDown } = useModalLifecycle({
+    isOpen: true,
+    modalRef: dialogRef,
+    onClose,
+    isDismissDisabled: busy,
+    allowEscape: !confirmingDelete,
+    trapFocus: !confirmingDelete,
+    restoreFocus: false,
+  });
 
   const closeModal = () => {
     if (busy) return;
     onClose();
-  };
-
-  const handleBackdrop = (event) => {
-    if (event.target === event.currentTarget) closeModal();
   };
 
   const handleChange = (event) => {
@@ -268,7 +260,7 @@ export default function TaskEditModal({
     <>
       <div
         className="task-modal-backdrop edit-task-modal-backdrop"
-        onMouseDown={handleBackdrop}
+        onMouseDown={onBackdropMouseDown}
       >
         <section
           ref={dialogRef}

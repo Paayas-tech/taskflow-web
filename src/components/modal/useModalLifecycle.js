@@ -108,6 +108,7 @@ function isTopModal(token) {
  * @param {boolean} [options.isDismissDisabled=false] Prevents dismissal while busy.
  * @param {boolean} [options.allowEscape=true] Enables Escape dismissal.
  * @param {boolean} [options.allowBackdropDismiss=true] Enables backdrop dismissal.
+ * @param {boolean} [options.trapFocus=true] Keeps keyboard focus within the modal.
  * @param {boolean} [options.restoreFocus=true] Restores focus to the opener on cleanup.
  * @param {boolean} [options.lockBodyScroll=true] Locks body scrolling while open.
  * @returns {{ onBackdropMouseDown: (event: MouseEvent) => void }} Optional backdrop handler.
@@ -121,6 +122,7 @@ export function useModalLifecycle({
   isDismissDisabled = false,
   allowEscape = true,
   allowBackdropDismiss = true,
+  trapFocus = true,
   restoreFocus = true,
   lockBodyScroll = true,
 }) {
@@ -132,6 +134,7 @@ export function useModalLifecycle({
     isDismissDisabled,
     allowEscape,
     allowBackdropDismiss,
+    trapFocus,
     restoreFocus,
   };
 
@@ -187,6 +190,10 @@ export function useModalLifecycle({
       }
 
       if (event.key !== "Tab") {
+        return;
+      }
+
+      if (!options.trapFocus) {
         return;
       }
 

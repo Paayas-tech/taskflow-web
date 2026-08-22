@@ -330,6 +330,22 @@ describe("useModalLifecycle", () => {
     expect(document.activeElement).toBe(modal);
   });
 
+  it("does not trap Tab when focus trapping is disabled", () => {
+    const first = createElement({ tabIndex: 0 });
+    const last = createElement({ tabIndex: 0 });
+    const modal = createElement({ tabIndex: 0, children: [first, last] });
+    createHookRunner(
+      HookHarness,
+      defaultProps({ modalRef: { current: modal }, trapFocus: false })
+    );
+    document.activeElement = last;
+
+    const event = keyEvent("Tab");
+    document.dispatch("keydown", event);
+    expect(document.activeElement).toBe(last);
+    expect(event.preventDefault).not.toHaveBeenCalled();
+  });
+
   it("restores focus to a connected opener after close", () => {
     const opener = createElement({ tabIndex: 0 });
     const props = defaultProps({ triggerRef: { current: opener } });
