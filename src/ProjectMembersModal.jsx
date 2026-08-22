@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import InvitationRow from "./InvitationRow";
 import MemberRow from "./MemberRow";
+import { useModalLifecycle } from "./components/modal/useModalLifecycle";
 import {
   cancelProjectInvitation,
   createProjectInvitation,
@@ -29,10 +30,10 @@ export default function ProjectMembersModal({
   const dialogRef = useRef(null);
   const confirmationDialogRef = useRef(null);
   const removeTriggerRef = useRef(null);
-  const memberToRemoveRef = useRef(null);
+  const busyIdRef = useRef("");
   const canManage = project.viewerRole === "owner";
 
-  memberToRemoveRef.current = memberToRemove;
+  busyIdRef.current = busyId;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,21 +56,15 @@ export default function ProjectMembersModal({
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
+    if (!memberToRemove) return undefined;
     const handleKeyDown = (event) => {
-      if (event.key === "Escape" && !busyId) {
-        if (memberToRemoveRef.current) {
-          setMemberToRemove(null);
-          window.requestAnimationFrame(() => removeTriggerRef.current?.focus());
-        } else {
-          onClose();
-        }
+      if (event.key === "Escape" && !busyIdRef.current) {
+        setMemberToRemove(null);
+        window.requestAnimationFrame(() => removeTriggerRef.current?.focus());
         return;
       }
       if (event.key !== "Tab") return;
-      const activeDialog = memberToRemoveRef.current
-        ? confirmationDialogRef.current
-        : dialogRef.current;
+      const activeDialog = confirmationDialogRef.current;
       const elements = activeDialog?.querySelectorAll(
         'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'
       );
@@ -89,31 +84,33 @@ export default function ProjectMembersModal({
         event.preventDefault(); first.focus();
       }
     };
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [busyId, onClose, returnFocusElement]);
-
-  useEffect(() => {
-    const focusFrame = window.requestAnimationFrame(() => dialogRef.current?.focus());
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      window.requestAnimationFrame(() => returnFocusElement?.focus());
-    };
-  }, [returnFocusElement]);
-
-  useEffect(() => {
-    if (!memberToRemove) return undefined;
     const focusFrame = window.requestAnimationFrame(() => {
       confirmationDialogRef.current
         ?.querySelector('button:not(:disabled)')
         ?.focus();
     });
-    return () => window.cancelAnimationFrame(focusFrame);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, [memberToRemove]);
+
+  useEffect(() => {
+    return () => {
+      window.requestAnimationFrame(() => returnFocusElement?.focus());
+    };
+  }, [returnFocusElement]);
+
+  const { onBackdropMouseDown } = useModalLifecycle({
+    isOpen: true,
+    modalRef: dialogRef,
+    onClose,
+    isDismissDisabled: Boolean(busyId),
+    allowEscape: !memberToRemove,
+    trapFocus: !memberToRemove,
+    restoreFocus: false,
+  });
 
   const runAction = async (id, action) => {
     if (busyId) return;
@@ -148,7 +145,7 @@ export default function ProjectMembersModal({
   return (
     <div
       className="task-modal-backdrop"
-      onMouseDown={(event) => event.target === event.currentTarget && !busyId && onClose()}
+      onMouseDown={onBackdropMouseDown}
     >
       <section
         ref={dialogRef}
