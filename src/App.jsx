@@ -57,16 +57,15 @@ import {
   filterArchivedTasks,
 } from "./domain/archivedTasksDomain";
 import { isSupabaseConfigured } from "./infrastructure/supabase/client";
-
-const navItems = [
-  { label: "Dashboard", path: "/", enabled: true, icon: "dashboard" },
-  { label: "Today", path: "/today", enabled: true, icon: "today" },
-  { label: "Tasks", path: "/tasks", enabled: true, icon: "tasks" },
-  { label: "Projects", path: "/projects", enabled: true, icon: "projects" },
-  { label: "Calendar", path: "/calendar", enabled: true, icon: "calendar" },
-  { label: "Reminders", enabled: false, icon: "reminders" },
-  { label: "Settings", path: "/settings", enabled: true, icon: "settings" },
-];
+import {
+  isNavigationItemActive,
+  navigationItems,
+  normalizePath,
+  pageMetadata,
+  projectIdFromPath,
+  projectPath,
+  routeViewFromPath,
+} from "./app/appRoutes";
 
 const navIcons = {
   dashboard: (
@@ -123,17 +122,6 @@ function NavigationIcon({ name }) {
   );
 }
 
-const routeViews = {
-  "/": "dashboard",
-  "/today": "today",
-  "/tasks": "tasks",
-  "/projects": "projects",
-  "/calendar": "calendar",
-  "/settings": "settings",
-  "/archived-tasks": "archived",
-  "/recover": "recover",
-};
-
 const updateSettingsLastViewed = (settings, path) => ({
   ...settings,
   navigation: {
@@ -141,29 +129,6 @@ const updateSettingsLastViewed = (settings, path) => ({
     lastViewedPath: path,
   },
 });
-
-const projectIdFromPath = (pathname) => {
-  if (!pathname.startsWith("/projects/")) return null;
-
-  const encodedProjectId = pathname.slice("/projects/".length);
-  if (!encodedProjectId || encodedProjectId.includes("/")) return null;
-
-  try {
-    const projectId = decodeURIComponent(encodedProjectId);
-    return projectId && !projectId.includes("/") ? projectId : null;
-  } catch {
-    return null;
-  }
-};
-
-const normalizePath = (pathname) => {
-  const withoutTrailingSlash =
-    pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
-  if (routeViews[withoutTrailingSlash]) return withoutTrailingSlash;
-
-  const projectId = projectIdFromPath(withoutTrailingSlash);
-  return projectId ? `/projects/${encodeURIComponent(projectId)}` : "/";
-};
 
 const emptyTaskForm = {
   title: "",
@@ -1145,45 +1110,15 @@ function App() {
   const editableProjects = projects.filter((project) =>
     ["owner", "editor"].includes(project.viewerRole)
   );
-  const currentView = selectedProjectId
-    ? "project"
-    : routeViews[currentPath];
-  const pageTitle =
-    currentView === "tasks"
-      ? "Tasks"
-      : currentView === "today"
-        ? "Today"
-      : currentView === "archived"
-        ? "Archived Tasks"
-      : currentView === "calendar"
-          ? "Calendar"
-        : currentView === "settings"
-          ? "Settings"
-        : currentView === "projects"
-          ? "Projects"
-          : currentView === "project"
-            ? selectedProject?.name || "Project"
-        : "Dashboard";
-  const pageSubtitle =
-    currentView === "tasks"
-      ? `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`
-      : currentView === "today"
-        ? "Overdue and due-today tasks in one focused view."
-      : currentView === "archived"
-        ? `${archivedTasks.length} ${archivedTasks.length === 1 ? "archived task" : "archived tasks"}`
-        : currentView === "calendar"
-          ? "Plan dated work from your existing TaskFlow tasks."
-        : currentView === "settings"
-          ? "Personalize reminders, notifications, appearance, and your profile."
-        : currentView === "projects"
-          ? `${projects.length} ${projects.length === 1 ? "project" : "projects"}`
-          : currentView === "project"
-            ? selectedProject
-              ? "Board, list, and calendar views for this project."
-              : projectsLoading
-                ? "Loading project..."
-                : "Project unavailable"
-        : "A clear view of what needs your attention.";
+  const currentView = routeViewFromPath(currentPath);
+  const { title: pageTitle, subtitle: pageSubtitle } = pageMetadata({
+    currentView,
+    taskCount: tasks.length,
+    archivedTaskCount: archivedTasks.length,
+    projectCount: projects.length,
+    selectedProject,
+    projectsLoading,
+  });
 
   return (
     <div className="app-shell">
@@ -1194,11 +1129,12 @@ function App() {
         </div>
 
         <nav className="nav-list" aria-label="Primary navigation">
-          {navItems.map((item) => {
-            const isActive =
-              item.path === currentPath ||
-              (item.path === "/projects" && currentView === "project") ||
-              (item.path === "/settings" && currentView === "archived");
+          {navigationItems.map((item) => {
+            const isActive = isNavigationItemActive(
+              item.path,
+              currentPath,
+              currentView
+            );
 
             return (
               <button
@@ -1446,7 +1382,7 @@ function App() {
             onDeleteProject={handleDeleteProject}
             createRequest={projectCreateRequest}
             onOpenProject={(projectId) =>
-              navigate(`/projects/${encodeURIComponent(projectId)}`)
+              navigate(projectPath(projectId))
             }
             invitations={projectInvitations}
             invitationsLoading={projectInvitationsLoading}
@@ -1496,7 +1432,7 @@ function App() {
             invitationsLoading={projectInvitationsLoading}
             invitationsError={projectInvitationsError}
             onOpenProject={(projectId) =>
-              navigate(`/projects/${encodeURIComponent(projectId)}`)
+              navigate(projectPath(projectId))
             }
             onOpenInvitations={() => navigate("/projects")}
           />

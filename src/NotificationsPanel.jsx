@@ -6,6 +6,7 @@ import {
   markNotificationRead,
   subscribeToNotifications,
 } from "./application/notificationService";
+import { useModalLifecycle } from "./components/modal/useModalLifecycle";
 
 const notificationLabel = (notification) => {
   const task = notification.data?.taskTitle || "a task";
@@ -51,49 +52,23 @@ export default function NotificationsPanel({ userId, onNavigate }) {
     const closeOnOutsideClick = (event) => {
       if (!panelRef.current?.contains(event.target)) setOpen(false);
     };
-    const closeOnEscape = (event) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setOpen(false);
-        triggerRef.current?.focus();
-        return;
-      }
-
-      if (event.key !== "Tab") return;
-      const focusableElements = dialogRef.current?.querySelectorAll(
-        'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
-      );
-      if (!focusableElements?.length) {
-        event.preventDefault();
-        dialogRef.current?.focus();
-        return;
-      }
-
-      const firstElement = focusableElements[0];
-      const lastElement = focusableElements[focusableElements.length - 1];
-      if (
-        event.shiftKey &&
-        (document.activeElement === firstElement ||
-          document.activeElement === dialogRef.current)
-      ) {
-        event.preventDefault();
-        lastElement.focus();
-      } else if (!event.shiftKey && document.activeElement === lastElement) {
-        event.preventDefault();
-        firstElement.focus();
-      }
-    };
-    const focusFrame = window.requestAnimationFrame(() => {
-      dialogRef.current?.focus();
-    });
     document.addEventListener("mousedown", closeOnOutsideClick);
-    window.addEventListener("keydown", closeOnEscape);
     return () => {
-      window.cancelAnimationFrame(focusFrame);
       document.removeEventListener("mousedown", closeOnOutsideClick);
-      window.removeEventListener("keydown", closeOnEscape);
     };
   }, [open]);
+
+  useModalLifecycle({
+    isOpen: open,
+    modalRef: dialogRef,
+    onClose: () => {
+      setOpen(false);
+      triggerRef.current?.focus();
+    },
+    triggerRef,
+    restoreFocus: false,
+    lockBodyScroll: false,
+  });
 
   const unreadCount = notifications.filter((item) => !item.readAt).length;
   const openNotification = async (notification) => {
