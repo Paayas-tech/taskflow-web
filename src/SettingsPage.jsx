@@ -33,6 +33,7 @@ import CalendarConnectionSection from "./settings/CalendarConnectionSection";
 import SettingsSignOutSection from "./settings/SettingsSignOutSection";
 import ProjectRemindersPanel from "./settings/ProjectRemindersPanel";
 import BackgroundSettingsPanel from "./settings/BackgroundSettingsPanel";
+import ArchivedProjectsPanel from "./settings/ArchivedProjectsPanel";
 
 const updateSection = (settings, section, patch) => ({
   ...settings,
@@ -540,40 +541,15 @@ export default function SettingsPage({
 
     if (activePanel === "archivedProjects") {
       return (
-        <SettingsDetail title="Archived Projects" description="Projects already marked archived." onBack={closePanel}>
-          {archivedProjects.length ? (
-            <div className="settings-compact-list settings-archived-projects">
-              {archivedProjects.map((project) => (
-                <div className="settings-archived-project" key={project.id}>
-                  <div>
-                    <strong>{project.name}</strong>
-                    {project.description && <small>{project.description}</small>}
-                  </div>
-                  <div className="settings-archived-project-actions">
-                    <button
-                      className="ghost-btn compact-btn"
-                      type="button"
-                      onClick={() => onNavigate?.(`/projects/${encodeURIComponent(project.id)}`)}
-                      disabled={projectActionId === project.id}
-                    >
-                      View
-                    </button>
-                    <button
-                      className="ghost-btn compact-btn"
-                      type="button"
-                      onClick={() => void restoreArchivedProject(project)}
-                      disabled={projectActionId === project.id}
-                    >
-                      {projectActionId === project.id ? "Restoring..." : "Restore"}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="settings-placeholder-panel"><p>No archived projects.</p></div>
-          )}
-        </SettingsDetail>
+        <ArchivedProjectsPanel
+          projects={archivedProjects}
+          pendingProjectId={projectActionId}
+          onViewProject={(project) =>
+            onNavigate?.(`/projects/${encodeURIComponent(project.id)}`)
+          }
+          onRestoreProject={(project) => void restoreArchivedProject(project)}
+          onBack={closePanel}
+        />
       );
     }
 

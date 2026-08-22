@@ -454,3 +454,99 @@ describe("SettingsPage background coordination", () => {
     ).toContain(`${nextBackgroundName} background saved.`);
   });
 });
+
+describe("SettingsPage archived projects coordination", () => {
+  const archivedProject = {
+    id: "project/id with spaces",
+    name: "Archived Alpha",
+    description: "Archived project description",
+    status: "archived",
+  };
+
+  function openArchivedProjects(runner) {
+    const archivedProjects = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node).startsWith("Archived Projects")
+    );
+    archivedProjects.props.onClick();
+    runner.render();
+  }
+
+  it("keeps encoded project navigation in the coordinator", () => {
+    const props = baseProps({ exportData: { projects: [archivedProject], lists: [] } });
+    const runner = createRunner(props);
+    openArchivedProjects(runner);
+    const view = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "View"
+    );
+
+    view.props.onClick();
+    expect(props.onNavigate).toHaveBeenCalledWith(
+      `/projects/${encodeURIComponent(archivedProject.id)}`
+    );
+  });
+
+  it("preserves pending state, restore cleanup, and the success message", async () => {
+    let resolveRestore;
+    const restorePending = new Promise((resolve) => { resolveRestore = resolve; });
+    const props = baseProps({
+      exportData: { projects: [archivedProject], lists: [] },
+      onRestoreProject: vi.fn(() => restorePending),
+    });
+    const runner = createRunner(props);
+    openArchivedProjects(runner);
+    let restore = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "Restore"
+    );
+
+    restore.props.onClick();
+    expect(props.onRestoreProject).toHaveBeenCalledWith(archivedProject.id);
+    runner.render();
+    restore = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "Restoring..."
+    );
+    expect(restore.props.disabled).toBe(true);
+
+    resolveRestore();
+    await restorePending;
+    await Promise.resolve();
+    runner.render();
+    restore = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "Restore"
+    );
+    expect(restore.props.disabled).toBe(false);
+    expect(
+      textContent(findElement(runner.output, (node) => node.props?.role === "status"))
+    ).toContain("Archived Alpha restored.");
+  });
+
+  it("preserves the sanitized restore failure and clears pending state", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const props = baseProps({
+      exportData: { projects: [archivedProject], lists: [] },
+      onRestoreProject: vi.fn().mockRejectedValue(new Error("provider details")),
+    });
+    const runner = createRunner(props);
+    openArchivedProjects(runner);
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "Restore"
+    ).props.onClick();
+
+    await Promise.resolve();
+    await Promise.resolve();
+    runner.render();
+    const status = findElement(runner.output, (node) => node.props?.role === "status");
+    expect(textContent(status)).toContain("We couldn't restore Archived Alpha. Try again.");
+    expect(textContent(status)).not.toContain("provider details");
+    expect(
+      findElement(runner.output, (node) => node.type === "button" && textContent(node) === "Restore")
+        .props.disabled
+    ).toBe(false);
+    expect(consoleError).toHaveBeenCalledOnce();
+  });
+});
