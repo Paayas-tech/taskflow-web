@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import InvitationRow from "./InvitationRow";
+import { useModalLifecycle } from "./components/modal/useModalLifecycle";
 
 const projectColors = [
   "#6657c8",
@@ -82,6 +83,7 @@ export default function ProjectsPage({
   const [formError, setFormError] = useState("");
   const createButtonRef = useRef(null);
   const dialogRef = useRef(null);
+  const projectNameInputRef = useRef(null);
   const submissionRef = useRef(false);
 
   useEffect(() => {
@@ -117,51 +119,20 @@ export default function ProjectsPage({
     setEditingProject(null);
     setValues(emptyProjectForm);
     setFormError("");
-    createButtonRef.current?.focus();
   }, [saving]);
 
-  const handleBackdrop = (event) => {
-    if (event.target === event.currentTarget) closeCreateProject();
-  };
-
-  useEffect(() => {
-    if (!showCreateProject) return undefined;
-
-    const previousOverflow = document.body.style.overflow;
-    const handleKeyDown = (event) => {
-      if (event.key === "Escape" && !saving) {
-        closeCreateProject();
-        return;
-      }
-
-      if (event.key !== "Tab") return;
-
-      const focusableElements = dialogRef.current?.querySelectorAll(
-        'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
-      );
-
-      if (!focusableElements?.length) return;
-
-      const firstElement = focusableElements[0];
-      const lastElement = focusableElements[focusableElements.length - 1];
-
-      if (event.shiftKey && document.activeElement === firstElement) {
-        event.preventDefault();
-        lastElement.focus();
-      } else if (!event.shiftKey && document.activeElement === lastElement) {
-        event.preventDefault();
-        firstElement.focus();
-      }
-    };
-
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [closeCreateProject, saving, showCreateProject]);
+  const { onBackdropMouseDown: handleBackdrop } = useModalLifecycle({
+    isOpen: showCreateProject,
+    modalRef: dialogRef,
+    onClose: closeCreateProject,
+    triggerRef: createButtonRef,
+    initialFocusRef: projectNameInputRef,
+    isDismissDisabled: saving,
+    allowEscape: true,
+    allowBackdropDismiss: true,
+    restoreFocus: true,
+    lockBodyScroll: true,
+  });
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -191,7 +162,6 @@ export default function ProjectsPage({
       setShowCreateProject(false);
       setEditingProject(null);
       setValues(emptyProjectForm);
-      createButtonRef.current?.focus();
     } catch (createError) {
       console.error("Error creating project:", createError);
       setFormError(
@@ -400,6 +370,7 @@ export default function ProjectsPage({
             className="task-modal project-modal"
             id="create-project-dialog"
             role="dialog"
+            tabIndex={-1}
             aria-modal="true"
             aria-labelledby="create-project-dialog-title"
             aria-describedby="create-project-dialog-description"
@@ -428,6 +399,7 @@ export default function ProjectsPage({
               <label className="project-form-field project-name-field">
                 <span>Project name</span>
                 <input
+                  ref={projectNameInputRef}
                   name="name"
                   value={values.name}
                   onChange={handleChange}
