@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   SETTINGS_DATE_FORMATS,
   SETTINGS_DEFAULT_VIEWS,
@@ -13,6 +13,7 @@ import {
   emptyCalendarConnection,
 } from "./domain/calendarConnectionDomain";
 import { requestNotificationPermission } from "./services/reminderService";
+import { useModalLifecycle } from "./components/modal/useModalLifecycle";
 
 const updateSection = (settings, section, patch) => ({
   ...settings,
@@ -181,6 +182,7 @@ export default function SettingsPage({
   const [confirmingFilterReset, setConfirmingFilterReset] = useState(false);
   const [projectActionId, setProjectActionId] = useState("");
   const [calendarSetupProviderId, setCalendarSetupProviderId] = useState("");
+  const calendarDialogRef = useRef(null);
   const validationError = useMemo(
     () => getSettingsValidationError(settings),
     [settings]
@@ -207,19 +209,14 @@ export default function SettingsPage({
     ({ id }) => id === calendarSetupProviderId
   );
 
-  useEffect(() => {
-    if (!calendarSetupProviderId) return undefined;
-    const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event) => {
-      if (event.key === "Escape") setCalendarSetupProviderId("");
-    };
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [calendarSetupProviderId]);
+  const { onBackdropMouseDown: onCalendarBackdropMouseDown } =
+    useModalLifecycle({
+      isOpen: Boolean(calendarSetupProviderId),
+      modalRef: calendarDialogRef,
+      onClose: () => setCalendarSetupProviderId(""),
+      trapFocus: false,
+      restoreFocus: false,
+    });
 
   const openPanel = (panel) => {
     setPanelMessage("");
@@ -522,13 +519,10 @@ export default function SettingsPage({
           {selectedCalendarProvider && setup && (
             <div
               className="settings-connection-backdrop"
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget) {
-                  setCalendarSetupProviderId("");
-                }
-              }}
+              onMouseDown={onCalendarBackdropMouseDown}
             >
               <section
+                ref={calendarDialogRef}
                 className="settings-connection-dialog"
                 role="dialog"
                 aria-modal="true"

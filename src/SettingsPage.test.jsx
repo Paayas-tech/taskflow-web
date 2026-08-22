@@ -1,0 +1,371 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const hookRuntime = vi.hoisted(() => {
+  let activeRunner;
+  const same = (left, right) =>
+    Boolean(
+      left &&
+        right &&
+        left.length === right.length &&
+        left.every((value, index) => Object.is(value, right[index]))
+    );
+  return {
+    activate(runner) { activeRunner = runner; },
+    useState(initialValue) {
+      const index = activeRunner.cursor++;
+      activeRunner.slots[index] ??= {
+        value: typeof initialValue === "function" ? initialValue() : initialValue,
+      };
+      const slot = activeRunner.slots[index];
+      return [slot.value, (next) => {
+        slot.value = typeof next === "function" ? next(slot.value) : next;
+      }];
+    },
+    useRef(initialValue) {
+      const index = activeRunner.cursor++;
+      activeRunner.slots[index] ??= { current: initialValue };
+      return activeRunner.slots[index];
+    },
+    useMemo(factory, dependencies) {
+      const index = activeRunner.cursor++;
+      const previous = activeRunner.slots[index];
+      if (previous && same(previous.dependencies, dependencies)) return previous.value;
+      const value = factory();
+      activeRunner.slots[index] = { value, dependencies };
+      return value;
+    },
+    useCallback(callback, dependencies) {
+      const index = activeRunner.cursor++;
+      const previous = activeRunner.slots[index];
+      if (previous && same(previous.dependencies, dependencies)) return previous.callback;
+      activeRunner.slots[index] = { callback, dependencies };
+      return callback;
+    },
+    useEffect(effect, dependencies) {
+      const index = activeRunner.cursor++;
+      const previous = activeRunner.slots[index];
+      if (!previous || !same(previous.dependencies, dependencies)) {
+        activeRunner.pending.push({ index, effect, dependencies });
+      }
+    },
+  };
+});
+
+vi.mock("react", () => ({
+  useCallback: hookRuntime.useCallback,
+  useEffect: hookRuntime.useEffect,
+  useMemo: hookRuntime.useMemo,
+  useRef: hookRuntime.useRef,
+  useState: hookRuntime.useState,
+}));
+vi.mock("./services/reminderService", () => ({
+  requestNotificationPermission: vi.fn().mockResolvedValue("granted"),
+}));
+
+import SettingsPage from "./SettingsPage";
+import { DEFAULT_SETTINGS } from "./domain/settingsDomain";
+
+const mountedRunners = new Set();
+
+function childrenOf(node) {
+  const children = node?.props?.children;
+  return (Array.isArray(children) ? children : [children]).filter(
+    (child) => child !== null && child !== undefined && child !== false
+  );
+}
+
+function resolveNode(node) {
+  if (Array.isArray(node)) return node.map(resolveNode);
+  if (!node || typeof node !== "object") return node;
+  if (typeof node.type === "function") return resolveNode(node.type(node.props));
+  return {
+    ...node,
+    props: { ...node.props, children: childrenOf(node).map(resolveNode) },
+  };
+}
+
+function walk(node, visitor) {
+  if (Array.isArray(node)) {
+    node.forEach((child) => walk(child, visitor));
+    return;
+  }
+  if (!node || typeof node !== "object") return;
+  visitor(node);
+  childrenOf(node).forEach((child) => walk(child, visitor));
+}
+
+function findElement(root, predicate) {
+  let match;
+  walk(root, (node) => {
+    if (!match && predicate(node)) match = node;
+  });
+  return match;
+}
+
+function textContent(node) {
+  if (Array.isArray(node)) return node.map(textContent).join("");
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  return childrenOf(node).map(textContent).join("");
+}
+
+function createDom(node) {
+  if (Array.isArray(node)) return node.map(createDom);
+  if (!node || typeof node !== "object") return null;
+  const descendants = [];
+  const tabIndex = node.props?.tabIndex ??
+    (["button", "input", "select", "textarea", "a"].includes(node.type) ? 0 : -1);
+  const element = {
+    node,
+    descendants,
+    disabled: Boolean(node.props?.disabled),
+    hidden: Boolean(node.props?.hidden),
+    isConnected: true,
+    tabIndex,
+    focus: vi.fn(() => { document.activeElement = element; }),
+    getAttribute(name) {
+      if (name === "tabindex" && node.props?.tabIndex !== undefined) return String(tabIndex);
+      if (name === "aria-hidden") return node.props?.["aria-hidden"] ?? null;
+      return null;
+    },
+    closest: () => null,
+    contains(candidate) {
+      return candidate === element || descendants.some((child) => child.contains(candidate));
+    },
+    querySelectorAll() {
+      const result = [];
+      const collect = (candidate) => {
+        if (!candidate.disabled && candidate.tabIndex >= 0) result.push(candidate);
+        candidate.descendants.forEach(collect);
+      };
+      descendants.forEach(collect);
+      return result;
+    },
+  };
+  for (const child of childrenOf(node)) {
+    const childDom = createDom(child);
+    if (Array.isArray(childDom)) descendants.push(...childDom.filter(Boolean));
+    else if (childDom) descendants.push(childDom);
+  }
+  if (node.props?.ref && typeof node.props.ref === "object") node.props.ref.current = element;
+  return element;
+}
+
+function createDocument() {
+  const listeners = new Map();
+  return {
+    activeElement: null,
+    body: { style: { overflow: "" } },
+    addEventListener(type, listener) {
+      const entries = listeners.get(type) ?? new Set();
+      entries.add(listener);
+      listeners.set(type, entries);
+    },
+    removeEventListener(type, listener) { listeners.get(type)?.delete(listener); },
+    dispatch(type, event) {
+      for (const listener of listeners.get(type) ?? []) listener(event);
+    },
+  };
+}
+
+function createRunner(props) {
+  const runner = { cursor: 0, pending: [], slots: [], output: null };
+  function render(nextProps = props) {
+    props = nextProps;
+    runner.cursor = 0;
+    runner.pending = [];
+    hookRuntime.activate(runner);
+    runner.output = resolveNode(SettingsPage(props));
+    createDom(runner.output);
+    for (const pending of runner.pending) {
+      runner.slots[pending.index]?.cleanup?.();
+      runner.slots[pending.index] = {
+        dependencies: pending.dependencies,
+        cleanup: pending.effect(),
+      };
+    }
+    return runner.output;
+  }
+  function unmount() {
+    for (const slot of [...runner.slots].reverse()) slot?.cleanup?.();
+    runner.slots = [];
+    mountedRunners.delete(api);
+  }
+  const api = {
+    render,
+    unmount,
+    get output() { return runner.output; },
+  };
+  mountedRunners.add(api);
+  render();
+  return api;
+}
+
+function keyEvent(key, shiftKey = false) {
+  return { key, shiftKey, preventDefault: vi.fn() };
+}
+
+function baseProps(overrides = {}) {
+  return {
+    settings: DEFAULT_SETTINGS,
+    loading: false,
+    error: "",
+    saving: false,
+    saveMessage: "",
+    onRetry: vi.fn(),
+    onChange: vi.fn(),
+    onSave: vi.fn(),
+    onCommit: vi.fn().mockResolvedValue(undefined),
+    onSignOut: vi.fn(),
+    onNavigate: vi.fn(),
+    onOpenProjectCreate: vi.fn(),
+    onRestoreProject: vi.fn(),
+    exportData: { projects: [], lists: [] },
+    ...overrides,
+  };
+}
+
+function openCalendarDialog(runner) {
+  let connect = findElement(
+    runner.output,
+    (node) => node.type === "button" && textContent(node) === "Connect"
+  );
+  if (!connect) {
+    const calendars = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node).startsWith("Calendars")
+    );
+    calendars.props.onClick();
+    runner.render();
+    connect = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "Connect"
+    );
+  }
+  connect.props.onClick();
+  runner.render();
+  return findElement(runner.output, (node) => node.props?.role === "dialog");
+}
+
+beforeEach(() => {
+  globalThis.document = createDocument();
+  globalThis.getComputedStyle = () => ({ display: "block", visibility: "visible" });
+});
+
+afterEach(() => {
+  for (const runner of [...mountedRunners]) runner.unmount();
+  delete globalThis.document;
+  delete globalThis.getComputedStyle;
+  vi.restoreAllMocks();
+});
+
+describe("SettingsPage calendar modal lifecycle integration", () => {
+  it("preserves dialog semantics, absent initial focus, and body scroll locking", () => {
+    document.body.style.overflow = "clip";
+    const outside = {};
+    document.activeElement = outside;
+    const runner = createRunner(baseProps());
+    const dialog = openCalendarDialog(runner);
+    const title = findElement(
+      runner.output,
+      (node) => node.props?.id === dialog.props["aria-labelledby"]
+    );
+    expect(dialog.props["aria-modal"]).toBe("true");
+    expect(textContent(title)).toContain("Connect Google Calendar");
+    expect(dialog.props.tabIndex).toBeUndefined();
+    expect(document.activeElement).toBe(outside);
+    expect(document.body.style.overflow).toBe("hidden");
+    runner.unmount();
+    expect(document.body.style.overflow).toBe("clip");
+  });
+
+  it("closes on Escape and restores body scrolling", () => {
+    document.body.style.overflow = "auto";
+    const runner = createRunner(baseProps());
+    openCalendarDialog(runner);
+    document.dispatch("keydown", keyEvent("Escape"));
+    runner.render();
+    expect(findElement(runner.output, (node) => node.props?.role === "dialog")).toBeUndefined();
+    expect(document.body.style.overflow).toBe("auto");
+  });
+
+  it("distinguishes backdrop, content, and explicit Close interactions", () => {
+    const runner = createRunner(baseProps());
+    openCalendarDialog(runner);
+    let backdrop = findElement(
+      runner.output,
+      (node) => node.props?.className === "settings-connection-backdrop"
+    );
+    backdrop.props.onMouseDown({ target: {}, currentTarget: {} });
+    runner.render();
+    expect(findElement(runner.output, (node) => node.props?.role === "dialog")).toBeDefined();
+
+    backdrop = findElement(runner.output, (node) => node.props?.className === "settings-connection-backdrop");
+    const sameTarget = {};
+    backdrop.props.onMouseDown({ target: sameTarget, currentTarget: sameTarget });
+    runner.render();
+    expect(findElement(runner.output, (node) => node.props?.role === "dialog")).toBeUndefined();
+
+    openCalendarDialog(runner);
+    const close = findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Close calendar connection setup"
+    );
+    close.props.onClick();
+    runner.render();
+    expect(findElement(runner.output, (node) => node.props?.role === "dialog")).toBeUndefined();
+  });
+
+  it("preserves the modal's existing lack of Tab trapping", () => {
+    const runner = createRunner(baseProps());
+    const dialog = openCalendarDialog(runner);
+    const dialogDom = dialog.props.ref.current;
+    const focusable = dialogDom.querySelectorAll();
+    document.activeElement = focusable.at(-1);
+    const tab = keyEvent("Tab");
+    document.dispatch("keydown", tab);
+    expect(document.activeElement).toBe(focusable.at(-1));
+    expect(tab.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("remains dismissible when the unrelated settings saving flag is active", () => {
+    const runner = createRunner(baseProps({ saving: true }));
+    openCalendarDialog(runner);
+    document.dispatch("keydown", keyEvent("Escape"));
+    runner.render();
+    expect(findElement(runner.output, (node) => node.props?.role === "dialog")).toBeUndefined();
+  });
+
+  it("does not react to Escape or Tab while closed or after unmount", () => {
+    const runner = createRunner(baseProps());
+    const outside = {};
+    document.activeElement = outside;
+    const tab = keyEvent("Tab");
+    document.dispatch("keydown", keyEvent("Escape"));
+    document.dispatch("keydown", tab);
+    expect(document.activeElement).toBe(outside);
+    expect(tab.preventDefault).not.toHaveBeenCalled();
+    runner.unmount();
+    document.dispatch("keydown", keyEvent("Escape"));
+  });
+
+  it("preserves immediate settings commit payload and error ownership", async () => {
+    const commit = vi.fn().mockRejectedValue(new Error("offline"));
+    const props = baseProps({ onCommit: commit });
+    const runner = createRunner(props);
+    const theme = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node).startsWith("Theme")
+    );
+    theme.props.onClick();
+    runner.render();
+    const dark = findElement(
+      runner.output,
+      (node) => node.props?.type === "radio" && node.props?.value === "dark"
+    );
+    await expect(dark.props.onChange()).resolves.toBeUndefined();
+    const expectedSettings = { ...DEFAULT_SETTINGS, theme: { mode: "dark" } };
+    expect(props.onChange).toHaveBeenCalledWith(expectedSettings);
+    expect(commit).toHaveBeenCalledWith(expectedSettings);
+    expect(findElement(runner.output, (node) => node.props?.role === "alert")).toBeUndefined();
+  });
+});
