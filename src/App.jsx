@@ -66,6 +66,7 @@ import {
   projectPath,
   routeViewFromPath,
 } from "./app/appRoutes";
+import { useModalLifecycle } from "./components/modal/useModalLifecycle";
 
 const navIcons = {
   dashboard: (
@@ -192,6 +193,8 @@ function App() {
     () => new Set()
   );
   const newTaskButtonRef = useRef(null);
+  const taskModalRef = useRef(null);
+  const taskModalInitialFocusRef = useRef(null);
   const taskFormSubmissionRef = useRef(false);
   const tasksRef = useRef([]);
   const reminderSchedulerRef = useRef(null);
@@ -995,58 +998,20 @@ function App() {
     setTaskFormError("");
     setTaskForm(emptyTaskForm);
     setShowTaskForm(false);
-    newTaskButtonRef.current?.focus();
   }, [taskFormSaving]);
 
-  const handleTaskModalBackdrop = (event) => {
-    if (event.target === event.currentTarget) closeTaskForm();
-  };
-
-  useEffect(() => {
-    if (!showTaskForm) return undefined;
-
-    const previousOverflow = document.body.style.overflow;
-    const handleKeyDown = (event) => {
-      if (event.key === "Escape" && !taskFormSaving) closeTaskForm();
-
-      if (event.key === "Tab") {
-        const dialog = document.getElementById("create-task-dialog");
-        const focusableElements = dialog?.querySelectorAll(
-          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
-        );
-
-        if (!focusableElements?.length) return;
-
-        const firstElement = focusableElements[0];
-        const lastElement = focusableElements[focusableElements.length - 1];
-
-        if (event.shiftKey && document.activeElement === firstElement) {
-          event.preventDefault();
-          lastElement.focus();
-        } else if (!event.shiftKey && document.activeElement === lastElement) {
-          event.preventDefault();
-          firstElement.focus();
-        }
-      }
-    };
-
-    document.body.style.overflow = "hidden";
-    const focusFrame = window.requestAnimationFrame(() => {
-      document
-        .getElementById("create-task-dialog")
-        ?.querySelector(
-          'input:not(:disabled), textarea:not(:disabled), select:not(:disabled), button:not(:disabled)'
-        )
-        ?.focus();
-    });
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [closeTaskForm, showTaskForm, taskFormSaving]);
+  const { onBackdropMouseDown: handleTaskModalBackdrop } = useModalLifecycle({
+    isOpen: showTaskForm,
+    modalRef: taskModalRef,
+    onClose: closeTaskForm,
+    triggerRef: newTaskButtonRef,
+    initialFocusRef: taskModalInitialFocusRef,
+    isDismissDisabled: taskFormSaving,
+    allowEscape: true,
+    allowBackdropDismiss: true,
+    restoreFocus: true,
+    lockBodyScroll: true,
+  });
 
   const navigate = (path) => {
     if (path === currentPath) return;
@@ -1235,9 +1200,11 @@ function App() {
             onMouseDown={handleTaskModalBackdrop}
           >
             <section
+              ref={taskModalRef}
               className="task-modal"
               id="create-task-dialog"
               role="dialog"
+              tabIndex={-1}
               aria-modal="true"
               aria-labelledby="create-task-dialog-title"
               aria-describedby="create-task-dialog-description"
@@ -1253,6 +1220,7 @@ function App() {
                 </div>
 
                 <button
+                  ref={taskModalInitialFocusRef}
                   className="ghost-btn compact-btn task-modal-close"
                   type="button"
                   onClick={closeTaskForm}
