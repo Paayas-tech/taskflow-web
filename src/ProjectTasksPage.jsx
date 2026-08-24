@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CalendarPage from "./CalendarPage";
-import ActivityFeed from "./ActivityFeed";
 import ProjectBoard from "./ProjectBoard";
 import ProjectMembersModal from "./ProjectMembersModal";
 import TaskEditModal from "./TaskEditModal";
@@ -22,7 +21,7 @@ import { isArchived, isTaskComplete } from "./domain/taskDomain";
 const emptyTaskForm = {
   title: "", description: "", notes: "", status: "todo", priority: "medium",
   dueDate: "", endDate: "", startTime: "", endTime: "", reminder: false,
-  reminderAt: "", listId: "", projectId: "",
+  reminderAt: "", listId: "", projectId: "", assigneeId: "",
 };
 
 const statusForColumn = (column) =>
@@ -73,11 +72,13 @@ export default function ProjectTasksPage({
   const editTriggerRef = useRef(null);
   const membersButtonRef = useRef(null);
   const workspaceRequestRef = useRef(0);
+  const loadedProjectIdRef = useRef(null);
 
   const loadWorkspace = useCallback(async () => {
     if (!userId || !projectId) return;
     const requestId = ++workspaceRequestRef.current;
-    setLoading(true);
+    const initialLoad = loadedProjectIdRef.current !== projectId;
+    if (initialLoad) setLoading(true);
     setLoadError("");
     try {
       const [projectTasks, projectColumns, projectMembers] = await Promise.all([
@@ -89,17 +90,20 @@ export default function ProjectTasksPage({
       setTasks(projectTasks);
       setColumns(projectColumns);
       setMembers(projectMembers);
+      loadedProjectIdRef.current = projectId;
     } catch (error) {
       if (requestId !== workspaceRequestRef.current) return;
       console.error("Error loading project workspace:", error);
-      setTasks([]);
-      setColumns([]);
-      setMembers([]);
+      if (initialLoad) {
+        setTasks([]);
+        setColumns([]);
+        setMembers([]);
+      }
       setLoadError(
         "We couldn't load this project workspace. Check your connection and try again."
       );
     } finally {
-      if (requestId === workspaceRequestRef.current) setLoading(false);
+      if (requestId === workspaceRequestRef.current && initialLoad) setLoading(false);
     }
   }, [projectId, userId]);
 
@@ -119,10 +123,6 @@ export default function ProjectTasksPage({
   const activeTasks = useMemo(
     () => tasks.filter((task) => !isArchived(task)),
     [tasks]
-  );
-  const completedTasks = useMemo(
-    () => activeTasks.filter(isTaskComplete),
-    [activeTasks]
   );
   const filteredTasks = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -217,15 +217,28 @@ export default function ProjectTasksPage({
     createSubmissionRef.current = true;
     setCreating(true);
     setCreateError("");
+    let createdTask = null;
     try {
-      await createProjectTask(userId, projectId, {
-        ...createValues, projectId, listId: createValues.listId || null,
+      const { assigneeId, ...taskValues } = createValues;
+      createdTask = await createProjectTask(userId, projectId, {
+        ...taskValues, projectId, listId: taskValues.listId || null,
       });
+      if (assigneeId) {
+        await setTaskAssignee(userId, projectId, createdTask.id, assigneeId);
+      }
       setShowCreate(false);
       await loadWorkspace();
     } catch (error) {
       console.error("Error creating project task:", error);
-      setCreateError("We couldn't create this task. Check your connection and try again.");
+      if (createdTask) {
+        setShowCreate(false);
+        await loadWorkspace();
+        setMutationError(
+          `“${createValues.title.trim()}” was created, but its assignee could not be saved. Open the task to assign it.`
+        );
+      } else {
+        setCreateError("We couldn't create this task. Check your connection and try again.");
+      }
     } finally {
       createSubmissionRef.current = false;
       setCreating(false);
@@ -311,12 +324,13 @@ export default function ProjectTasksPage({
   const handleAssigneeChange = async (taskId, assigneeId) => {
     if (!canEditTasks) throw new Error("This project is read-only for your account.");
     await setTaskAssignee(userId, projectId, taskId, assigneeId);
+    const assigneeName = members.find((member) => member.userId === assigneeId)?.displayName || "";
     setTasks((current) => current.map((task) =>
-      task.id === taskId ? { ...task, assigneeId: assigneeId || null } : task
+      task.id === taskId ? { ...task, assigneeId: assigneeId || null, assigneeName } : task
     ));
   };
 
-  if (projectsLoading) {
+  if (projectsLoading && !project) {
     return <div className="project-task-state" role="status"><div className="state-spinner" /><h2>Loading project...</h2></div>;
   }
   if (projectsError) {
@@ -332,7 +346,7 @@ export default function ProjectTasksPage({
       <header className="project-task-hero">
         <div className="project-task-identity">
           <span className="project-task-color" style={{ backgroundColor: project.color || "#6657c8" }} />
-          <div><p className="card-label">Project workspace</p><h2 id="project-task-title">{project.name}</h2>{project.description && <p>{project.description}</p>}</div>
+          <div><h2 id="project-task-title">{project.name}</h2>{project.description && <p>{project.description}</p>}</div>
         </div>
         <div className="project-card-actions">
           <button ref={membersButtonRef} className="ghost-btn compact-btn" type="button" onClick={() => setShowMembers(true)}>Members</button>
@@ -340,11 +354,6 @@ export default function ProjectTasksPage({
         </div>
       </header>
 
-      <div className="project-task-summary" aria-label="Project task summary">
-        <div><strong>{activeTasks.length}</strong><span>Total</span></div>
-        <div><strong>{activeTasks.length - completedTasks.length}</strong><span>Active</span></div>
-        <div><strong>{completedTasks.length}</strong><span>Completed</span></div>
-      </div>
       <p className="project-description">Your access: {project.viewerRole || "member"}{!canEditTasks ? " · Read only" : ""}</p>
 
       <div className="project-view-toolbar">
@@ -357,17 +366,18 @@ export default function ProjectTasksPage({
           <div className="project-list-controls">
             <input aria-label="Search project tasks" type="search" placeholder="Search tasks" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
             <select aria-label="Filter project task status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">All statuses</option><option value="active">Active</option><option value="completed">Completed</option></select>
-            <select aria-label="Filter project tasks by assignee" value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}><option value="all">All assignees</option><option value="unassigned">Unassigned</option>{members.map((member) => <option key={member.userId} value={member.userId}>{member.userId}</option>)}</select>
+            <select aria-label="Filter project tasks by assignee" value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}><option value="all">All assignees</option><option value="unassigned">Unassigned</option>{members.map((member) => <option key={member.userId} value={member.userId}>{member.displayName || "TaskFlow user"}</option>)}</select>
             <select aria-label="Sort project tasks" value={sort} onChange={(event) => setSort(event.target.value)}><option value="created">Newest</option><option value="due">Due date</option><option value="priority">Priority</option></select>
           </div>
         )}
       </div>
 
       {mutationError && <div className="inline-error" role="alert"><p>{mutationError}</p><button className="ghost-btn compact-btn" type="button" onClick={() => setMutationError("")}>Dismiss</button></div>}
+      {loadError && activeTasks.length > 0 && <div className="inline-error" role="alert"><p>{loadError}</p><button className="ghost-btn compact-btn" type="button" onClick={loadWorkspace}>Try again</button></div>}
 
       {loading ? (
         <div className="project-task-state" role="status"><div className="state-spinner" /><h3>Loading project tasks...</h3><p>Your project workspace is being retrieved securely.</p></div>
-      ) : loadError ? (
+      ) : loadError && activeTasks.length === 0 ? (
         <div className="project-task-state error-state" role="alert"><h3>Project tasks unavailable</h3><p>{loadError}</p><button className="ghost-btn" type="button" onClick={loadWorkspace}>Try again</button></div>
       ) : activeTasks.length === 0 ? (
         <div className="project-task-state"><h3>No tasks in this project</h3><p>{canEditTasks ? "Create the first task to start planning this work." : "There are no tasks to review yet."}</p>{canEditTasks && <button className="primary-btn" type="button" onClick={() => openCreate()}>Create project task</button>}</div>
@@ -383,13 +393,11 @@ export default function ProjectTasksPage({
         </div>
       )}
 
-      <ActivityFeed userId={userId} projectId={projectId} compact />
-
       {showCreate && (
         <div className="task-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeCreate()}>
           <section ref={createDialogRef} className="task-modal" role="dialog" aria-modal="true" aria-labelledby="project-create-task-title" aria-busy={creating}>
             <div className="task-modal-header"><div><p className="card-label">Project task</p><h2 id="project-create-task-title">Create Task</h2><p>This task will be added to {project.name}.</p></div><button className="ghost-btn compact-btn" type="button" onClick={closeCreate} disabled={creating}>Close</button></div>
-            <TaskForm values={createValues} onChange={handleCreateChange} onSubmit={handleCreate} onCancel={closeCreate} submitLabel="Create Task" busyLabel="Creating..." busy={creating} error={createError} lists={lists} projects={editableProjects} projectsLoading={projectsLoading} projectsError={projectsError} onRetryProjects={onRetryProjects} browserNotificationsEnabled={browserNotificationsEnabled} />
+            <TaskForm values={createValues} onChange={handleCreateChange} onSubmit={handleCreate} onCancel={closeCreate} submitLabel="Create Task" busyLabel="Creating..." busy={creating} error={createError} lists={lists} projects={editableProjects} projectMembers={members} projectsLoading={projectsLoading} projectsError={projectsError} onRetryProjects={onRetryProjects} browserNotificationsEnabled={browserNotificationsEnabled} />
           </section>
         </div>
       )}

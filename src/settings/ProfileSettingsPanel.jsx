@@ -2,7 +2,16 @@ import { SettingsDetail } from "./SettingsControls";
 
 export default function ProfileSettingsPanel({ settings, saving, onChange, onBack }) {
   return (
-    <SettingsDetail title="My Profile" description="Account details shown by TaskFlow." onBack={onBack}>
+    <SettingsDetail
+      title="My Profile"
+      description="Account details shown by TaskFlow."
+      onBack={onBack}
+      headerAction={(
+        <button className="primary-btn compact-btn" type="submit" disabled={saving}>
+          {saving ? "Saving..." : "Save"}
+        </button>
+      )}
+    >
       <div className="settings-profile-panel">
         <div className="settings-profile-summary" aria-label="Profile avatar">
           <span aria-hidden="true">

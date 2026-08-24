@@ -49,7 +49,7 @@ describe("Supabase notification repository", () => {
     expect(repository.markNotificationRead).toHaveLength(2);
     expect(repository.markAllNotificationsRead).toHaveLength(1);
     expect(repository.deleteNotification).toHaveLength(2);
-    expect(repository.subscribeToNotifications).toHaveLength(2);
+    expect(repository.subscribeToNotifications).toHaveLength(3);
   });
 
   it("reads only the user's notifications, orders them, limits them, and normalizes rows", async () => {

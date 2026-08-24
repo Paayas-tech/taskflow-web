@@ -98,6 +98,14 @@ function findElement(root, predicate) {
   return match;
 }
 
+function findElements(root, predicate) {
+  const matches = [];
+  walk(root, (node) => {
+    if (predicate(node)) matches.push(node);
+  });
+  return matches;
+}
+
 function textContent(node) {
   if (Array.isArray(node)) return node.map(textContent).join("");
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -203,6 +211,9 @@ function createRunner(props) {
   const api = {
     render,
     unmount,
+    get props() {
+      return props;
+    },
     get output() {
       return runner.output;
     },
@@ -213,6 +224,17 @@ function createRunner(props) {
 }
 
 function baseProps(overrides = {}) {
+  const triggerNode = {
+    type: "button",
+    props: { children: "+ New Project" },
+  };
+  const triggerElement = {
+    node: triggerNode,
+    isConnected: true,
+    focus: vi.fn(() => {
+      document.activeElement = triggerElement;
+    }),
+  };
   return {
     projects: [],
     loading: false,
@@ -226,16 +248,18 @@ function baseProps(overrides = {}) {
     onRetryInvitations: vi.fn(),
     onAcceptInvitation: vi.fn(),
     onDeclineInvitation: vi.fn(),
+    createRequest: 0,
+    createTriggerRef: { current: triggerElement },
     ...overrides,
   };
 }
 
 function openCreateDialog(runner) {
-  const trigger = findElement(
-    runner.output,
-    (node) => node.type === "button" && textContent(node) === "+ New Project"
-  );
-  trigger.props.onClick();
+  const trigger = runner.props.createTriggerRef.current.node;
+  runner.render({
+    ...runner.props,
+    createRequest: runner.props.createRequest + 1,
+  });
   runner.render();
   return {
     trigger,
@@ -268,6 +292,86 @@ afterEach(() => {
 });
 
 describe("ProjectsPage modal lifecycle integration", () => {
+  it("leaves the global Projects heading singular and keeps compact page actions", () => {
+    const runner = createRunner(baseProps({
+      projects: [
+        { id: "owned", name: "Owned", ownerId: "user-a", viewerRole: "owner", status: "active" },
+        { id: "viewer", name: "Viewer", ownerId: "user-b", viewerRole: "viewer", status: "active" },
+      ],
+    }));
+    const internalProjectsHeadings = findElements(
+      runner.output,
+      (node) => ["h1", "h2"].includes(node.type) && textContent(node) === "Projects"
+    );
+
+    expect(internalProjectsHeadings).toHaveLength(0);
+    expect(findElement(runner.output, (node) => node.type === "button" && textContent(node) === "+ New Project")).toBeUndefined();
+    expect(textContent(runner.output)).toContain("My Projects");
+    expect(textContent(runner.output)).toContain("Shared with Me");
+    expect(textContent(runner.output)).toContain("Viewer");
+  });
+
+  it("renders owner, editor, and viewer projects in consistent sections", () => {
+    const projects = [
+      {
+        id: "owned-project",
+        name: "Owned project",
+        description: "Owner workspace",
+        status: "active",
+        ownerId: "user-a",
+        viewerRole: "owner",
+      },
+      {
+        id: "editor-project",
+        name: "Editor project",
+        description: "Editable shared workspace",
+        status: "active",
+        ownerId: "user-b",
+        viewerRole: "editor",
+      },
+      {
+        id: "viewer-project",
+        name: "Viewer project",
+        description: "Read-only shared workspace",
+        status: "active",
+        ownerId: "user-c",
+        viewerRole: "viewer",
+      },
+    ];
+    const runner = createRunner(baseProps({ projects }));
+    const ownedSection = findElement(
+      runner.output,
+      (node) => node.props?.["aria-labelledby"] === "owned-projects-title"
+    );
+    const sharedSection = findElement(
+      runner.output,
+      (node) => node.props?.["aria-labelledby"] === "shared-projects-title"
+    );
+    const sharedArticles = findElements(
+      sharedSection,
+      (node) => node.type === "article"
+    );
+
+    expect(textContent(ownedSection)).toContain("Owned project");
+    expect(textContent(ownedSection)).not.toContain("Editor project");
+    expect(textContent(ownedSection)).not.toContain("Viewer project");
+    expect(textContent(sharedSection)).toContain("Editor project");
+    expect(textContent(sharedSection)).toContain("Viewer project");
+    expect(sharedArticles).toHaveLength(2);
+    expect(findElements(runner.output, (node) => node.type === "article")).toHaveLength(
+      projects.length
+    );
+
+    const viewerCard = sharedArticles.find((article) =>
+      textContent(article).includes("Viewer project")
+    );
+    const viewerActions = findElements(
+      viewerCard,
+      (node) => node.type === "button"
+    ).map(textContent);
+    expect(viewerActions).toEqual(["View project"]);
+  });
+
   it("preserves dialog semantics, name-field focus, and body scroll locking", () => {
     document.body.style.overflow = "clip";
     const runner = createRunner(baseProps());

@@ -4,6 +4,14 @@ import { CSS } from "@dnd-kit/utilities";
 const priorityLabel = (priority) =>
   priority === "high" ? "High" : priority === "low" ? "Low" : "Medium";
 
+const initials = (name) =>
+  String(name || "")
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("") || "?";
+
 export default function ProjectTaskCard({ task, onEdit, readOnly = false }) {
   const {
     attributes,
@@ -13,6 +21,9 @@ export default function ProjectTaskCard({ task, onEdit, readOnly = false }) {
     transition,
     isDragging,
   } = useSortable({ id: `task:${task.id}`, disabled: readOnly });
+  const assigneeName = task.assigneeId
+    ? task.assigneeName || "TaskFlow user"
+    : "Unassigned";
 
   return (
     <article
@@ -44,11 +55,15 @@ export default function ProjectTaskCard({ task, onEdit, readOnly = false }) {
             {priorityLabel(task.priority)}
           </span>
           {task.dueDate && <time dateTime={task.dueDate}>{task.dueDate}</time>}
-          {task.assigneeId && (
-            <span title={`Assigned to ${task.assigneeId}`}>
-              Assigned · {task.assigneeId.slice(0, 8)}
-            </span>
-          )}
+        </span>
+        <span
+          className={`project-task-assignee${task.assigneeId ? "" : " is-unassigned"}`}
+          title={task.assigneeId ? `Assigned to ${assigneeName}` : "No assignee"}
+        >
+          <span className="project-task-assignee-avatar" aria-hidden="true">
+            {task.assigneeId ? initials(assigneeName) : "—"}
+          </span>
+          <span>{assigneeName}</span>
         </span>
       </button>
     </article>

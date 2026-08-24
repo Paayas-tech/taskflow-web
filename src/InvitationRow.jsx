@@ -1,3 +1,5 @@
+import { safeDisplayName } from "./domain/identityDomain";
+
 const invitationExpired = (invitation) =>
   invitation.expiresAt && new Date(invitation.expiresAt).getTime() <= Date.now();
 
@@ -11,6 +13,7 @@ export default function InvitationRow({
 }) {
   const expired = invitationExpired(invitation);
   const projectName = invitation.project?.name || "Project invitation";
+  const inviterName = safeDisplayName({ displayName: invitation.inviterDisplayName });
 
   return (
     <article className="project-card">
@@ -24,7 +27,7 @@ export default function InvitationRow({
       </div>
       <p className="project-description">
         {incoming
-          ? `${invitation.role === "editor" ? "Editor" : "Viewer"} access from ${invitation.inviterId}`
+          ? `${invitation.role === "editor" ? "Editor" : "Viewer"} access from ${inviterName}`
           : `${invitation.role === "editor" ? "Editor" : "Viewer"} access`}
       </p>
       <div className="project-card-actions">

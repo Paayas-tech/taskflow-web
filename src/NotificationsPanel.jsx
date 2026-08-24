@@ -6,13 +6,18 @@ import {
   markNotificationRead,
   subscribeToNotifications,
 } from "./application/notificationService";
+import { getVisibleUserProfiles } from "./application/projectService";
+import { safeDisplayName } from "./domain/identityDomain";
 import { useModalLifecycle } from "./components/modal/useModalLifecycle";
 
 const notificationLabel = (notification) => {
   const task = notification.data?.taskTitle || "a task";
+  const actor = notification.actorName
+    ? `${safeDisplayName({ displayName: notification.actorName })} `
+    : "";
   if (notification.type === "task_assigned") return `You were assigned ${task}.`;
-  if (notification.type === "mentioned") return `You were mentioned on ${task}.`;
-  return `A comment was added to ${task}.`;
+  if (notification.type === "mentioned") return `${actor}mentioned you on ${task}.`;
+  return `${actor}added a comment to ${task}.`;
 };
 
 export default function NotificationsPanel({ userId, onNavigate }) {
@@ -20,6 +25,7 @@ export default function NotificationsPanel({ userId, onNavigate }) {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [liveNotice, setLiveNotice] = useState("");
   const panelRef = useRef(null);
   const dialogRef = useRef(null);
   const triggerRef = useRef(null);
@@ -28,7 +34,15 @@ export default function NotificationsPanel({ userId, onNavigate }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setNotifications(await getNotifications(userId));
+      const nextNotifications = await getNotifications(userId);
+      const profiles = await getVisibleUserProfiles(
+        nextNotifications.map((item) => item.data?.actorId)
+      );
+      const names = new Map(profiles.map((profile) => [profile.userId, profile.displayName]));
+      setNotifications(nextNotifications.map((item) => ({
+        ...item,
+        actorName: names.get(item.data?.actorId) || "",
+      })));
       setError("");
     } catch {
       setError("Notifications are temporarily unavailable.");
@@ -40,9 +54,14 @@ export default function NotificationsPanel({ userId, onNavigate }) {
   useEffect(() => {
     void load();
     try {
-      return subscribeToNotifications(userId, () => void load());
+      return subscribeToNotifications(userId, () => void load(), (status) => {
+        if (status === "SUBSCRIBED") setLiveNotice("");
+        else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
+          setLiveNotice("Live updates are paused. Refresh to check for new notifications.");
+        }
+      });
     } catch {
-      setError("Notifications require the Supabase collaboration backend.");
+      setLiveNotice("Live updates are paused. Refresh to check for new notifications.");
       return undefined;
     }
   }, [load, userId]);
@@ -112,6 +131,7 @@ export default function NotificationsPanel({ userId, onNavigate }) {
       {open && (
         <section id={dialogId} ref={dialogRef} className="confirmation-dialog" role="dialog" aria-label="Notifications" tabIndex={-1}>
           <div className="section-heading-row"><h3>Notifications</h3><div className="notification-dialog-actions"><button className="ghost-btn compact-btn" type="button" onClick={() => void markAllRead()} disabled={!unreadCount}>Mark all read</button><button className="ghost-btn compact-btn" type="button" onClick={() => { setOpen(false); triggerRef.current?.focus(); }} aria-label="Close notifications">Close</button></div></div>
+          {liveNotice && <p className="form-hint" role="status">{liveNotice}</p>}
           {loading ? <p role="status">Loading notifications...</p> : error ? <div><p className="form-error" role="alert">{error}</p><button className="ghost-btn compact-btn" type="button" onClick={() => void load()}>Try again</button></div> : notifications.length === 0 ? <p className="form-hint">You're all caught up.</p> : (
             <div className="settings-list">
               {notifications.map((notification) => (

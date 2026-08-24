@@ -73,7 +73,7 @@ const projectService = vi.hoisted(() => ({
   updateProjectTask: vi.fn(),
 }));
 
-const childCalls = vi.hoisted(() => ({ boards: [], rows: [] }));
+const childCalls = vi.hoisted(() => ({ boards: [], rows: [], forms: [] }));
 
 vi.mock("react", () => ({
   useCallback: hookRuntime.useCallback,
@@ -99,7 +99,12 @@ vi.mock("./ActivityFeed", () => ({ default: () => null }));
 vi.mock("./CalendarPage", () => ({ default: () => null }));
 vi.mock("./ProjectMembersModal", () => ({ default: () => null }));
 vi.mock("./TaskEditModal", () => ({ default: () => null }));
-vi.mock("./TaskForm", () => ({ default: () => null }));
+vi.mock("./TaskForm", () => ({
+  default: (props) => {
+    childCalls.forms.push(props);
+    return <form data-testid="task-form" onSubmit={props.onSubmit} />;
+  },
+}));
 
 import ProjectTasksPage from "./ProjectTasksPage";
 
@@ -246,10 +251,12 @@ function baseProps(overrides = {}) {
 
 function deferred() {
   let resolve;
-  const promise = new Promise((resolvePromise) => {
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 async function flushWorkspace(runner, props) {
@@ -262,9 +269,23 @@ function latestBoard() {
   return childCalls.boards.at(-1);
 }
 
+function latestForm() {
+  return childCalls.forms.at(-1);
+}
+
 beforeEach(() => {
+  globalThis.document = {
+    activeElement: null,
+    body: { style: { overflow: "" } },
+  };
+  globalThis.window = {
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    requestAnimationFrame: (callback) => { callback(); return 1; },
+  };
   childCalls.boards.length = 0;
   childCalls.rows.length = 0;
+  childCalls.forms.length = 0;
   projectService.getProjectTasks.mockReset().mockResolvedValue(tasks);
   projectService.getProjectColumns.mockReset().mockResolvedValue(columns);
   projectService.getProjectMembers.mockReset().mockResolvedValue([
@@ -272,7 +293,7 @@ beforeEach(() => {
   ]);
   projectService.reorderProjectTasks.mockReset().mockResolvedValue(undefined);
   projectService.archiveProjectTask.mockReset().mockResolvedValue(undefined);
-  projectService.createProjectTask.mockReset().mockResolvedValue(undefined);
+  projectService.createProjectTask.mockReset().mockResolvedValue({ id: "created-task" });
   projectService.deleteProjectTask.mockReset().mockResolvedValue(undefined);
   projectService.setTaskAssignee.mockReset().mockResolvedValue(undefined);
   projectService.updateProjectTask.mockReset().mockResolvedValue(undefined);
@@ -280,6 +301,8 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const runner of [...mountedRunners]) runner.unmount();
+  delete globalThis.document;
+  delete globalThis.window;
   vi.restoreAllMocks();
 });
 
@@ -293,7 +316,9 @@ describe("ProjectTasksPage workspace coordination", () => {
     expect(projectService.getProjectColumns).toHaveBeenCalledWith("user-a", "project-a");
     expect(projectService.getProjectMembers).toHaveBeenCalledWith("user-a", "project-a");
     expect(textContent(runner.output)).toContain("Launch");
-    expect(textContent(runner.output)).toContain("2Total2Active0Completed");
+    expect(
+      findElement(runner.output, (node) => node.props?.["aria-label"] === "Project task summary")
+    ).toBeUndefined();
     expect(latestBoard().columns).toEqual(columns);
     expect(latestBoard().tasks.map((task) => task.id)).toEqual(["task-a", "task-b"]);
     expect(latestBoard().readOnly).toBe(false);
@@ -313,6 +338,46 @@ describe("ProjectTasksPage workspace coordination", () => {
         (node) => node.type === "button" && textContent(node) === "+ New project task"
       )
     ).toBeDefined();
+  });
+
+  it("assigns a project task to the selected authorized member during creation", async () => {
+    const memberId = "member-a";
+    projectService.getProjectMembers.mockResolvedValue([
+      { userId: "user-a", displayName: "Owner", role: "owner" },
+      { userId: memberId, displayName: "Priya Shah", role: "editor" },
+    ]);
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "+ New project task"
+    ).props.onClick();
+    runner.render(props);
+
+    expect(latestForm().projectMembers).toEqual([
+      { userId: "user-a", displayName: "Owner", role: "owner" },
+      { userId: memberId, displayName: "Priya Shah", role: "editor" },
+    ]);
+    latestForm().onChange({
+      target: { name: "title", value: "Prepare release", type: "text" },
+    });
+    latestForm().onChange({
+      target: { name: "assigneeId", value: memberId, type: "select-one" },
+    });
+    runner.render(props);
+
+    await latestForm().onSubmit({ preventDefault: vi.fn() });
+
+    const createPayload = projectService.createProjectTask.mock.calls[0][2];
+    expect(createPayload).not.toHaveProperty("assigneeId");
+    expect(projectService.setTaskAssignee).toHaveBeenCalledWith(
+      "user-a",
+      "project-a",
+      "created-task",
+      memberId
+    );
   });
 
   it("keeps viewer access read-only and hides task creation controls", async () => {
@@ -436,6 +501,36 @@ describe("ProjectTasksPage workspace coordination", () => {
       "user-a",
       "project-a"
     );
+  });
+
+  it("keeps the loaded workspace visible during a background refresh failure", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const initialProps = baseProps();
+    const runner = createRunner(initialProps);
+    await flushWorkspace(runner, initialProps);
+
+    const refreshTasks = deferred();
+    const refreshColumns = deferred();
+    const refreshMembers = deferred();
+    projectService.getProjectTasks.mockReturnValueOnce(refreshTasks.promise);
+    projectService.getProjectColumns.mockReturnValueOnce(refreshColumns.promise);
+    projectService.getProjectMembers.mockReturnValueOnce(refreshMembers.promise);
+
+    const refreshedProps = { ...initialProps, refreshToken: 1 };
+    runner.render(refreshedProps);
+    expect(textContent(runner.output)).toContain("Launch");
+    expect(textContent(runner.output)).not.toContain("Loading project tasks...");
+
+    refreshTasks.reject(new Error("temporary provider failure"));
+    refreshColumns.resolve(columns);
+    refreshMembers.resolve([]);
+    await flushWorkspace(runner, refreshedProps);
+
+    expect(textContent(runner.output)).toContain("Launch");
+    expect(textContent(runner.output)).toContain(
+      "We couldn't load this project workspace. Check your connection and try again."
+    );
+    expect(textContent(runner.output)).not.toContain("temporary provider failure");
   });
 
   it("ignores stale responses after changing projects", async () => {

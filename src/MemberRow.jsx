@@ -1,3 +1,5 @@
+import { safeDisplayName } from "./domain/identityDomain";
+
 export default function MemberRow({
   member,
   ownerId,
@@ -7,12 +9,13 @@ export default function MemberRow({
   onRemove,
 }) {
   const isOwner = member.userId === ownerId || member.role === "owner";
+  const displayName = safeDisplayName(member);
 
   return (
-    <article className="project-card" aria-label={`${member.userId}, ${member.role}`}>
+    <article className="project-card" aria-label={`${displayName}, ${member.role}`}>
       <div className="project-card-heading">
         <div>
-          <h3>{member.userId}</h3>
+          <h3>{displayName}</h3>
           <span className={`project-status project-status-${member.role}`}>
             {isOwner ? "Owner" : member.role === "editor" ? "Editor" : "Viewer"}
           </span>
@@ -26,7 +29,7 @@ export default function MemberRow({
               value={member.role}
               disabled={busy}
               onChange={(event) => onRoleChange(member, event.target.value)}
-              aria-label={`Role for ${member.userId}`}
+              aria-label={`Role for ${displayName}`}
             >
               <option value="editor">Editor</option>
               <option value="viewer">Viewer</option>

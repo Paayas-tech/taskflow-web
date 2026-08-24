@@ -8,6 +8,30 @@ const createClient = (signUpResult) => ({
 });
 
 describe("Supabase auth repository signup contract", () => {
+  it("persists the supplied name in confirmation-safe signup metadata", async () => {
+    const signUp = vi.fn().mockResolvedValue({
+      data: { user: { id: "user-a" }, session: null },
+      error: null,
+    });
+    const repository = createAuthRepository({ auth: { signUp } });
+
+    await repository.signUp({
+      email: "user@example.test",
+      password: "password",
+      displayName: "  Ada Lovelace  ",
+      emailRedirectTo: "https://taskflow.example",
+    });
+
+    expect(signUp).toHaveBeenCalledWith({
+      email: "user@example.test",
+      password: "password",
+      options: {
+        data: { display_name: "Ada Lovelace" },
+        emailRedirectTo: "https://taskflow.example",
+      },
+    });
+  });
+
   it("propagates a Supabase signup error instead of returning success", async () => {
     const providerError = Object.assign(new Error("Provider rejected signup"), {
       code: "provider_error",

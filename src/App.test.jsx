@@ -56,6 +56,24 @@ const taskService = vi.hoisted(() => ({
   getTasks: vi.fn().mockResolvedValue([]),
 }));
 
+const authService = vi.hoisted(() => ({
+  callback: null,
+  onAuthStateChange: vi.fn((callback) => {
+    authService.callback = callback;
+    callback("SIGNED_IN", { uid: "user-a", email: "test-user" });
+    return vi.fn();
+  }),
+}));
+
+const projectService = vi.hoisted(() => ({
+  getProjects: vi.fn().mockResolvedValue([]),
+}));
+
+const componentCaptures = vi.hoisted(() => ({
+  projectsPageProps: null,
+  projectTasksPageProps: null,
+}));
+
 vi.mock("react", () => ({
   default: {},
   useCallback: hookRuntime.useCallback,
@@ -70,8 +88,18 @@ vi.mock("./ConfigurationErrorScreen", () => ({ default: () => null }));
 vi.mock("./Dashboard", () => ({ default: () => null }));
 vi.mock("./Login", () => ({ default: () => null }));
 vi.mock("./NotificationsPanel", () => ({ default: () => null }));
-vi.mock("./ProjectsPage", () => ({ default: () => null }));
-vi.mock("./ProjectTasksPage", () => ({ default: () => null }));
+vi.mock("./ProjectsPage", () => ({
+  default: (props) => {
+    componentCaptures.projectsPageProps = props;
+    return null;
+  },
+}));
+vi.mock("./ProjectTasksPage", () => ({
+  default: (props) => {
+    componentCaptures.projectTasksPageProps = props;
+    return null;
+  },
+}));
 vi.mock("./Recover", () => ({ default: () => null }));
 vi.mock("./SettingsPage", () => ({ default: () => null }));
 vi.mock("./TasksPage", () => ({ default: () => null }));
@@ -123,10 +151,7 @@ vi.mock("./TaskForm", () => ({
 }));
 
 vi.mock("./application/authService", () => ({
-  onAuthStateChange: vi.fn((callback) => {
-    callback("SIGNED_IN", { uid: "user-a", email: "test-user" });
-    return vi.fn();
-  }),
+  onAuthStateChange: authService.onAuthStateChange,
   signOut: vi.fn(),
 }));
 vi.mock("./application/signOutController", () => ({
@@ -153,7 +178,7 @@ vi.mock("./application/projectService", () => ({
   declineProjectInvitation: vi.fn(),
   deleteProject: vi.fn(),
   getAssignedProjectTasks: vi.fn().mockResolvedValue([]),
-  getProjects: vi.fn().mockResolvedValue([]),
+  getProjects: projectService.getProjects,
   getUserInvitations: vi.fn().mockResolvedValue([]),
   updateProject: vi.fn(),
 }));
@@ -379,6 +404,9 @@ beforeEach(() => {
   globalThis.getComputedStyle = () => ({ display: "block", visibility: "visible" });
   taskService.createTask.mockReset().mockResolvedValue({ id: "task-1" });
   taskService.getTasks.mockClear();
+  projectService.getProjects.mockReset().mockResolvedValue([]);
+  componentCaptures.projectsPageProps = null;
+  componentCaptures.projectTasksPageProps = null;
 });
 
 afterEach(() => {
@@ -390,6 +418,62 @@ afterEach(() => {
 });
 
 describe("App create-task modal lifecycle integration", () => {
+  it("keeps the Projects title and create action in one topbar row", async () => {
+    window.location.pathname = "/projects";
+    const runner = createRunner();
+    await Promise.resolve();
+    await Promise.resolve();
+    runner.render();
+
+    const createProject = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "+ New Project"
+    );
+
+    expect(createProject).toBeDefined();
+    expect(textContent(runner.output)).not.toContain("Plan meaningful work");
+    expect(textContent(runner.output)).not.toContain("+ New Task");
+
+    createProject.props.onClick();
+    runner.render();
+    expect(componentCaptures.projectsPageProps.createRequest).toBe(1);
+    expect(componentCaptures.projectsPageProps.createTriggerRef.current).toBeDefined();
+  });
+
+  it("passes every accessible project to ProjectsPage and preserves viewer direct access", async () => {
+    const projects = [
+      { id: "owned-project", ownerId: "user-a", viewerRole: "owner" },
+      { id: "editor-project", ownerId: "user-b", viewerRole: "editor" },
+      { id: "viewer-project", ownerId: "user-c", viewerRole: "viewer" },
+    ];
+    projectService.getProjects.mockResolvedValue(projects);
+    window.location.pathname = "/projects/viewer-project";
+
+    const runner = createRunner();
+    await Promise.resolve();
+    await Promise.resolve();
+    runner.render();
+
+    expect(componentCaptures.projectsPageProps.projects).toEqual(projects);
+    expect(componentCaptures.projectTasksPageProps.project).toEqual(projects[2]);
+    expect(componentCaptures.projectTasksPageProps.projectId).toBe("viewer-project");
+  });
+
+  it("does not reload data for an equivalent same-user token refresh", () => {
+    const runner = createRunner();
+    expect(taskService.getTasks).toHaveBeenCalledOnce();
+
+    authService.callback("TOKEN_REFRESHED", {
+      uid: "user-a",
+      email: "test-user",
+      displayName: undefined,
+    });
+    runner.render();
+
+    expect(taskService.getTasks).toHaveBeenCalledOnce();
+    expect(textContent(runner.output)).not.toContain("Loading...");
+  });
+
   it("preserves dialog semantics, initial focus, and body scroll locking", () => {
     document.body.style.overflow = "clip";
     const runner = createRunner();

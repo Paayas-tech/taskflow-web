@@ -51,6 +51,8 @@ export const createProjectService = (
   repository = projectRepository,
   placementRepository = taskRepository
 ) => ({
+  getVisibleUserProfiles: (userIds) =>
+    repository.getVisibleUserProfiles(userIds),
   getProjects: (userId) => repository.getProjects(userId),
   getProject: (userId, projectId) => repository.getProject(userId, projectId),
   getProjectColumns: (userId, projectId) =>
@@ -146,6 +148,7 @@ export const createProjectService = (
       rows.map((row) => ({
         ...normalizeTaskDocument(row.id, repository.taskRowToDocument(row)),
         assigneeId: row.task_assignments?.[0]?.user_id || null,
+        assigneeName: row.assignee_display_name || "",
         columnId: row.column_id || null,
         position: Number.isFinite(row.position) ? row.position : null,
         version: Number.isFinite(row.version) ? row.version : 1,
@@ -158,6 +161,7 @@ export const createProjectService = (
     const assignments = rows.map((row) => ({
       ...normalizeTaskDocument(row.id, repository.taskRowToDocument(row)),
       assigneeId: row.task_assignments?.[0]?.user_id || userId,
+      assigneeName: row.assignee_display_name || "",
       assignedAt: row.task_assignments?.[0]?.assigned_at || null,
       projectName: row.projects?.name || "Untitled project",
       projectStatus: row.projects?.status || "active",
@@ -249,16 +253,20 @@ export const createProjectService = (
   getTaskActivity: (userId, taskId, limit) =>
     repository.getTaskActivity(userId, taskId, limit),
 
-  subscribeToTaskComments: (taskId, onChange) =>
-    repository.subscribeToTaskComments(taskId, onChange),
+  subscribeToTaskComments: (taskId, onChange, onStatus) =>
+    repository.subscribeToTaskComments(taskId, onChange, onStatus),
 
-  subscribeToProjectActivity: (projectId, onChange) =>
-    repository.subscribeToProjectActivity(projectId, onChange),
+  subscribeToProjectActivity: (projectId, onChange, onStatus) =>
+    repository.subscribeToProjectActivity(projectId, onChange, onStatus),
+  subscribeToTaskActivity: (taskId, onChange, onStatus) =>
+    repository.subscribeToTaskActivity(taskId, onChange, onStatus),
 });
 
 const supabaseProjectService = createProjectService();
 
 export const getProjects = (...args) => supabaseProjectService.getProjects(...args);
+export const getVisibleUserProfiles = (...args) =>
+  supabaseProjectService.getVisibleUserProfiles(...args);
 export const getProject = (...args) => supabaseProjectService.getProject(...args);
 export const getProjectColumns = (...args) =>
   supabaseProjectService.getProjectColumns(...args);
@@ -311,3 +319,5 @@ export const subscribeToTaskComments = (...args) =>
   supabaseProjectService.subscribeToTaskComments(...args);
 export const subscribeToProjectActivity = (...args) =>
   supabaseProjectService.subscribeToProjectActivity(...args);
+export const subscribeToTaskActivity = (...args) =>
+  supabaseProjectService.subscribeToTaskActivity(...args);

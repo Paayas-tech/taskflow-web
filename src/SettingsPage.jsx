@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   SETTINGS_DATE_FORMATS,
   SETTINGS_DEFAULT_VIEWS,
@@ -69,6 +69,7 @@ export default function SettingsPage({
   signOutPending = false,
   signOutError = "",
   onNavigate,
+  profileRequest = 0,
   onOpenProjectCreate,
   onRestoreProject,
   exportData,
@@ -115,6 +116,12 @@ export default function SettingsPage({
       trapFocus: false,
       restoreFocus: false,
     });
+
+  useEffect(() => {
+    if (!profileRequest) return;
+    setPanelMessage("");
+    setPanelStack(["profile"]);
+  }, [profileRequest]);
 
   const openPanel = (panel) => {
     setPanelMessage("");
@@ -671,9 +678,9 @@ export default function SettingsPage({
         )}
         {validationError && <p className="form-error settings-validation" role="alert">{validationError}</p>}
 
-        {(activePanel === "profile" || activePanel === "projectReminders") && (
+        {activePanel === "projectReminders" && (
           <div className="settings-save-bar">
-            <p>{activePanel === "profile" ? "Save profile changes." : "Save the reminder offset after editing."}</p>
+            <p>Save the reminder offset after editing.</p>
             <button className="primary-btn" type="submit" disabled={saving || Boolean(validationError)}>
               {saving ? "Saving..." : "Save settings"}
             </button>

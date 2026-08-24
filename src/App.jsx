@@ -6,6 +6,7 @@ import ConfigurationErrorScreen from "./ConfigurationErrorScreen";
 import Dashboard from "./Dashboard";
 import Login from "./Login";
 import NotificationsPanel from "./NotificationsPanel";
+import ProfileCompletionPrompt from "./ProfileCompletionPrompt";
 import ProjectsPage from "./ProjectsPage";
 import ProjectTasksPage from "./ProjectTasksPage";
 import Recover from "./Recover";
@@ -147,6 +148,18 @@ const emptyTaskForm = {
   projectId: "",
 };
 
+const profilePromptDismissalKey = (userId) =>
+  `taskflow.profile-prompt-dismissed.${userId}`;
+
+const wasProfilePromptDismissed = (userId) => {
+  if (!userId) return false;
+  try {
+    return window.sessionStorage?.getItem(profilePromptDismissalKey(userId)) === "true";
+  } catch {
+    return false;
+  }
+};
+
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -188,11 +201,15 @@ function App() {
   const [settingsError, setSettingsError] = useState("");
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsSaveMessage, setSettingsSaveMessage] = useState("");
+  const [settingsLoadedUserId, setSettingsLoadedUserId] = useState("");
+  const [profileSettingsRequest, setProfileSettingsRequest] = useState(0);
+  const [dismissedProfilePromptUserId, setDismissedProfilePromptUserId] = useState("");
   const [reminderNotice, setReminderNotice] = useState(null);
   const [quickTaskPendingIds, setQuickTaskPendingIds] = useState(
     () => new Set()
   );
   const newTaskButtonRef = useRef(null);
+  const newProjectButtonRef = useRef(null);
   const taskModalRef = useRef(null);
   const taskModalInitialFocusRef = useRef(null);
   const taskFormSubmissionRef = useRef(false);
@@ -439,6 +456,7 @@ function App() {
     } finally {
       if (isCurrentAuthRequest(authenticatedUserIdRef.current, requestUserId)) {
         setSettingsLoading(false);
+        setSettingsLoadedUserId(requestUserId);
       }
     }
   }, [user]);
@@ -503,9 +521,19 @@ function App() {
         setSettingsSaveMessage("");
         setSettingsLoading(false);
         setSettingsSaving(false);
+        setSettingsLoadedUserId("");
       }
       authenticatedUserIdRef.current = nextUserId;
-      setUser(currentUser);
+      setUser((previousUser) => {
+        if (
+          previousUser?.uid === nextUserId &&
+          previousUser?.email === currentUser?.email &&
+          previousUser?.displayName === currentUser?.displayName
+        ) {
+          return previousUser;
+        }
+        return currentUser;
+      });
       setLoading(false);
       });
     } catch {
@@ -1160,7 +1188,7 @@ function App() {
         </div>
       </aside>
 
-      <main className="main-content">
+      <main className={`main-content view-${currentView}`}>
         <header className="topbar">
           <div className="topbar-title">
             <h1>{pageTitle}</h1>
@@ -1169,7 +1197,20 @@ function App() {
 
           <NotificationsPanel userId={user.uid} onNavigate={navigate} />
 
-          {currentView !== "settings" && currentView !== "archived" &&
+          {currentView === "projects" ? (
+            <div className="topbar-actions">
+              <button
+                ref={newProjectButtonRef}
+                className="primary-btn"
+                type="button"
+                onClick={() => setProjectCreateRequest((request) => request + 1)}
+                aria-haspopup="dialog"
+                aria-controls="create-project-dialog"
+              >
+                + New Project
+              </button>
+            </div>
+          ) : currentView !== "settings" && currentView !== "archived" &&
             !(currentView === "project" && selectedProject?.viewerRole === "viewer") && (
             <div className="topbar-actions">
               <button
@@ -1193,6 +1234,31 @@ function App() {
             </div>
           )}
         </header>
+
+        {!settingsLoading &&
+          settingsLoadedUserId === user.uid &&
+          !String(settings.profile.displayName || "").trim() &&
+          dismissedProfilePromptUserId !== user.uid &&
+          !wasProfilePromptDismissed(user.uid) && (
+            <ProfileCompletionPrompt
+              displayName={settings.profile.displayName}
+              onOpenProfile={() => {
+                setProfileSettingsRequest((request) => request + 1);
+                navigate("/settings");
+              }}
+              onDismiss={() => {
+                try {
+                  window.sessionStorage?.setItem(
+                    profilePromptDismissalKey(user.uid),
+                    "true"
+                  );
+                } catch {
+                  // Session storage is optional; in-memory dismissal still applies.
+                }
+                setDismissedProfilePromptUserId(user.uid);
+              }}
+            />
+          )}
 
         {showTaskForm && (
           <div
@@ -1341,7 +1407,7 @@ function App() {
         <div className="route-content" hidden={currentView !== "projects"}>
           <ProjectsPage
             userId={user.uid}
-            projects={editableProjects}
+            projects={projects}
             loading={projectsLoading}
             error={projectsError}
             onRetry={loadProjects}
@@ -1349,6 +1415,7 @@ function App() {
             onUpdateProject={handleUpdateProject}
             onDeleteProject={handleDeleteProject}
             createRequest={projectCreateRequest}
+            createTriggerRef={newProjectButtonRef}
             onOpenProject={(projectId) =>
               navigate(projectPath(projectId))
             }
@@ -1421,6 +1488,7 @@ function App() {
             signOutPending={signOutState.pending}
             signOutError={signOutState.error}
             onNavigate={navigate}
+            profileRequest={profileSettingsRequest}
             onOpenProjectCreate={() => {
               setProjectCreateRequest((request) => request + 1);
               navigate("/projects");

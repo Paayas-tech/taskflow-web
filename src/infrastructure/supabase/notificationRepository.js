@@ -64,7 +64,7 @@ export const createNotificationRepository = (client = null) => {
       if (!data) throw new Error("This notification is no longer available.");
     },
 
-    subscribeToNotifications(userId, onChange) {
+    subscribeToNotifications(userId, onChange, onStatus) {
       const db = database();
       const channel = db
         .channel(`notifications:${userId}`)
@@ -73,7 +73,7 @@ export const createNotificationRepository = (client = null) => {
           { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
           onChange
         )
-        .subscribe();
+        .subscribe(onStatus);
       return () => void db.removeChannel(channel);
     },
   };

@@ -8,8 +8,8 @@ export const createNotificationService = (repository = notificationRepository) =
     repository.markAllNotificationsRead(userId),
   deleteNotification: (userId, notificationId) =>
     repository.deleteNotification(userId, notificationId),
-  subscribeToNotifications: (userId, onChange) =>
-    repository.subscribeToNotifications(userId, onChange),
+  subscribeToNotifications: (userId, onChange, onStatus) =>
+    repository.subscribeToNotifications(userId, onChange, onStatus),
 });
 
 const notificationService = createNotificationService();

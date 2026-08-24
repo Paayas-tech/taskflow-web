@@ -62,6 +62,7 @@ export default function ProjectsPage({
   onDeleteProject,
   onOpenProject,
   createRequest = 0,
+  createTriggerRef,
   userId,
   invitations = [],
   invitationsLoading = false,
@@ -81,7 +82,6 @@ export default function ProjectsPage({
   const [projectActionId, setProjectActionId] = useState(null);
   const [invitationActionId, setInvitationActionId] = useState("");
   const [formError, setFormError] = useState("");
-  const createButtonRef = useRef(null);
   const dialogRef = useRef(null);
   const projectNameInputRef = useRef(null);
   const submissionRef = useRef(false);
@@ -125,7 +125,7 @@ export default function ProjectsPage({
     isOpen: showCreateProject,
     modalRef: dialogRef,
     onClose: closeCreateProject,
-    triggerRef: createButtonRef,
+    triggerRef: createTriggerRef,
     initialFocusRef: projectNameInputRef,
     isDismissDisabled: saving,
     allowEscape: true,
@@ -275,27 +275,7 @@ export default function ProjectsPage({
   };
 
   return (
-    <section className="projects-page" aria-labelledby="projects-page-title">
-      <header className="projects-page-header">
-        <div>
-          <p className="card-label">Projects</p>
-          <h2 id="projects-page-title">Plan meaningful work</h2>
-          <p>Keep larger goals visible without changing how your task lists work.</p>
-        </div>
-        <button
-          ref={createButtonRef}
-          className="primary-btn"
-          type="button"
-          onClick={openCreateProject}
-          disabled={saving}
-          aria-haspopup="dialog"
-          aria-expanded={showCreateProject}
-          aria-controls="create-project-dialog"
-        >
-          + New Project
-        </button>
-      </header>
-
+    <section className="projects-page" aria-label="Projects">
       {projectActionError && (
         <div className="inline-error" role="alert">
           <p>{projectActionError}</p>

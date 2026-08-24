@@ -1,11 +1,12 @@
 import { useState } from "react";
+import { safeDisplayName } from "./domain/identityDomain";
+import { insertMention, mentionEditorValue, parseMentionContent, reconcileMentions, serializeMentionContent } from "./domain/mentionDomain";
 
-const mentionParts = (content) =>
-  String(content || "").split(/(@[0-9a-fA-F-]{36})/g);
-
-export default function CommentRow({ comment, currentUserId, onUpdate, onDelete }) {
+export default function CommentRow({ comment, currentUserId, profilesById, mentionCandidates = [], onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
-  const [content, setContent] = useState(comment.content);
+  const initialEditor = () => mentionEditorValue(comment.content, profilesById);
+  const [content, setContent] = useState(() => initialEditor().value);
+  const [mentions, setMentions] = useState(() => initialEditor().mentions);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const ownComment = comment.userId === currentUserId;
@@ -15,13 +16,27 @@ export default function CommentRow({ comment, currentUserId, onUpdate, onDelete 
     setBusy(true);
     setError("");
     try {
-      await onUpdate(comment.id, content);
+      await onUpdate(comment.id, serializeMentionContent(content, mentions));
       setEditing(false);
     } catch (updateError) {
       setError(updateError.message || "We couldn't update this comment.");
     } finally {
       setBusy(false);
     }
+  };
+  const resetEditor = () => {
+    const next = initialEditor();
+    setContent(next.value);
+    setMentions(next.mentions);
+  };
+  const changeContent = (nextContent) => {
+    setMentions((current) => reconcileMentions(content, nextContent, current));
+    setContent(nextContent);
+  };
+  const addMention = (member) => {
+    const next = insertMention(content, mentions, member);
+    setContent(next.value);
+    setMentions(next.mentions);
   };
 
   const remove = async () => {
@@ -40,7 +55,7 @@ export default function CommentRow({ comment, currentUserId, onUpdate, onDelete 
     <article className="settings-card" aria-busy={busy}>
       <div className="section-heading-row">
         <div>
-          <strong>{comment.userId}</strong>
+          <strong>{safeDisplayName(comment)}</strong>
           <p className="form-hint">
             {comment.createdAt ? new Date(comment.createdAt).toLocaleString() : "Just now"}
             {comment.editedAt ? " · edited" : ""}
@@ -55,16 +70,17 @@ export default function CommentRow({ comment, currentUserId, onUpdate, onDelete 
       </div>
       {editing ? (
         <div className="form-group">
-          <textarea value={content} onChange={(event) => setContent(event.target.value)} maxLength={4000} />
+          <textarea value={content} onChange={(event) => changeContent(event.target.value)} maxLength={4000} />
+          {mentionCandidates.length > 0 && <div className="project-card-actions" aria-label="Mention a project member">{mentionCandidates.map((member) => <button key={member.userId} className="ghost-btn compact-btn" type="button" onClick={() => addMention(member)} disabled={busy}>@{safeDisplayName(member)}</button>)}</div>}
           <div className="project-card-actions">
-            <button className="ghost-btn compact-btn" type="button" onClick={() => { setContent(comment.content); setEditing(false); setError(""); }} disabled={busy}>Cancel</button>
+            <button className="ghost-btn compact-btn" type="button" onClick={() => { resetEditor(); setEditing(false); setError(""); }} disabled={busy}>Cancel</button>
             <button className="primary-btn compact-btn" type="button" onClick={save} disabled={busy}>{busy ? "Saving..." : "Save"}</button>
           </div>
         </div>
       ) : (
         <p>
-          {mentionParts(comment.content).map((part, index) =>
-            part.startsWith("@") ? <mark key={`${part}-${index}`}>{part}</mark> : part
+          {parseMentionContent(comment.content, profilesById).map((part, index) =>
+            part.type === "mention" ? <mark key={`${part.userId}-${index}`}>@{part.label}</mark> : part.value
           )}
         </p>
       )}

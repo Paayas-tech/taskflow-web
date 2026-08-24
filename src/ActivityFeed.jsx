@@ -4,6 +4,7 @@ import {
   getProjectActivity,
   getTaskActivity,
   subscribeToProjectActivity,
+  subscribeToTaskActivity,
 } from "./application/projectService";
 
 const activityGroup = (value) => {
@@ -21,6 +22,7 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
   const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [liveNotice, setLiveNotice] = useState("");
 
   const loadActivity = useCallback(async () => {
     setError("");
@@ -36,13 +38,21 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
   useEffect(() => {
     setLoading(true);
     void loadActivity();
+    const onStatus = (status) => {
+      if (status === "SUBSCRIBED") setLiveNotice("");
+      else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
+        setLiveNotice("Live updates are paused. Refresh to check for new activity.");
+      }
+    };
     try {
-      return subscribeToProjectActivity(projectId, () => void loadActivity());
+      return taskId
+        ? subscribeToTaskActivity(taskId, () => void loadActivity(), onStatus)
+        : subscribeToProjectActivity(projectId, () => void loadActivity(), onStatus);
     } catch {
-      setError("Live activity updates are temporarily unavailable.");
+      setLiveNotice("Live updates are paused. Refresh to check for new activity.");
       return undefined;
     }
-  }, [loadActivity, projectId]);
+  }, [loadActivity, projectId, taskId]);
 
   const visible = compact ? activity.slice(0, 8) : activity;
   const groups = visible.reduce((result, item) => {
@@ -54,6 +64,7 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
   return (
     <section className="settings-section" aria-labelledby={`activity-${taskId || projectId}`}>
       <div className="section-heading-row"><div><p className="card-label">History</p><h3 id={`activity-${taskId || projectId}`}>Recent activity</h3></div><button className="ghost-btn compact-btn" type="button" onClick={loadActivity}>Refresh</button></div>
+      {liveNotice && <p className="form-hint" role="status">{liveNotice}</p>}
       {loading ? <p role="status">Loading activity...</p> : error ? <p className="form-error" role="alert">{error}</p> : visible.length === 0 ? <p className="form-hint">No activity yet.</p> : <div className="settings-list">{Object.entries(groups).map(([label, items]) => <section key={label}><h4>{label}</h4>{items.map((item) => <ActivityRow key={item.id} activity={item} />)}</section>)}</div>}
     </section>
   );

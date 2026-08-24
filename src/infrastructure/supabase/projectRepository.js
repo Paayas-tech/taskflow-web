@@ -182,7 +182,23 @@ export const createProjectRepository = (client = null) => {
     return count || 0;
   };
 
+  const getVisibleUserProfiles = async (userIds = []) => {
+    const uniqueIds = [...new Set(userIds.filter(Boolean))];
+    if (!uniqueIds.length) return [];
+    const { data, error } = await database().rpc("get_visible_user_profiles", {
+      target_user_ids: uniqueIds,
+    });
+    throwIfError(error);
+    return (data || []).map((row) => ({
+      userId: row.user_id,
+      displayName: String(row.display_name || "").trim(),
+      avatarUrl: row.avatar_url || null,
+    }));
+  };
+
   return {
+    getVisibleUserProfiles,
+
     async getProjects(userId) {
       const { data, error } = await database()
         .from("projects")
@@ -269,7 +285,15 @@ export const createProjectRepository = (client = null) => {
         .order("position", { ascending: true, nullsFirst: false })
         .order("created_at", { ascending: false });
       throwIfError(error);
-      return data || [];
+      const rows = data || [];
+      const profiles = await getVisibleUserProfiles(
+        rows.map((row) => row.task_assignments?.[0]?.user_id)
+      );
+      const names = new Map(profiles.map((profile) => [profile.userId, profile.displayName]));
+      return rows.map((row) => ({
+        ...row,
+        assignee_display_name: names.get(row.task_assignments?.[0]?.user_id) || "",
+      }));
     },
 
     async getAssignedProjectTasks(userId) {
@@ -279,7 +303,15 @@ export const createProjectRepository = (client = null) => {
         .eq("task_assignments.user_id", userId)
         .order("due_date", { ascending: true, nullsFirst: false });
       throwIfError(error);
-      return data || [];
+      const rows = data || [];
+      const profiles = await getVisibleUserProfiles(
+        rows.map((row) => row.task_assignments?.[0]?.user_id)
+      );
+      const names = new Map(profiles.map((profile) => [profile.userId, profile.displayName]));
+      return rows.map((row) => ({
+        ...row,
+        assignee_display_name: names.get(row.task_assignments?.[0]?.user_id) || "",
+      }));
     },
 
     async getProjectTask(userId, projectId, taskId) {
@@ -451,7 +483,10 @@ export const createProjectRepository = (client = null) => {
         .eq("project_id", projectId)
         .order("joined_at", { ascending: true });
       throwIfError(error);
-      return (data || []).map(normalizeMemberRow);
+      const members = (data || []).map(normalizeMemberRow);
+      const profiles = await getVisibleUserProfiles(members.map((member) => member.userId));
+      const byId = new Map(profiles.map((profile) => [profile.userId, profile]));
+      return members.map((member) => ({ ...member, ...byId.get(member.userId) }));
     },
 
     async getProjectInvitations(_userId, projectId) {
@@ -461,7 +496,13 @@ export const createProjectRepository = (client = null) => {
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
       throwIfError(error);
-      return (data || []).map(normalizeInvitationRow);
+      const invitations = (data || []).map(normalizeInvitationRow);
+      const profiles = await getVisibleUserProfiles(invitations.map((item) => item.inviterId));
+      const byId = new Map(profiles.map((profile) => [profile.userId, profile]));
+      return invitations.map((item) => ({
+        ...item,
+        inviterDisplayName: byId.get(item.inviterId)?.displayName || "",
+      }));
     },
 
     async getUserInvitations(_userId, email) {
@@ -473,7 +514,13 @@ export const createProjectRepository = (client = null) => {
         .eq("status", "pending")
         .order("created_at", { ascending: false });
       throwIfError(error);
-      return (data || []).map(normalizeInvitationRow);
+      const invitations = (data || []).map(normalizeInvitationRow);
+      const profiles = await getVisibleUserProfiles(invitations.map((item) => item.inviterId));
+      const byId = new Map(profiles.map((profile) => [profile.userId, profile]));
+      return invitations.map((item) => ({
+        ...item,
+        inviterDisplayName: byId.get(item.inviterId)?.displayName || "",
+      }));
     },
 
     async createProjectInvitation(_userId, projectId, invitation) {
@@ -564,7 +611,10 @@ export const createProjectRepository = (client = null) => {
         .eq("task_id", taskId)
         .order("created_at", { ascending: true });
       throwIfError(error);
-      return (data || []).map(normalizeCommentRow);
+      const comments = (data || []).map(normalizeCommentRow);
+      const profiles = await getVisibleUserProfiles(comments.map((comment) => comment.userId));
+      const byId = new Map(profiles.map((profile) => [profile.userId, profile]));
+      return comments.map((comment) => ({ ...comment, ...byId.get(comment.userId) }));
     },
 
     async createTaskComment(userId, taskId, content) {
@@ -610,7 +660,10 @@ export const createProjectRepository = (client = null) => {
         .order("created_at", { ascending: false })
         .limit(limit);
       throwIfError(error);
-      return (data || []).map(normalizeActivityRow);
+      const activity = (data || []).map(normalizeActivityRow);
+      const profiles = await getVisibleUserProfiles(activity.map((item) => item.userId));
+      const byId = new Map(profiles.map((profile) => [profile.userId, profile]));
+      return activity.map((item) => ({ ...item, ...byId.get(item.userId) }));
     },
 
     async getTaskActivity(_userId, taskId, limit = 30) {
@@ -621,10 +674,13 @@ export const createProjectRepository = (client = null) => {
         .order("created_at", { ascending: false })
         .limit(limit);
       throwIfError(error);
-      return (data || []).map(normalizeActivityRow);
+      const activity = (data || []).map(normalizeActivityRow);
+      const profiles = await getVisibleUserProfiles(activity.map((item) => item.userId));
+      const byId = new Map(profiles.map((profile) => [profile.userId, profile]));
+      return activity.map((item) => ({ ...item, ...byId.get(item.userId) }));
     },
 
-    subscribeToTaskComments(taskId, onChange) {
+    subscribeToTaskComments(taskId, onChange, onStatus) {
       const db = database();
       const channel = db
         .channel(`task-comments:${taskId}`)
@@ -633,11 +689,11 @@ export const createProjectRepository = (client = null) => {
           { event: "*", schema: "public", table: "task_comments", filter: `task_id=eq.${taskId}` },
           onChange
         )
-        .subscribe();
+        .subscribe(onStatus);
       return () => void db.removeChannel(channel);
     },
 
-    subscribeToProjectActivity(projectId, onChange) {
+    subscribeToProjectActivity(projectId, onChange, onStatus) {
       const db = database();
       const channel = db
         .channel(`project-activity:${projectId}`)
@@ -646,7 +702,20 @@ export const createProjectRepository = (client = null) => {
           { event: "*", schema: "public", table: "activity_events", filter: `project_id=eq.${projectId}` },
           onChange
         )
-        .subscribe();
+        .subscribe(onStatus);
+      return () => void db.removeChannel(channel);
+    },
+
+    subscribeToTaskActivity(taskId, onChange, onStatus) {
+      const db = database();
+      const channel = db
+        .channel(`task-activity:${taskId}`)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "activity_events", filter: `task_id=eq.${taskId}` },
+          onChange
+        )
+        .subscribe(onStatus);
       return () => void db.removeChannel(channel);
     },
 

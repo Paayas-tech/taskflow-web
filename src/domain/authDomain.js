@@ -22,6 +22,13 @@ export const getSignUpOutcome = (result) => {
 export const isCurrentAuthRequest = (activeUserId, requestUserId) =>
   Boolean(requestUserId) && activeUserId === requestUserId;
 
+export const validateSignUpName = (name) => {
+  const normalizedName = String(name || "").trim();
+  if (!normalizedName) return "Enter your name.";
+  if (normalizedName.length > 80) return "Name must be 80 characters or fewer.";
+  return "";
+};
+
 export const friendlyAuthError = (error, isLogin) => {
   if (isEmailConfirmationError(error)) {
     return "Confirm your email address before signing in. You can resend the confirmation email below.";

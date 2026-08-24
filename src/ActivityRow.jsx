@@ -1,3 +1,5 @@
+import { safeDisplayName } from "./domain/identityDomain";
+
 const labels = {
   task_created: "created a task",
   task_updated: "updated a task",
@@ -13,7 +15,7 @@ const labels = {
 export default function ActivityRow({ activity }) {
   return (
     <article className="settings-card">
-      <strong>{activity.userId || "TaskFlow"}</strong>
+      <strong>{activity.userId ? safeDisplayName(activity) : "TaskFlow"}</strong>
       <p>{labels[activity.type] || activity.type.replaceAll("_", " ")}{activity.metadata?.taskTitle ? ` · ${activity.metadata.taskTitle}` : ""}</p>
       <time className="form-hint" dateTime={activity.createdAt || undefined}>
         {activity.createdAt ? new Date(activity.createdAt).toLocaleString() : "Just now"}

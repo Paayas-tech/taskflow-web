@@ -9,6 +9,7 @@ import {
   getReminderValidationError,
   toDateTimeLocalValue,
 } from "./domain/reminderDomain";
+import { safeDisplayName } from "./domain/identityDomain";
 import { requestNotificationPermission } from "./services/reminderService";
 
 const reminderPresets = [
@@ -36,6 +37,7 @@ export default function TaskForm({
   onRetryProjects,
   defaultReminderMinutes = 15,
   browserNotificationsEnabled = true,
+  projectMembers = [],
 }) {
   const projectFieldId = useId();
   const reminderFieldId = useId();
@@ -247,6 +249,25 @@ export default function TaskForm({
               </span>
             )}
           </div>
+
+          {selectedProjectId && projectMembers.length > 0 && (
+            <label className="task-form-field">
+              <span>Assignee</span>
+              <select
+                name="assigneeId"
+                value={values.assigneeId || ""}
+                onChange={onChange}
+                disabled={busy}
+              >
+                <option value="">Unassigned</option>
+                {projectMembers.map((member) => (
+                  <option key={member.userId} value={member.userId}>
+                    {safeDisplayName(member)} · {member.role}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label className="task-form-field">
             <span>Start / due date</span>

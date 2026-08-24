@@ -109,8 +109,6 @@ export default function Dashboard({
   }).format(now);
 
   const remainingTasks = tasks.filter((task) => !isTaskComplete(task));
-  const completedTasks = tasks.filter(isTaskComplete);
-  const reminderTasks = remainingTasks.filter((task) => task.reminder);
   const todayTasks = remainingTasks.filter(
     (task) => classifyDateOnly(task.dueDate, todayKey) === "today"
   );
@@ -132,13 +130,7 @@ export default function Dashboard({
 
   return (
     <div className="dashboard-page">
-      <section className="dashboard-intro" aria-labelledby="dashboard-greeting">
-        <div>
-          <p className="dashboard-kicker">Your day</p>
-          <h2 id="dashboard-greeting">Welcome back</h2>
-          <p className="dashboard-date">{currentDate}</p>
-        </div>
-      </section>
+      <p className="dashboard-date">{currentDate}</p>
 
       {tasksLoading ? (
         <section className="dashboard-feedback" role="status" aria-live="polite">
@@ -160,24 +152,6 @@ export default function Dashboard({
         </section>
       ) : (
         <>
-          <section className="dashboard-summary" aria-label="Task summary">
-            <div className="summary-stat summary-stat-remaining">
-              <span className="summary-stat-mark" aria-hidden="true" />
-              <strong>{remainingTasks.length}</strong>
-              <span>Remaining</span>
-            </div>
-            <div className="summary-stat summary-stat-completed">
-              <span className="summary-stat-mark" aria-hidden="true" />
-              <strong>{completedTasks.length}</strong>
-              <span>Completed</span>
-            </div>
-            <div className="summary-stat summary-stat-reminders">
-              <span className="summary-stat-mark" aria-hidden="true" />
-              <strong>{reminderTasks.length}</strong>
-              <span>Active reminders</span>
-            </div>
-          </section>
-
           <div className="dashboard-layout">
             <section className="dashboard-section dashboard-today" aria-labelledby="today-heading">
               <header className="dashboard-section-header">

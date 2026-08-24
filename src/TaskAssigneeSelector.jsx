@@ -1,3 +1,5 @@
+import { safeDisplayName } from "./domain/identityDomain";
+
 export default function TaskAssigneeSelector({
   assigneeId,
   members = [],
@@ -25,7 +27,7 @@ export default function TaskAssigneeSelector({
           <option value="">Unassigned</option>
           {members.map((member) => (
             <option key={member.userId} value={member.userId}>
-              {member.userId} · {member.role}
+              {safeDisplayName(member)} · {member.role}
             </option>
           ))}
         </select>

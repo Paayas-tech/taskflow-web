@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import InvitationRow from "./InvitationRow";
 import MemberRow from "./MemberRow";
+import { safeDisplayName } from "./domain/identityDomain";
 import { useModalLifecycle } from "./components/modal/useModalLifecycle";
 import {
   cancelProjectInvitation,
@@ -236,7 +237,7 @@ export default function ProjectMembersModal({
           <div className="confirmation-backdrop">
             <section ref={confirmationDialogRef} className="confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-member-title" tabIndex={-1}>
               <h3 id="remove-member-title">Remove this member?</h3>
-              <p>{memberToRemove.userId} will immediately lose access to this project.</p>
+              <p>{safeDisplayName(memberToRemove)} will immediately lose access to this project.</p>
               <div className="confirmation-actions">
                 <button className="ghost-btn" type="button" onClick={() => { setMemberToRemove(null); window.requestAnimationFrame(() => removeTriggerRef.current?.focus()); }}>Cancel</button>
                 <button className="danger-btn" type="button" onClick={() => {

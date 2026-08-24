@@ -172,6 +172,28 @@ afterEach(() => {
 });
 
 describe("TaskForm reminder coordination", () => {
+  it("offers authorized project members as assignees without exposing IDs", () => {
+    const onChange = vi.fn();
+    const memberId = "414b9bdb-dad5-467e-b361-8d3cb82eeac8";
+    const runner = createRunner(baseProps({
+      onChange,
+      values: baseValues({ projectId: "project-a", assigneeId: "" }),
+      projects: [{ id: "project-a", name: "Launch" }],
+      projectMembers: [
+        { userId: memberId, displayName: "Priya Shah", role: "editor" },
+      ],
+    }));
+    runner.render();
+
+    const assignee = byName(runner.output, "assigneeId");
+    expect(textContent(assignee)).toContain("Priya Shah · editor");
+    expect(textContent(assignee)).not.toContain(memberId);
+    assignee.props.onChange({ target: { name: "assigneeId", value: memberId } });
+    expect(onChange).toHaveBeenCalledWith({
+      target: { name: "assigneeId", value: memberId },
+    });
+  });
+
   it("shows the existing reminder state and only reveals controls when enabled", () => {
     const disabledProps = baseProps();
     const runner = createRunner(disabledProps);

@@ -15,6 +15,23 @@ const queryResult = (result = { data: [], error: null }) => {
 };
 
 describe("Supabase project repository", () => {
+  it("batches visible profile IDs through the constrained RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ user_id: "user-a", display_name: "Ada", avatar_url: null }],
+      error: null,
+    });
+    const repository = createProjectRepository({ rpc });
+
+    await expect(
+      repository.getVisibleUserProfiles(["user-a", "user-a", null])
+    ).resolves.toEqual([
+      { userId: "user-a", displayName: "Ada", avatarUrl: null },
+    ]);
+    expect(rpc).toHaveBeenCalledWith("get_visible_user_profiles", {
+      target_user_ids: ["user-a"],
+    });
+  });
+
   it("loads RLS-accessible projects and resolves the viewer role", async () => {
     const projectsQuery = queryResult({
       data: [{ id: "project-a", owner_id: "owner-a", name: "Shared" }],
@@ -40,7 +57,13 @@ describe("Supabase project repository", () => {
 
   it("scopes a project task read by project and task id while RLS checks membership", async () => {
     const query = queryResult({ data: null, error: null });
-    const client = { from: vi.fn(() => query) };
+    const client = {
+      from: vi.fn(() => query),
+      rpc: vi.fn().mockResolvedValue({
+        data: [{ user_id: "user-a", display_name: "Ada", avatar_url: null }],
+        error: null,
+      }),
+    };
     const repository = createProjectRepository(client);
 
     await repository.getProjectTask("user-a", "project-a", "task-a");
@@ -55,7 +78,13 @@ describe("Supabase project repository", () => {
       data: [{ id: "task-a", task_assignments: [{ user_id: "user-a" }] }],
       error: null,
     });
-    const client = { from: vi.fn(() => query) };
+    const client = {
+      from: vi.fn(() => query),
+      rpc: vi.fn().mockResolvedValue({
+        data: [{ user_id: "user-a", display_name: "Ada", avatar_url: null }],
+        error: null,
+      }),
+    };
     const repository = createProjectRepository(client);
 
     const tasks = await repository.getAssignedProjectTasks("user-a");

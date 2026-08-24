@@ -9,11 +9,13 @@ import {
   getSignUpOutcome,
   isEmailConfirmationError,
   isInvalidCredentialsError,
+  validateSignUpName,
 } from "./domain/authDomain";
 
 export default function Login({ onSignInSuccess, onRecoverPassword }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [isLogin, setIsLogin] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResending, setIsResending] = useState(false);
@@ -30,12 +32,21 @@ export default function Login({ onSignInSuccess, onRecoverPassword }) {
     setAuthError("");
     setAuthNotice("");
 
+    if (!isLogin) {
+      const nameError = validateSignUpName(name);
+      if (nameError) {
+        setAuthError(nameError);
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     try {
       if (isLogin) {
         await signIn(email, password);
         onSignInSuccess?.();
       } else {
-        const result = await signUp(email, password, "", {
+        const result = await signUp(email, password, name.trim(), {
           emailRedirectTo: window.location.origin,
         });
         const signUpOutcome = getSignUpOutcome(result);
@@ -106,6 +117,22 @@ export default function Login({ onSignInSuccess, onRecoverPassword }) {
           className="auth-form"
           aria-busy={isSubmitting || isResending}
         >
+          {!isLogin && (
+            <label className="auth-label">
+              Name
+              <input
+                type="text"
+                autoComplete="name"
+                placeholder="Your name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                disabled={isSubmitting || isResending}
+                maxLength={80}
+                required
+              />
+            </label>
+          )}
+
           <label className="auth-label">
             Email
             <input

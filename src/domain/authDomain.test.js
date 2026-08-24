@@ -5,9 +5,18 @@ import {
   isCurrentAuthRequest,
   isEmailConfirmationError,
   isInvalidCredentialsError,
+  validateSignUpName,
 } from "./authDomain";
 
 describe("signup outcomes", () => {
+  it("requires a non-blank signup name and preserves the profile limit", () => {
+    expect(validateSignUpName("   ")).toBe("Enter your name.");
+    expect(validateSignUpName("A".repeat(81))).toBe(
+      "Name must be 80 characters or fewer."
+    );
+    expect(validateSignUpName("  Ada Lovelace  ")).toBe("");
+  });
+
   it("rejects a resolved signup response without a user", () => {
     expect(() => getSignUpOutcome({ user: null, session: null })).toThrow(
       "Unexpected signup response."

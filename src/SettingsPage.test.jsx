@@ -259,6 +259,14 @@ afterEach(() => {
 });
 
 describe("SettingsPage calendar modal lifecycle integration", () => {
+  it("opens the existing profile editor when requested by the completion prompt", () => {
+    const runner = createRunner(baseProps({ profileRequest: 1 }));
+    runner.render();
+
+    expect(textContent(runner.output)).toContain("My Profile");
+    expect(findElement(runner.output, (node) => node.props?.type === "text")).toBeDefined();
+  });
+
   it("preserves dialog semantics, absent initial focus, and body scroll locking", () => {
     document.body.style.overflow = "clip";
     const outside = {};

@@ -191,6 +191,7 @@ describe("focused settings sections", () => {
     expect(textContent(output)).toContain("My Profile");
     expect(inputs[0].props.disabled).toBe(true);
     expect(inputs[1].props.readOnly).toBe(true);
+    expect(button(output, "Saving...").props.disabled).toBe(true);
     inputs[0].props.onChange({ target: { value: "Updated" } });
     expect(onChange).toHaveBeenCalledWith({
       ...settings,

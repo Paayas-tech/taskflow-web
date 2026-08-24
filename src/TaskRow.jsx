@@ -168,11 +168,11 @@ export default function TaskRow({
             </span>
           )}
           {task.assigneeId && (
-            <span className="task-project-badge" title={`Assigned to ${task.assigneeId}`}>
+            <span className="task-project-badge" title={`Assigned to ${task.assigneeName || "TaskFlow user"}`}>
               <span className="sidebar-avatar" aria-hidden="true">
-                {task.assigneeId.slice(0, 1).toUpperCase()}
+                {(task.assigneeName || "TaskFlow user").slice(0, 1).toUpperCase()}
               </span>
-              {task.assigneeId}
+              {task.assigneeName || "TaskFlow user"}
             </span>
           )}
           <span className={`task-due-meta task-due-${dueDateMeta.tone}`}>
