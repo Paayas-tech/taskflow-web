@@ -1,0 +1,5 @@
+-- Historical migration placeholder.
+--
+-- This migration intentionally contains no fixture inserts. Local deterministic
+-- fixtures are loaded through supabase/seed.sql during local database resets.
+-- Production migration replay must not create synthetic users or application data.

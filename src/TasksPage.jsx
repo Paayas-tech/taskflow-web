@@ -1,36 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
-import TaskForm from "./TaskForm";
-import TaskListsPanel from "./TaskListsPanel";
+import { useEffect, useMemo, useRef, useState } from "react";
+import TaskEditModal from "./TaskEditModal";
 import TaskRow from "./TaskRow";
-
-const dateKeyFor = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const isTaskComplete = (task) =>
-  task.completed === true || task.status === "completed";
-
-const includesSearchTerm = (task, searchTerm) => {
-  if (!searchTerm) return true;
-
-  return [task.title, task.description, task.notes].some((value) =>
-    String(value || "").toLocaleLowerCase().includes(searchTerm)
-  );
-};
-
-const valuesFromTask = (task, knownListIds) => ({
-  title: task.title || "",
-  description: task.description || "",
-  notes: task.notes || "",
-  status: task.status || "todo",
-  priority: task.priority || "medium",
-  dueDate: task.dueDate || "",
-  reminder: task.reminder === true,
-  listId: knownListIds.has(task.listId) ? task.listId : "",
-});
+import ProjectTaskQuickCreate from "./ProjectTaskQuickCreate";
+import CalendarPage from "./CalendarPage";
+import ProjectBoard from "./ProjectBoard";
+import {
+  dateOnlyKey,
+  filterTasks,
+  isTaskComplete,
+} from "./domain/taskDomain";
+import {
+  mapPersonalTasksToBoard,
+  personalTaskBoardColumns,
+  personalTaskMoveUpdate,
+} from "./domain/personalTaskBoardDomain";
 
 export default function TasksPage({
   tasks,
@@ -38,45 +21,74 @@ export default function TasksPage({
   tasksError,
   onRetry,
   onUpdateTask,
+  onQuickUpdateTask,
+  quickTaskPendingIds,
   onDeleteTask,
+  onArchiveTask,
+  onInlineCreateTask,
+  onCreateScheduledTask,
+  createTaskTriggerRef,
+  openTaskRequest,
+  filterRequest,
   lists,
-  listsLoading,
-  listsError,
-  onRetryLists,
-  onCreateList,
-  onRenameList,
-  onDeleteList,
+  projects,
+  projectsLoading,
+  projectsError,
+  onRetryProjects,
+  browserNotificationsEnabled,
+  formatSettings,
+  weekStartsOn = 0,
+  initialWorkspaceView = "list",
+  onWorkspaceViewChange,
 }) {
-  const [selectedListKey, setSelectedListKey] = useState("all");
+  const selectedListKey = "all";
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [dueDateFilter, setDueDateFilter] = useState("all");
   const [reminderFilter, setReminderFilter] = useState("all");
   const [completionFilter, setCompletionFilter] = useState("all");
+  const [quickFilter, setQuickFilter] = useState("all");
+  const [workspaceView, setWorkspaceView] = useState(initialWorkspaceView);
+  const [boardQuickCreateColumnId, setBoardQuickCreateColumnId] = useState(null);
+  const [sortBy, setSortBy] = useState("created");
+  const [groupBy, setGroupBy] = useState("none");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
-  const [editValues, setEditValues] = useState(null);
-  const [savingTask, setSavingTask] = useState(false);
-  const [editError, setEditError] = useState("");
-  const [completionTaskId, setCompletionTaskId] = useState(null);
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const [mutationError, setMutationError] = useState("");
-  const [deleteCandidate, setDeleteCandidate] = useState(null);
-  const [deletingTask, setDeletingTask] = useState(false);
-  const [deleteError, setDeleteError] = useState("");
+  const editTriggerRef = useRef(null);
 
   const knownListIds = useMemo(
     () => new Set(lists.map((list) => list.id)),
     [lists]
   );
   const selectedTask = tasks.find((task) => task.id === selectedTaskId);
-  const selectedList = lists.find((list) => list.id === selectedListKey);
-  const activeListTitle =
-    selectedListKey === "all"
-      ? "All tasks"
-      : selectedListKey === "inbox"
-        ? "Inbox"
-        : selectedList?.name || "All tasks";
-  const todayKey = dateKeyFor(new Date());
+  const personalBoardTasks = useMemo(
+    () => mapPersonalTasksToBoard(tasks),
+    [tasks]
+  );
+
+  useEffect(() => {
+    setWorkspaceView(initialWorkspaceView);
+  }, [initialWorkspaceView]);
+  useEffect(() => {
+    if (openTaskRequest?.id && tasks.some((task) => task.id === openTaskRequest.id)) {
+      setSelectedTaskId(openTaskRequest.id);
+    }
+  }, [openTaskRequest, tasks]);
+  useEffect(() => {
+    if (!filterRequest?.request) return;
+    setSearchQuery("");
+    setStatusFilter(filterRequest.status || "all");
+    setPriorityFilter(filterRequest.priority || "all");
+    setDueDateFilter(filterRequest.due || "all");
+    setReminderFilter("all");
+    setCompletionFilter(filterRequest.completion || "all");
+    setQuickFilter(filterRequest.quick || "all");
+  }, [filterRequest]);
+  const todayKey = dateOnlyKey(new Date());
+  const quickFilterLabels = { all: "All tasks", today: "Today", upcoming: "Upcoming", completed: "Completed" };
+  const activeListTitle = quickFilterLabels[quickFilter] || "All tasks";
   const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
   const queryFiltersActive =
     Boolean(normalizedSearch) ||
@@ -85,43 +97,34 @@ export default function TasksPage({
     dueDateFilter !== "all" ||
     reminderFilter !== "all" ||
     completionFilter !== "all";
-  const hasActiveFilters = selectedListKey !== "all" || queryFiltersActive;
-
+  const hasActiveFilters = queryFiltersActive || quickFilter !== "all";
   const filteredTasks = useMemo(
-    () =>
-      tasks.filter((task) => {
-        const belongsToSelectedList =
-          selectedListKey === "all" ||
-          (selectedListKey === "inbox"
-            ? !task.listId || !knownListIds.has(task.listId)
-            : task.listId === selectedListKey);
-
-        if (!belongsToSelectedList || !includesSearchTerm(task, normalizedSearch)) {
-          return false;
-        }
-
-        if (statusFilter !== "all" && task.status !== statusFilter) return false;
-        if (priorityFilter !== "all" && task.priority !== priorityFilter) return false;
-
-        const completed = isTaskComplete(task);
-        if (completionFilter === "active" && completed) return false;
-        if (completionFilter === "completed" && !completed) return false;
-
-        if (reminderFilter === "enabled" && task.reminder !== true) return false;
-
-        const dueDate =
-          typeof task.dueDate === "string" ? task.dueDate.trim() : "";
-        if (dueDateFilter === "overdue" && (!dueDate || dueDate >= todayKey)) {
-          return false;
-        }
-        if (dueDateFilter === "today" && dueDate !== todayKey) return false;
-        if (dueDateFilter === "upcoming" && (!dueDate || dueDate <= todayKey)) {
-          return false;
-        }
-        if (dueDateFilter === "undated" && dueDate) return false;
-
+    () => {
+      const baseTasks = filterTasks(tasks, {
+        selectedListKey,
+        knownListIds,
+        searchTerm: normalizedSearch,
+        status: statusFilter,
+        priority: priorityFilter,
+        dueDate: dueDateFilter,
+        reminder: reminderFilter,
+        completion: completionFilter,
+        todayKey,
+      });
+      const quickFiltered = baseTasks.filter((task) => {
+        if (quickFilter === "today") return task.dueDate === todayKey && !isTaskComplete(task);
+        if (quickFilter === "upcoming") return Boolean(task.dueDate && task.dueDate > todayKey) && !isTaskComplete(task);
+        if (quickFilter === "completed") return isTaskComplete(task);
         return true;
-      }),
+      });
+      const priorityRank = { high: 0, medium: 1, low: 2 };
+      return [...quickFiltered].sort((first, second) => {
+        if (sortBy === "title") return first.title.localeCompare(second.title);
+        if (sortBy === "priority") return (priorityRank[first.priority] ?? 1) - (priorityRank[second.priority] ?? 1);
+        if (sortBy === "due") return (first.dueDate || "9999-12-31").localeCompare(second.dueDate || "9999-12-31");
+        return String(second.createdAt || "").localeCompare(String(first.createdAt || ""));
+      });
+    },
     [
       completionFilter,
       dueDateFilter,
@@ -131,16 +134,45 @@ export default function TasksPage({
       reminderFilter,
       selectedListKey,
       statusFilter,
+      quickFilter,
+      sortBy,
       tasks,
       todayKey,
     ]
   );
 
+  const quickFilterCounts = useMemo(() => ({
+    all: tasks.length,
+    today: tasks.filter((task) => task.dueDate === todayKey && !isTaskComplete(task)).length,
+    upcoming: tasks.filter((task) => Boolean(task.dueDate && task.dueDate > todayKey) && !isTaskComplete(task)).length,
+    completed: tasks.filter(isTaskComplete).length,
+  }), [tasks, todayKey]);
+
+  const selectQuickFilter = (value) => {
+    setQuickFilter(value);
+    setStatusFilter("all");
+    setDueDateFilter("all");
+    setCompletionFilter("all");
+  };
+
+  const taskGroups = useMemo(() => {
+    if (groupBy === "none") return [["All tasks", filteredTasks]];
+    const groups = new Map();
+    filteredTasks.forEach((task) => {
+      let key = "Other";
+      if (groupBy === "status") key = task.status === "in-progress" ? "In progress" : task.status === "completed" ? "Completed" : "To do";
+      if (groupBy === "due") key = !task.dueDate ? "No due date" : task.dueDate < todayKey ? "Overdue" : task.dueDate === todayKey ? "Today" : "Upcoming";
+      if (groupBy === "project") key = projects.find((project) => project.id === task.projectId)?.name || "No project";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(task);
+    });
+    return [...groups.entries()];
+  }, [filteredTasks, groupBy, projects, todayKey]);
+
   const activeFilterLabels = useMemo(() => {
     const labels = [];
 
     if (normalizedSearch) labels.push(`Search: ${searchQuery.trim()}`);
-    if (selectedListKey !== "all") labels.push(`List: ${activeListTitle}`);
     if (statusFilter !== "all") {
       const statusLabels = {
         todo: "To do",
@@ -168,111 +200,63 @@ export default function TasksPage({
 
     return labels;
   }, [
-    activeListTitle,
     completionFilter,
     dueDateFilter,
     normalizedSearch,
     priorityFilter,
     reminderFilter,
     searchQuery,
-    selectedListKey,
     statusFilter,
   ]);
 
-  useEffect(() => {
-    if (
-      selectedListKey !== "all" &&
-      selectedListKey !== "inbox" &&
-      !listsLoading &&
-      !knownListIds.has(selectedListKey)
-    ) {
-      setSelectedListKey("inbox");
-    }
-  }, [selectedListKey, listsLoading, knownListIds]);
-
-  const openEditor = (task) => {
+  const openEditor = (task, triggerElement) => {
+    editTriggerRef.current = triggerElement || null;
     setSelectedTaskId(task.id);
-    setEditValues(valuesFromTask(task, knownListIds));
-    setEditError("");
     setMutationError("");
-  };
-
-  const handleSelectList = (listKey) => {
-    setSelectedListKey(listKey);
-    setSelectedTaskId(null);
-    setEditValues(null);
-    setEditError("");
   };
 
   const clearFilters = () => {
     setSearchQuery("");
-    setSelectedListKey("all");
     setStatusFilter("all");
     setPriorityFilter("all");
     setDueDateFilter("all");
     setReminderFilter("all");
     setCompletionFilter("all");
+    setQuickFilter("all");
   };
 
   const closeEditor = () => {
-    if (savingTask) return;
     setSelectedTaskId(null);
-    setEditValues(null);
-    setEditError("");
   };
 
-  const handleEditChange = (event) => {
-    const { name, value, type, checked } = event.target;
-    setEditValues((previous) => ({
-      ...previous,
-      [name]: type === "checkbox" ? checked : value,
-    }));
-  };
-
-  const handleEditSubmit = async (event) => {
-    event.preventDefault();
-    setEditError("");
-
-    if (!editValues.title.trim()) {
-      setEditError("Enter a task title before saving.");
-      return;
-    }
-
-    setSavingTask(true);
-
+  const moveBoardTask = async (placements) => {
+    const update = personalTaskMoveUpdate(personalBoardTasks, placements);
+    if (!update) return;
+    setMutationError("");
     try {
-      const completed = editValues.status === "completed";
-      await onUpdateTask(selectedTask.id, {
-        title: editValues.title.trim(),
-        description: editValues.description,
-        notes: editValues.notes,
-        status: editValues.status,
-        completed,
-        priority: editValues.priority,
-        dueDate: editValues.dueDate,
-        reminder: editValues.reminder,
-        listId: editValues.listId || null,
-      });
-
-      setSelectedTaskId(null);
-      setEditValues(null);
+      await onQuickUpdateTask(update.taskId, update.changes);
     } catch (error) {
-      console.error("Error saving task:", error);
-      setEditError(
-        "We couldn't save your changes. Check your connection and try again."
-      );
-    } finally {
-      setSavingTask(false);
+      console.error("Error moving personal task:", error);
+      setMutationError("We couldn't move this task. Check your connection and try again.");
+    }
+  };
+
+  const handleArchiveTask = async (task) => {
+    setMutationError("");
+    try {
+      await onArchiveTask(task.id);
+    } catch (error) {
+      console.error("Error archiving task from Tasks:", error);
+      setMutationError(`We couldn't archive “${task.title}”. Try again.`);
     }
   };
 
   const handleCompletionChange = async (task) => {
-    const completed = !task.completed;
-    setCompletionTaskId(task.id);
+    const completed = !isTaskComplete(task);
     setMutationError("");
 
     try {
-      await onUpdateTask(task.id, {
+      await onQuickUpdateTask(task.id, {
         completed,
         status: completed ? "completed" : "todo",
       });
@@ -281,65 +265,12 @@ export default function TasksPage({
       setMutationError(
         `We couldn't ${completed ? "complete" : "reopen"} “${task.title}”. Try again.`
       );
-    } finally {
-      setCompletionTaskId(null);
-    }
-  };
-
-  const handleDeleteList = async (listId) => {
-    await onDeleteList(listId);
-    if (selectedListKey === listId) setSelectedListKey("inbox");
-  };
-
-  const requestDelete = () => {
-    if (!selectedTask) return;
-    setDeleteCandidate(selectedTask);
-    setDeleteError("");
-  };
-
-  const cancelDelete = () => {
-    if (deletingTask) return;
-    setDeleteCandidate(null);
-    setDeleteError("");
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteCandidate) return;
-
-    setDeletingTask(true);
-    setDeleteError("");
-
-    try {
-      await onDeleteTask(deleteCandidate.id);
-      setDeleteCandidate(null);
-      setSelectedTaskId(null);
-      setEditValues(null);
-    } catch (error) {
-      console.error("Error deleting task:", error);
-      setDeleteError(
-        "We couldn't delete this task. Check your connection and try again."
-      );
-    } finally {
-      setDeletingTask(false);
     }
   };
 
   return (
-    <section className="tasks-page" aria-labelledby="tasks-page-title">
+    <section className={`tasks-page${selectedTask ? " has-task-panel" : ""}`} aria-labelledby="tasks-page-title">
       <div className="tasks-workspace">
-        <TaskListsPanel
-          lists={lists}
-          tasks={tasks}
-          selectedListKey={selectedListKey}
-          onSelectList={handleSelectList}
-          loading={listsLoading}
-          error={listsError}
-          onRetry={onRetryLists}
-          onCreateList={onCreateList}
-          onRenameList={onRenameList}
-          onDeleteList={handleDeleteList}
-        />
-
         <div className="tasks-content">
           <div className="tasks-page-header">
             <div>
@@ -354,97 +285,124 @@ export default function TasksPage({
             )}
           </div>
 
-          <section className="task-filters" aria-labelledby="task-filters-title">
-            <div className="task-filters-heading">
-              <div>
-                <h3 id="task-filters-title">Find tasks</h3>
-                <p>Search task details and narrow the current workspace.</p>
-              </div>
-              {hasActiveFilters && (
-                <button
-                  className="ghost-btn compact-btn"
-                  type="button"
-                  onClick={clearFilters}
-                >
-                  Clear all
-                </button>
-              )}
-            </div>
+          <nav className="tasks-view-tabs" aria-label="Task views">
+            <button type="button" className={workspaceView === "list" ? "active" : ""} aria-current={workspaceView === "list" ? "page" : undefined} onClick={() => { setWorkspaceView("list"); onWorkspaceViewChange?.("list"); }}>List</button>
+            <button type="button" className={workspaceView === "board" ? "active" : ""} aria-current={workspaceView === "board" ? "page" : undefined} onClick={() => { setWorkspaceView("board"); onWorkspaceViewChange?.("board"); }}>Board</button>
+            <button type="button" className={workspaceView === "calendar" ? "active" : ""} aria-current={workspaceView === "calendar" ? "page" : undefined} onClick={() => { setWorkspaceView("calendar"); onWorkspaceViewChange?.("calendar"); }}>Calendar</button>
+          </nav>
 
-            <div className="task-filter-controls">
+          {workspaceView === "board" ? (
+            <div className="personal-task-board">
+              <ProjectBoard
+                columns={personalTaskBoardColumns}
+                tasks={personalBoardTasks}
+                onMoveTasks={moveBoardTask}
+                onEditTask={openEditor}
+                quickCreateColumnId={boardQuickCreateColumnId}
+                onStartQuickCreate={(column) => setBoardQuickCreateColumnId(column.id)}
+                onQuickCreate={async (title, column) => {
+                  await onInlineCreateTask(title, {
+                    status: column.id,
+                    completed: column.id === "completed",
+                  });
+                  setBoardQuickCreateColumnId(null);
+                }}
+                onCancelQuickCreate={() => setBoardQuickCreateColumnId(null)}
+                collapsible
+                initiallyCollapsedColumnIds={["completed"]}
+              />
+            </div>
+          ) : workspaceView === "calendar" ? (
+            <div className="tasks-embedded-calendar">
+              <CalendarPage
+                tasks={tasks}
+                tasksLoading={tasksLoading}
+                tasksError={tasksError}
+                onRetry={onRetry}
+                onUpdateTask={onUpdateTask}
+                onQuickUpdateTask={onQuickUpdateTask}
+                quickTaskPendingIds={quickTaskPendingIds}
+                onDeleteTask={onDeleteTask}
+                onArchiveTask={onArchiveTask}
+                onCreateTask={onCreateScheduledTask}
+                onOpenTask={openEditor}
+                lists={lists}
+                projects={projects}
+                projectsLoading={projectsLoading}
+                projectsError={projectsError}
+                onRetryProjects={onRetryProjects}
+                browserNotificationsEnabled={browserNotificationsEnabled}
+                formatSettings={formatSettings}
+                weekStartsOn={weekStartsOn}
+                embedded
+              />
+            </div>
+          ) : <>
+
+          <div className="tasks-quick-filters" role="tablist" aria-label="Task date filters">
+            {[
+              ["all", "All tasks"],
+              ["today", "Today"],
+              ["upcoming", "Upcoming"],
+              ["completed", "Completed"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={quickFilter === value}
+                className={quickFilter === value ? "active" : ""}
+                onClick={() => selectQuickFilter(value)}
+              >
+                {label}<span>{quickFilterCounts[value]}</span>
+              </button>
+            ))}
+          </div>
+
+          <section className="task-filters" aria-label="Search and filter tasks">
+            <div className="task-filter-toolbar">
               <label className="task-search-control">
                 <span>Search</span>
                 <input
                   type="search"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Title, description, or notes"
+                  placeholder="Search task titles or descriptions"
                   aria-describedby="task-filter-results"
                 />
               </label>
 
-              <label className="task-filter-control">
-                <span>Status</span>
-                <select
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value)}
-                >
-                  <option value="all">Any status</option>
-                  <option value="todo">To do</option>
-                  <option value="in-progress">In progress</option>
-                  <option value="completed">Completed</option>
-                </select>
-              </label>
+              <div className="task-filter-actions">
+                <label className="task-toolbar-select">
+                  <span className="sr-only">Sort tasks</span>
+                  <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} aria-label="Sort tasks">
+                    <option value="created">Sort: Created</option>
+                    <option value="due">Sort: Due date</option>
+                    <option value="priority">Sort: Priority</option>
+                    <option value="title">Sort: Title</option>
+                  </select>
+                </label>
 
-              <label className="task-filter-control">
-                <span>Priority</span>
-                <select
-                  value={priorityFilter}
-                  onChange={(event) => setPriorityFilter(event.target.value)}
-                >
-                  <option value="all">Any priority</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
-              </label>
+                <label className="task-toolbar-select">
+                  <span className="sr-only">Group tasks</span>
+                  <select value={groupBy} onChange={(event) => setGroupBy(event.target.value)} aria-label="Group tasks">
+                    <option value="none">Group: None</option>
+                    <option value="status">Group: Status</option>
+                    <option value="due">Group: Due date</option>
+                    <option value="project">Group: Project</option>
+                  </select>
+                </label>
 
-              <label className="task-filter-control">
-                <span>Due date</span>
-                <select
-                  value={dueDateFilter}
-                  onChange={(event) => setDueDateFilter(event.target.value)}
-                >
-                  <option value="all">Any date</option>
-                  <option value="overdue">Overdue</option>
-                  <option value="today">Today</option>
-                  <option value="upcoming">Upcoming</option>
-                  <option value="undated">Undated</option>
-                </select>
-              </label>
-
-              <label className="task-filter-control">
-                <span>Reminder</span>
-                <select
-                  value={reminderFilter}
-                  onChange={(event) => setReminderFilter(event.target.value)}
-                >
-                  <option value="all">Any reminder</option>
-                  <option value="enabled">Enabled</option>
-                </select>
-              </label>
-
-              <label className="task-filter-control">
-                <span>Completion</span>
-                <select
-                  value={completionFilter}
-                  onChange={(event) => setCompletionFilter(event.target.value)}
-                >
-                  <option value="all">Active and completed</option>
-                  <option value="active">Active only</option>
-                  <option value="completed">Completed only</option>
-                </select>
-              </label>
+                {hasActiveFilters && (
+                  <button
+                    className="ghost-btn compact-btn task-filter-clear"
+                    type="button"
+                    onClick={clearFilters}
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
             </div>
 
             <div
@@ -477,37 +435,44 @@ export default function TasksPage({
             </div>
           )}
 
-          {selectedTask && editValues && (
-            <section className="task-detail-panel" aria-labelledby="task-detail-title">
-              <div className="task-detail-header">
-                <div>
-                  <p className="card-label">Task details</p>
-                  <h3 id="task-detail-title">Edit task</h3>
-                </div>
-                <button className="danger-btn" type="button" onClick={requestDelete} disabled={savingTask}>
-                  Delete task
-                </button>
-              </div>
+          {!tasksLoading && !tasksError && (
+            <div className="tasks-list-actions">
+              <button
+                ref={createTaskTriggerRef}
+                className="primary-btn compact-btn"
+                type="button"
+                onClick={() => setQuickCreateOpen(true)}
+                aria-expanded={quickCreateOpen}
+                aria-controls="personal-task-quick-create"
+                hidden={quickCreateOpen}
+              >
+                + Add task
+              </button>
+            </div>
+          )}
 
-              <TaskForm
-                values={editValues}
-                onChange={handleEditChange}
-                onSubmit={handleEditSubmit}
-                onCancel={closeEditor}
-                submitLabel="Save changes"
-                busyLabel="Saving..."
-                busy={savingTask}
-                error={editError}
-                lists={lists}
+          {!tasksLoading && !tasksError && quickCreateOpen && (
+            <div className="tasks-inline-create" id="personal-task-quick-create">
+              <ProjectTaskQuickCreate
+                contextLabel="My tasks"
+                variant="list"
+                onCreate={async (title) => {
+                  await onInlineCreateTask(title);
+                  setQuickCreateOpen(false);
+                }}
+                onCancel={() => {
+                  setQuickCreateOpen(false);
+                  window.requestAnimationFrame(() => createTaskTriggerRef?.current?.focus());
+                }}
               />
-            </section>
+            </div>
           )}
 
           {tasksLoading ? (
             <div className="tasks-state" role="status" aria-live="polite">
               <div className="state-spinner" aria-hidden="true" />
               <h3>Loading tasks...</h3>
-              <p>Your saved tasks are being retrieved from Firestore.</p>
+              <p>Your saved tasks are being retrieved securely.</p>
             </div>
           ) : tasksError ? (
             <div className="tasks-state error-state" role="alert">
@@ -520,15 +485,15 @@ export default function TasksPage({
               <h3>
                 {tasks.length === 0
                   ? "No tasks yet"
-                  : queryFiltersActive
+                  : queryFiltersActive || quickFilter !== "all"
                     ? "No matching tasks"
                     : `No tasks in ${activeListTitle}`}
               </h3>
               <p>
                 {tasks.length === 0
                   ? "Use New Task to create your first task."
-                  : queryFiltersActive
-                    ? "Try a broader search or clear one of the active filters."
+                  : queryFiltersActive || quickFilter !== "all"
+                    ? `No tasks are currently in ${activeListTitle}.`
                     : "Assign a task to this list or choose another list."}
               </p>
               {hasActiveFilters && (
@@ -539,44 +504,55 @@ export default function TasksPage({
             </div>
           ) : (
             <div className="tasks-page-list">
-              {filteredTasks.map((task) => {
-                const completionBusy = completionTaskId === task.id;
+              {taskGroups.map(([groupName, groupTasks]) => (
+                <section className="tasks-list-group" key={groupName} aria-label={groupName}>
+                  {groupBy !== "none" && <h3>{groupName}<span>{groupTasks.length}</span></h3>}
+                  {groupTasks.map((task) => {
+                const completionBusy = quickTaskPendingIds.has(task.id);
 
                 return (
                   <TaskRow
                     key={task.id}
                     task={task}
                     lists={lists}
+                    projects={projects}
                     completionBusy={completionBusy}
                     selected={selectedTaskId === task.id}
                     onToggleCompletion={handleCompletionChange}
                     onEdit={openEditor}
+                    onArchive={handleArchiveTask}
+                    formatSettings={formatSettings}
+                    workspace
                   />
                 );
-              })}
+                  })}
+                </section>
+              ))}
             </div>
           )}
+          </>}
         </div>
       </div>
 
-      {deleteCandidate && (
-        <div className="confirmation-backdrop">
-          <section className="confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description">
-            <p className="card-label">Permanent action</p>
-            <h3 id="delete-dialog-title">Delete this task?</h3>
-            <p id="delete-dialog-description">
-              “{deleteCandidate.title}” will be permanently removed from TaskFlow. This cannot be undone.
-            </p>
-            {deleteError && <p className="form-error" role="alert">{deleteError}</p>}
-            <div className="confirmation-actions">
-              <button className="ghost-btn" type="button" onClick={cancelDelete} disabled={deletingTask}>Cancel</button>
-              <button className="danger-btn" type="button" onClick={confirmDelete} disabled={deletingTask}>
-                {deletingTask ? "Deleting..." : "Delete task"}
-              </button>
-            </div>
-          </section>
-        </div>
+      {selectedTask && (
+        <TaskEditModal
+          key={selectedTask.id}
+          task={selectedTask}
+          lists={lists}
+          projects={projects}
+          projectsLoading={projectsLoading}
+          projectsError={projectsError}
+          onRetryProjects={onRetryProjects}
+          browserNotificationsEnabled={browserNotificationsEnabled}
+          onUpdateTask={onUpdateTask}
+          onDeleteTask={onDeleteTask}
+          onArchiveTask={onArchiveTask}
+          onClose={closeEditor}
+          returnFocusElement={editTriggerRef.current}
+          presentation="panel"
+        />
       )}
+
     </section>
   );
 }
