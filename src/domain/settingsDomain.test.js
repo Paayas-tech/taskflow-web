@@ -123,7 +123,7 @@ describe("settings defaults and normalization", () => {
   });
 
   it("resolves startup views and supported time, date, and My Day formats", () => {
-    expect(defaultViewPath("today")).toBe("/today");
+    expect(defaultViewPath("today")).toBe("/");
     expect(defaultViewPath("last-viewed", "/calendar")).toBe("/calendar");
     expect(formatTimeForDisplay("18:05", "12-hour")).toBe("6:05 PM");
     expect(formatTimeForDisplay("06:05", "24-hour")).toBe("06:05");

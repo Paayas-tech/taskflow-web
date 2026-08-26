@@ -32,6 +32,7 @@ export default function ProjectMembersModal({
   const confirmationDialogRef = useRef(null);
   const removeTriggerRef = useRef(null);
   const busyIdRef = useRef("");
+  const roleSaveIdsRef = useRef(new Set());
   const canManage = project.viewerRole === "owner";
 
   busyIdRef.current = busyId;
@@ -143,6 +144,33 @@ export default function ProjectMembersModal({
     });
   };
 
+  const changeMemberRole = async (member, nextRole) => {
+    if (member.role === nextRole || roleSaveIdsRef.current.has(member.userId)) return;
+    const previousRole = member.role;
+
+    roleSaveIdsRef.current.add(member.userId);
+    setActionError("");
+    setMembers((currentMembers) => currentMembers.map((currentMember) =>
+      currentMember.userId === member.userId
+        ? { ...currentMember, role: nextRole }
+        : currentMember
+    ));
+
+    try {
+      await updateProjectMemberRole(userId, project.id, member.userId, nextRole);
+    } catch (roleError) {
+      console.error("Error updating project member role:", roleError);
+      setMembers((currentMembers) => currentMembers.map((currentMember) =>
+        currentMember.userId === member.userId && currentMember.role === nextRole
+          ? { ...currentMember, role: previousRole }
+          : currentMember
+      ));
+      setActionError(roleError?.message || "We couldn't update this member's role. Try again.");
+    } finally {
+      roleSaveIdsRef.current.delete(member.userId);
+    }
+  };
+
   return (
     <div
       className="task-modal-backdrop"
@@ -150,7 +178,7 @@ export default function ProjectMembersModal({
     >
       <section
         ref={dialogRef}
-        className="task-modal project-modal"
+        className="task-modal project-modal project-members-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="project-members-title"
@@ -174,7 +202,7 @@ export default function ProjectMembersModal({
           <div className="projects-state error-state" role="alert"><p>{error}</p><button className="ghost-btn" type="button" onClick={load}>Try again</button></div>
         ) : (
           <>
-            <div className="projects-grid" aria-label="Project members">
+            <div className="projects-grid project-members-grid" aria-label="Project members">
               {members.map((member) => (
                 <MemberRow
                   key={member.userId}
@@ -182,10 +210,7 @@ export default function ProjectMembersModal({
                   ownerId={project.ownerId}
                   canManage={canManage}
                   busy={busyId === member.userId}
-                  onRoleChange={(selected, nextRole) => runAction(
-                    selected.userId,
-                    () => updateProjectMemberRole(userId, project.id, selected.userId, nextRole)
-                  )}
+                  onRoleChange={changeMemberRole}
                   onRemove={(member, triggerElement) => {
                     removeTriggerRef.current = triggerElement;
                     setMemberToRemove(member);
@@ -196,10 +221,17 @@ export default function ProjectMembersModal({
 
             {canManage && (
               <>
-                <form className="project-form" onSubmit={submitInvitation}>
+                <section className="project-invite-section" aria-labelledby="project-invite-title">
+                <div className="project-invite-heading">
+                  <div>
+                    <h3 id="project-invite-title">Invite a teammate</h3>
+                    <p>Give someone access to this project by email.</p>
+                  </div>
+                </div>
+                <form className="project-form project-invite-form" onSubmit={submitInvitation}>
                   <label className="project-form-field">
                     <span>Invite by email</span>
-                    <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required disabled={Boolean(busyId)} />
+                    <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" required disabled={Boolean(busyId)} />
                   </label>
                   <label className="project-form-field">
                     <span>Access</span>
@@ -212,9 +244,10 @@ export default function ProjectMembersModal({
                     <button className="primary-btn" type="submit" disabled={Boolean(busyId)}>{busyId === "invite" ? "Sending..." : "Send invitation"}</button>
                   </div>
                 </form>
-                <p className="project-description">Invitees receive an email and can accept after signing in with the invited address.</p>
+                <p className="project-invite-note">Invitees receive an email and can accept after signing in with the invited address.</p>
+                </section>
                 {invitations.length > 0 && (
-                  <div className="projects-grid" aria-label="Project invitations">
+                  <div className="projects-grid project-invitations-grid" aria-label="Project invitations">
                     {invitations.map((invitation) => (
                       <InvitationRow
                         key={invitation.id}

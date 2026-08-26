@@ -12,10 +12,10 @@ import {
 
 const staticRoutes = [
   ["/", "dashboard"],
-  ["/today", "today"],
+  ["/inbox", "inbox"],
   ["/tasks", "tasks"],
+  ["/calendar", "tasks"],
   ["/projects", "projects"],
-  ["/calendar", "calendar"],
   ["/settings", "settings"],
   ["/archived-tasks", "archived"],
   ["/recover", "recover"],
@@ -48,6 +48,13 @@ describe("TaskFlow route normalization", () => {
   it("does not parse query strings or hashes from a pathname argument", () => {
     expect(normalizePath("/tasks?filter=today")).toBe("/");
     expect(normalizePath("/recover#token")).toBe("/");
+  });
+
+  it("redirects legacy Today links to the Dashboard and preserves Calendar", () => {
+    expect(normalizePath("/today")).toBe("/");
+    expect(normalizePath("/today/")).toBe("/");
+    expect(normalizePath("/calendar")).toBe("/calendar");
+    expect(normalizePath("/calendar/")).toBe("/calendar");
   });
 });
 
@@ -89,10 +96,9 @@ describe("TaskFlow route presentation", () => {
   it("preserves the sidebar route metadata and disabled reminder item", () => {
     expect(navigationItems).toEqual([
       { label: "Dashboard", path: "/", enabled: true, icon: "dashboard" },
-      { label: "Today", path: "/today", enabled: true, icon: "today" },
+      { label: "Inbox", path: "/inbox", enabled: true, icon: "inbox" },
       { label: "Tasks", path: "/tasks", enabled: true, icon: "tasks" },
       { label: "Projects", path: "/projects", enabled: true, icon: "projects" },
-      { label: "Calendar", path: "/calendar", enabled: true, icon: "calendar" },
       { label: "Reminders", enabled: false, icon: "reminders" },
       { label: "Settings", path: "/settings", enabled: true, icon: "settings" },
     ]);
@@ -133,8 +139,7 @@ describe("TaskFlow route presentation", () => {
 
   it.each([
     ["dashboard", "Dashboard", "A clear view of what needs your attention."],
-    ["today", "Today", "Overdue and due-today tasks in one focused view."],
-    ["calendar", "Calendar", "Plan dated work from your existing TaskFlow tasks."],
+    ["inbox", "Inbox", "Updates, mentions, and assignments that need your attention."],
     ["settings", "Settings", "Personalize reminders, notifications, appearance, and your profile."],
     ["projects", "Projects", "2 projects"],
     ["archived", "Archived Tasks", "2 archived tasks"],

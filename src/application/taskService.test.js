@@ -58,6 +58,17 @@ describe("Supabase task application service", () => {
     );
   });
 
+  it("rejects task descriptions longer than 1,000 characters", async () => {
+    const repository = { createPersonalTask: vi.fn() };
+    const service = createTaskService(repository);
+
+    await expect(service.createTask("user-a", {
+      title: "Too long",
+      description: "x".repeat(1001),
+    })).rejects.toThrow("1,000 characters or fewer");
+    expect(repository.createPersonalTask).not.toHaveBeenCalled();
+  });
+
   it("synchronizes completion status and timestamp", async () => {
     const repository = {
       getPersonalTask: vi.fn().mockResolvedValue(row()),

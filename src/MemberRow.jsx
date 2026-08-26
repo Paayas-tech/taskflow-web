@@ -10,21 +10,22 @@ export default function MemberRow({
 }) {
   const isOwner = member.userId === ownerId || member.role === "owner";
   const displayName = safeDisplayName(member);
+  const initial = displayName.trim().charAt(0).toUpperCase() || "?";
 
   return (
     <article className="project-card" aria-label={`${displayName}, ${member.role}`}>
-      <div className="project-card-heading">
-        <div>
+      <div className="project-member-identity">
+        <span className="project-member-avatar" aria-hidden="true">{initial}</span>
+        <div className="project-member-copy">
           <h3>{displayName}</h3>
-          <span className={`project-status project-status-${member.role}`}>
-            {isOwner ? "Owner" : member.role === "editor" ? "Editor" : "Viewer"}
-          </span>
+          <span>{isOwner ? "Project owner" : "Project member"}</span>
         </div>
+        {isOwner && <span className="project-status project-status-owner">Owner</span>}
       </div>
       {!isOwner && canManage && (
         <div className="project-card-actions">
           <label className="project-form-field">
-            <span>Role</span>
+            <span className="sr-only">Role</span>
             <select
               value={member.role}
               disabled={busy}

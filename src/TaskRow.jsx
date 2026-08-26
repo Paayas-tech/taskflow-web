@@ -73,8 +73,11 @@ export default function TaskRow({
   onRestore,
   onDeletePermanently,
   formatSettings = {},
+  workspace = false,
 }) {
   const [localActionBusy, setLocalActionBusy] = useState(false);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const completed = isTaskComplete(task);
   const archived = isArchived(task);
   const lifecycleBusy = actionBusy || localActionBusy;
@@ -107,6 +110,17 @@ export default function TaskRow({
         reminderDue ? "task-row-reminder-due" : ""
       }`}
       aria-busy={completionBusy || lifecycleBusy}
+      tabIndex={workspace ? 0 : undefined}
+      onClick={(event) => {
+        if (!workspace || event.target.closest("button, select, input, a")) return;
+        onEdit?.(task, event.currentTarget);
+      }}
+      onKeyDown={(event) => {
+        if (workspace && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onEdit?.(task, event.currentTarget);
+        }
+      }}
     >
       {archived ? (
         <span className="archive-status-icon" aria-hidden="true">A</span>
@@ -141,12 +155,19 @@ export default function TaskRow({
           <span className="task-row-title">{task.title}</span>
         </button>
         {task.description && (
-          <p className="task-description">{task.description}</p>
-        )}
-        {task.notes && (
-          <p className="task-notes-preview">
-            <strong>Notes:</strong> {task.notes}
-          </p>
+          <div className="task-description-wrap">
+            <p className={`task-description${descriptionExpanded ? " is-expanded" : ""}`}>{task.description}</p>
+            {task.description.length > 90 && (
+              <button
+                className="task-description-toggle"
+                type="button"
+                onClick={() => setDescriptionExpanded((expanded) => !expanded)}
+                aria-expanded={descriptionExpanded}
+              >
+                {descriptionExpanded ? "See less" : "See more"}
+              </button>
+            )}
+          </div>
         )}
         <div className="tasks-page-meta">
           <span className="task-list-badge">
@@ -198,7 +219,25 @@ export default function TaskRow({
         <span className={`task-status task-status-${task.status}`}>
           {statusLabels[task.status] || "To do"}
         </span>
-        {onEdit && (
+        {workspace && (onEdit || onArchive) ? (
+          <div className="task-row-menu">
+            <button
+              className="ghost-btn compact-btn task-row-menu-trigger"
+              type="button"
+              onClick={() => setActionMenuOpen((open) => !open)}
+              aria-label={`More actions for ${task.title}`}
+              aria-expanded={actionMenuOpen}
+            >
+              ···
+            </button>
+            {actionMenuOpen && (
+              <div className="task-row-menu-popover">
+                {onEdit && <button type="button" onClick={(event) => { setActionMenuOpen(false); onEdit(task, event.currentTarget); }}>View details</button>}
+                {!archived && onArchive && <button type="button" onClick={() => { setActionMenuOpen(false); void runLifecycleAction(onArchive); }}>Archive</button>}
+              </div>
+            )}
+          </div>
+        ) : onEdit && (
           <button
             className="ghost-btn compact-btn task-edit-button"
             type="button"
@@ -209,7 +248,7 @@ export default function TaskRow({
             Edit
           </button>
         )}
-        {!archived && onArchive && (
+        {!workspace && !archived && onArchive && (
           <button
             className="ghost-btn compact-btn task-archive-button"
             type="button"

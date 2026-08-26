@@ -58,6 +58,9 @@ vi.mock("react", () => ({
   useState: hookRuntime.useState,
 }));
 vi.mock("./InvitationRow", () => ({ default: () => null }));
+vi.mock("./application/projectWorkspaceLoader", () => ({
+  prefetchProjectWorkspace: vi.fn(() => Promise.resolve()),
+}));
 
 import ProjectsPage from "./ProjectsPage";
 
@@ -292,7 +295,7 @@ afterEach(() => {
 });
 
 describe("ProjectsPage modal lifecycle integration", () => {
-  it("leaves the global Projects heading singular and keeps compact page actions", () => {
+  it("leaves the global Projects heading singular and adds compact project controls", () => {
     const runner = createRunner(baseProps({
       projects: [
         { id: "owned", name: "Owned", ownerId: "user-a", viewerRole: "owner", status: "active" },
@@ -306,12 +309,12 @@ describe("ProjectsPage modal lifecycle integration", () => {
 
     expect(internalProjectsHeadings).toHaveLength(0);
     expect(findElement(runner.output, (node) => node.type === "button" && textContent(node) === "+ New Project")).toBeUndefined();
-    expect(textContent(runner.output)).toContain("My Projects");
-    expect(textContent(runner.output)).toContain("Shared with Me");
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Search projects")).toBeDefined();
+    expect(textContent(runner.output)).toContain("Showing 2 of 2 projects");
     expect(textContent(runner.output)).toContain("Viewer");
   });
 
-  it("renders owner, editor, and viewer projects in consistent sections", () => {
+  it("renders owner, editor, and viewer projects in one scannable table", () => {
     const projects = [
       {
         id: "owned-project",
@@ -339,37 +342,57 @@ describe("ProjectsPage modal lifecycle integration", () => {
       },
     ];
     const runner = createRunner(baseProps({ projects }));
-    const ownedSection = findElement(
-      runner.output,
-      (node) => node.props?.["aria-labelledby"] === "owned-projects-title"
-    );
-    const sharedSection = findElement(
-      runner.output,
-      (node) => node.props?.["aria-labelledby"] === "shared-projects-title"
-    );
-    const sharedArticles = findElements(
-      sharedSection,
-      (node) => node.type === "article"
-    );
+    const rows = findElements(runner.output, (node) => node.type === "article");
+    expect(rows).toHaveLength(projects.length);
+    expect(textContent(runner.output)).toContain("Owned project");
+    expect(textContent(runner.output)).toContain("Editor project");
+    expect(textContent(runner.output)).toContain("Viewer project");
 
-    expect(textContent(ownedSection)).toContain("Owned project");
-    expect(textContent(ownedSection)).not.toContain("Editor project");
-    expect(textContent(ownedSection)).not.toContain("Viewer project");
-    expect(textContent(sharedSection)).toContain("Editor project");
-    expect(textContent(sharedSection)).toContain("Viewer project");
-    expect(sharedArticles).toHaveLength(2);
-    expect(findElements(runner.output, (node) => node.type === "article")).toHaveLength(
-      projects.length
-    );
-
-    const viewerCard = sharedArticles.find((article) =>
-      textContent(article).includes("Viewer project")
-    );
+    const viewerCard = rows.find((article) => textContent(article).includes("Viewer project"));
     const viewerActions = findElements(
       viewerCard,
       (node) => node.type === "button"
     ).map(textContent);
-    expect(viewerActions).toEqual(["View project"]);
+    expect(viewerActions).toEqual(["□Viewer projectRead-only shared workspace", "•••"]);
+  });
+
+  it("keeps project management actions inside the details dialog", () => {
+    const project = {
+      id: "project-1",
+      name: "Existing project",
+      description: "Project context",
+      color: "#6657c8",
+      status: "active",
+      ownerId: "user-a",
+      viewerRole: "owner",
+    };
+    const runner = createRunner(baseProps({ projects: [project] }));
+    const card = findElement(runner.output, (node) => node.type === "article");
+
+    expect(findElements(card, (node) => node.type === "button").map(textContent)).toEqual([
+      "□Existing projectProject context",
+      "•••",
+    ]);
+
+    const detailsButton = findElement(
+      card,
+      (node) => node.props?.["aria-label"] === "View details for Existing project"
+    );
+    detailsButton.props.onClick({ currentTarget: { focus: vi.fn() } });
+    runner.render();
+
+    const dialog = findElement(
+      runner.output,
+      (node) => node.props?.["aria-labelledby"] === "project-details-title"
+    );
+    expect(textContent(dialog)).toContain("Project context");
+    expect(findElements(dialog, (node) => node.type === "button").map(textContent)).toEqual([
+      "×",
+      "Open project",
+      "Edit",
+      "Archive",
+      "Delete",
+    ]);
   });
 
   it("preserves dialog semantics, name-field focus, and body scroll locking", () => {
@@ -542,6 +565,12 @@ describe("ProjectsPage modal lifecycle integration", () => {
       ownerId: "user-a",
     };
     const runner = createRunner(baseProps({ projects: [project] }));
+    const detailsButton = findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "View details for Existing project"
+    );
+    detailsButton.props.onClick({ currentTarget: { focus: vi.fn() } });
+    runner.render();
     const deleteButton = findElement(
       runner.output,
       (node) => node.type === "button" && textContent(node) === "Delete"

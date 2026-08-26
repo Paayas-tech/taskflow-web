@@ -7,18 +7,8 @@ import {
   subscribeToNotifications,
 } from "./application/notificationService";
 import { getVisibleUserProfiles } from "./application/projectService";
-import { safeDisplayName } from "./domain/identityDomain";
+import { notificationLabel } from "./domain/notificationDomain";
 import { useModalLifecycle } from "./components/modal/useModalLifecycle";
-
-const notificationLabel = (notification) => {
-  const task = notification.data?.taskTitle || "a task";
-  const actor = notification.actorName
-    ? `${safeDisplayName({ displayName: notification.actorName })} `
-    : "";
-  if (notification.type === "task_assigned") return `You were assigned ${task}.`;
-  if (notification.type === "mentioned") return `${actor}mentioned you on ${task}.`;
-  return `${actor}added a comment to ${task}.`;
-};
 
 export default function NotificationsPanel({ userId, onNavigate }) {
   const [open, setOpen] = useState(false);
@@ -125,14 +115,15 @@ export default function NotificationsPanel({ userId, onNavigate }) {
 
   return (
     <div ref={panelRef} className="notification-center">
-      <button ref={triggerRef} className="ghost-btn compact-btn" type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-haspopup="dialog" aria-controls={dialogId}>
-        Notifications{unreadCount > 0 ? ` (${unreadCount})` : ""}
+      <button ref={triggerRef} className="notification-trigger" type="button" onClick={() => setOpen((value) => !value)} aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"} aria-expanded={open} aria-haspopup="dialog" aria-controls={dialogId}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+        {unreadCount > 0 && <span className="notification-count" aria-hidden="true">{unreadCount > 9 ? "9+" : unreadCount}</span>}
       </button>
       {open && (
-        <section id={dialogId} ref={dialogRef} className="confirmation-dialog" role="dialog" aria-label="Notifications" tabIndex={-1}>
-          <div className="section-heading-row"><h3>Notifications</h3><div className="notification-dialog-actions"><button className="ghost-btn compact-btn" type="button" onClick={() => void markAllRead()} disabled={!unreadCount}>Mark all read</button><button className="ghost-btn compact-btn" type="button" onClick={() => { setOpen(false); triggerRef.current?.focus(); }} aria-label="Close notifications">Close</button></div></div>
+        <section id={dialogId} ref={dialogRef} className="confirmation-dialog notification-dialog" role="dialog" aria-label="Notifications" tabIndex={-1}>
+          <div className="section-heading-row notification-dialog-header"><h3>Notifications</h3><div className="notification-dialog-actions"><button className="ghost-btn compact-btn notification-read-all" type="button" onClick={() => void markAllRead()} disabled={!unreadCount}>Mark all read</button><button className="notification-dialog-close" type="button" onClick={() => { setOpen(false); triggerRef.current?.focus(); }} aria-label="Close notifications">×</button></div></div>
           {liveNotice && <p className="form-hint" role="status">{liveNotice}</p>}
-          {loading ? <p role="status">Loading notifications...</p> : error ? <div><p className="form-error" role="alert">{error}</p><button className="ghost-btn compact-btn" type="button" onClick={() => void load()}>Try again</button></div> : notifications.length === 0 ? <p className="form-hint">You're all caught up.</p> : (
+          {loading ? <p className="notification-empty-state" role="status">Loading notifications...</p> : error ? <div><p className="form-error" role="alert">{error}</p><button className="ghost-btn compact-btn" type="button" onClick={() => void load()}>Try again</button></div> : notifications.length === 0 ? <div className="notification-empty-state"><span className="notification-empty-icon" aria-hidden="true">✓</span><strong>You're all caught up</strong><p>No new notifications right now.</p></div> : (
             <div className="settings-list">
               {notifications.map((notification) => (
                 <article className="settings-card" key={notification.id}>

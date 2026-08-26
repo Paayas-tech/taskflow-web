@@ -72,6 +72,7 @@ const projectService = vi.hoisted(() => ({
 const componentCaptures = vi.hoisted(() => ({
   projectsPageProps: null,
   projectTasksPageProps: null,
+  tasksPageProps: null,
 }));
 
 vi.mock("react", () => ({
@@ -85,8 +86,20 @@ vi.mock("react", () => ({
 vi.mock("./ArchivedTasksPage", () => ({ default: () => null }));
 vi.mock("./CalendarPage", () => ({ default: () => null }));
 vi.mock("./ConfigurationErrorScreen", () => ({ default: () => null }));
-vi.mock("./Dashboard", () => ({ default: () => null }));
+vi.mock("./Dashboard", () => ({
+  default: ({ isActive, onCreateTask, createTaskTriggerRef }) => isActive ? ({
+    type: "button",
+    key: null,
+    props: {
+      ref: createTaskTriggerRef,
+      type: "button",
+      onClick: onCreateTask,
+      children: "+ New Task",
+    },
+  }) : null,
+}));
 vi.mock("./Login", () => ({ default: () => null }));
+vi.mock("./InboxPage", () => ({ default: () => null }));
 vi.mock("./NotificationsPanel", () => ({ default: () => null }));
 vi.mock("./ProjectsPage", () => ({
   default: (props) => {
@@ -102,8 +115,12 @@ vi.mock("./ProjectTasksPage", () => ({
 }));
 vi.mock("./Recover", () => ({ default: () => null }));
 vi.mock("./SettingsPage", () => ({ default: () => null }));
-vi.mock("./TasksPage", () => ({ default: () => null }));
-vi.mock("./TodayPage", () => ({ default: () => null }));
+vi.mock("./TasksPage", () => ({
+  default: (props) => {
+    componentCaptures.tasksPageProps = props;
+    return null;
+  },
+}));
 
 vi.mock("./TaskForm", () => ({
   default: ({ values, onChange, onSubmit, onCancel, busy, error }) => ({
@@ -407,6 +424,7 @@ beforeEach(() => {
   projectService.getProjects.mockReset().mockResolvedValue([]);
   componentCaptures.projectsPageProps = null;
   componentCaptures.projectTasksPageProps = null;
+  componentCaptures.tasksPageProps = null;
 });
 
 afterEach(() => {
@@ -418,26 +436,38 @@ afterEach(() => {
 });
 
 describe("App create-task modal lifecycle integration", () => {
-  it("keeps the Projects title and create action in one topbar row", async () => {
+  it("exposes inline personal-task creation without opening the full task form", async () => {
+    window.location.pathname = "/tasks";
+    const runner = createRunner();
+    await Promise.resolve();
+    await Promise.resolve();
+    runner.render();
+
+    await componentCaptures.tasksPageProps.onInlineCreateTask("Review launch");
+
+    expect(taskService.createTask).toHaveBeenCalledWith(
+      "user-a",
+      expect.objectContaining({ title: "Review launch", status: "todo", projectId: null })
+    );
+    expect(findElement(runner.output, (node) => node.props?.id === "create-task-dialog")).toBeUndefined();
+  });
+
+  it("keeps project creation out of the global topbar for contextual placement", async () => {
     window.location.pathname = "/projects";
     const runner = createRunner();
     await Promise.resolve();
     await Promise.resolve();
     runner.render();
 
-    const createProject = findElement(
-      runner.output,
-      (node) => node.type === "button" && textContent(node) === "+ New Project"
-    );
-
-    expect(createProject).toBeDefined();
+    expect(
+      findElement(
+        runner.output,
+        (node) => node.type === "button" && textContent(node) === "+ New Project"
+      )
+    ).toBeUndefined();
     expect(textContent(runner.output)).not.toContain("Plan meaningful work");
     expect(textContent(runner.output)).not.toContain("+ New Task");
-
-    createProject.props.onClick();
-    runner.render();
-    expect(componentCaptures.projectsPageProps.createRequest).toBe(1);
-    expect(componentCaptures.projectsPageProps.createTriggerRef.current).toBeDefined();
+    expect(componentCaptures.projectsPageProps.createTriggerRef).toBeDefined();
   });
 
   it("passes every accessible project to ProjectsPage and preserves viewer direct access", async () => {
@@ -457,6 +487,10 @@ describe("App create-task modal lifecycle integration", () => {
     expect(componentCaptures.projectsPageProps.projects).toEqual(projects);
     expect(componentCaptures.projectTasksPageProps.project).toEqual(projects[2]);
     expect(componentCaptures.projectTasksPageProps.projectId).toBe("viewer-project");
+    expect(
+      findElement(runner.output, (node) => node.props?.className === "topbar")
+    ).toBeUndefined();
+    expect(textContent(runner.output)).not.toContain("+ New Task");
   });
 
   it("does not reload data for an equivalent same-user token refresh", () => {

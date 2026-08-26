@@ -73,7 +73,7 @@ const projectService = vi.hoisted(() => ({
   updateProjectTask: vi.fn(),
 }));
 
-const childCalls = vi.hoisted(() => ({ boards: [], rows: [], forms: [] }));
+const childCalls = vi.hoisted(() => ({ boards: [], rows: [], forms: [], quickCreates: [], taskEditors: [] }));
 
 vi.mock("react", () => ({
   useCallback: hookRuntime.useCallback,
@@ -95,10 +95,20 @@ vi.mock("./TaskRow", () => ({
     return <div data-testid="task-row">{props.task.title}</div>;
   },
 }));
+vi.mock("./ProjectTaskQuickCreate", () => ({
+  default: (props) => {
+    childCalls.quickCreates.push(props);
+    return <div data-testid="quick-create">Quick create</div>;
+  },
+}));
 vi.mock("./ActivityFeed", () => ({ default: () => null }));
-vi.mock("./CalendarPage", () => ({ default: () => null }));
 vi.mock("./ProjectMembersModal", () => ({ default: () => null }));
-vi.mock("./TaskEditModal", () => ({ default: () => null }));
+vi.mock("./TaskEditModal", () => ({
+  default: (props) => {
+    childCalls.taskEditors.push(props);
+    return <aside data-testid="task-details-panel">{props.task.title}</aside>;
+  },
+}));
 vi.mock("./TaskForm", () => ({
   default: (props) => {
     childCalls.forms.push(props);
@@ -262,6 +272,8 @@ function deferred() {
 async function flushWorkspace(runner, props) {
   await Promise.resolve();
   await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
   runner.render(props);
 }
 
@@ -271,6 +283,10 @@ function latestBoard() {
 
 function latestForm() {
   return childCalls.forms.at(-1);
+}
+
+function latestQuickCreate() {
+  return childCalls.quickCreates.at(-1);
 }
 
 beforeEach(() => {
@@ -286,6 +302,8 @@ beforeEach(() => {
   childCalls.boards.length = 0;
   childCalls.rows.length = 0;
   childCalls.forms.length = 0;
+  childCalls.quickCreates.length = 0;
+  childCalls.taskEditors.length = 0;
   projectService.getProjectTasks.mockReset().mockResolvedValue(tasks);
   projectService.getProjectColumns.mockReset().mockResolvedValue(columns);
   projectService.getProjectMembers.mockReset().mockResolvedValue([
@@ -307,6 +325,48 @@ afterEach(() => {
 });
 
 describe("ProjectTasksPage workspace coordination", () => {
+  it("opens and closes selected tasks in an in-workspace side panel", async () => {
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    latestBoard().onEditTask(tasks[0], { focus: vi.fn() });
+    runner.render(props);
+
+    const workspace = findElement(
+      runner.output,
+      (node) => node.props?.className?.includes("project-tasks-page")
+    );
+    expect(workspace.props.className).toContain("has-task-panel");
+    expect(childCalls.taskEditors.at(-1).presentation).toBe("panel");
+    expect(childCalls.taskEditors.at(-1).task.id).toBe("task-a");
+    expect(textContent(runner.output)).toContain("Plan launch");
+
+    childCalls.taskEditors.at(-1).onClose();
+    runner.render(props);
+    expect(
+      findElement(runner.output, (node) => node.props?.className?.includes("project-tasks-page"))
+        .props.className
+    ).not.toContain("has-task-panel");
+  });
+
+  it("shows the project workspace immediately while its tasks load", () => {
+    projectService.getProjectTasks.mockReturnValue(new Promise(() => {}));
+    projectService.getProjectColumns.mockReturnValue(new Promise(() => {}));
+    projectService.getProjectMembers.mockReturnValue(new Promise(() => {}));
+    const props = baseProps();
+    const runner = createRunner(props);
+
+    expect(textContent(runner.output)).toContain("Launch");
+    expect(textContent(runner.output)).not.toContain("Loading project tasks");
+    expect(latestBoard().columns).toEqual([]);
+    expect(latestBoard().tasks).toEqual([]);
+    expect(
+      findElement(runner.output, (node) => node.props?.className === "project-tasks-page")
+        .props["aria-busy"]
+    ).toBe(true);
+  });
+
   it("loads the workspace and passes active tasks and columns to the board", async () => {
     const props = baseProps();
     const runner = createRunner(props);
@@ -322,9 +382,15 @@ describe("ProjectTasksPage workspace coordination", () => {
     expect(latestBoard().columns).toEqual(columns);
     expect(latestBoard().tasks.map((task) => task.id)).toEqual(["task-a", "task-b"]);
     expect(latestBoard().readOnly).toBe(false);
+    expect(
+      findElement(
+        runner.output,
+        (node) => node.type === "button" && textContent(node) === "Calendar"
+      )
+    ).toBeUndefined();
   });
 
-  it.each(["owner", "editor"])("keeps the board editable for %s access", async (role) => {
+  it.each(["owner", "editor"])("keeps column creation available for %s access without a duplicate header action", async (role) => {
     const props = baseProps({
       project: { ...baseProps().project, viewerRole: role },
     });
@@ -332,15 +398,16 @@ describe("ProjectTasksPage workspace coordination", () => {
     await flushWorkspace(runner, props);
 
     expect(latestBoard().readOnly).toBe(false);
+    expect(latestBoard().onStartQuickCreate).toEqual(expect.any(Function));
     expect(
       findElement(
         runner.output,
-        (node) => node.type === "button" && textContent(node) === "+ New project task"
+        (node) => node.type === "button" && textContent(node) === "+ Add task"
       )
-    ).toBeDefined();
+    ).toBeUndefined();
   });
 
-  it("assigns a project task to the selected authorized member during creation", async () => {
+  it("keeps the detailed creation flow available with a quick-create title", async () => {
     const memberId = "member-a";
     projectService.getProjectMembers.mockResolvedValue([
       { userId: "user-a", displayName: "Owner", role: "owner" },
@@ -350,19 +417,14 @@ describe("ProjectTasksPage workspace coordination", () => {
     const runner = createRunner(props);
     await flushWorkspace(runner, props);
 
-    findElement(
-      runner.output,
-      (node) => node.type === "button" && textContent(node) === "+ New project task"
-    ).props.onClick();
+    latestBoard().onAddTaskDetails(columns[0], "Prepare release");
     runner.render(props);
 
     expect(latestForm().projectMembers).toEqual([
       { userId: "user-a", displayName: "Owner", role: "owner" },
       { userId: memberId, displayName: "Priya Shah", role: "editor" },
     ]);
-    latestForm().onChange({
-      target: { name: "title", value: "Prepare release", type: "text" },
-    });
+    expect(latestForm().values.title).toBe("Prepare release");
     latestForm().onChange({
       target: { name: "assigneeId", value: memberId, type: "select-one" },
     });
@@ -380,6 +442,59 @@ describe("ProjectTasksPage workspace coordination", () => {
     );
   });
 
+  it("creates a title-only board task in the selected column", async () => {
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    latestBoard().onStartQuickCreate(columns[1]);
+    runner.render(props);
+    expect(latestBoard().quickCreateColumnId).toBe("doing");
+
+    await latestBoard().onQuickCreate("  Review pull request  ", columns[1]);
+
+    expect(projectService.createProjectTask).toHaveBeenCalledWith(
+      "user-a",
+      "project-a",
+      expect.objectContaining({
+        title: "Review pull request",
+        projectId: "project-a",
+        status: "in-progress",
+        listId: null,
+      })
+    );
+    expect(projectService.setTaskAssignee).not.toHaveBeenCalled();
+  });
+
+  it("opens title-only creation in list view and defaults it to To Do", async () => {
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "List"
+    ).props.onClick();
+    runner.render(props);
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "+ Add task"
+    ).props.onClick();
+    runner.render(props);
+
+    expect(latestQuickCreate().contextLabel).toBe("Launch");
+    await latestQuickCreate().onCreate("Write release notes");
+    expect(projectService.createProjectTask).toHaveBeenCalledWith(
+      "user-a",
+      "project-a",
+      expect.objectContaining({
+        title: "Write release notes",
+        status: "todo",
+        listId: null,
+      })
+    );
+  });
+
   it("keeps viewer access read-only and hides task creation controls", async () => {
     const props = baseProps({
       project: { ...baseProps().project, viewerRole: "viewer" },
@@ -392,7 +507,7 @@ describe("ProjectTasksPage workspace coordination", () => {
     expect(
       findElement(
         runner.output,
-        (node) => node.type === "button" && textContent(node) === "+ New project task"
+        (node) => node.type === "button" && textContent(node) === "+ Add task"
       )
     ).toBeUndefined();
   });
@@ -411,7 +526,8 @@ describe("ProjectTasksPage workspace coordination", () => {
       "We couldn't load this project workspace. Check your connection and try again."
     );
     expect(textContent(alert)).not.toContain("sensitive provider failure");
-    expect(childCalls.boards).toHaveLength(0);
+    expect(childCalls.boards).toHaveLength(1);
+    expect(childCalls.boards[0].tasks).toEqual([]);
 
     const retry = findElement(
       alert,

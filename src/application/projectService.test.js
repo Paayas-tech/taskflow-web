@@ -41,6 +41,17 @@ describe("Supabase project application service", () => {
     expect(repository.createProject).not.toHaveBeenCalled();
   });
 
+  it("rejects project descriptions longer than 1,000 characters", async () => {
+    const repository = { createProject: vi.fn() };
+    const service = createProjectService(repository);
+
+    await expect(service.createProject("user-a", {
+      name: "Launch",
+      description: "x".repeat(1001),
+    })).rejects.toThrow("1,000 characters or fewer");
+    expect(repository.createProject).not.toHaveBeenCalled();
+  });
+
   it("normalizes invitation email and role", async () => {
     const repository = { createProjectInvitation: vi.fn().mockResolvedValue({ id: "invite-a" }) };
     const service = createProjectService(repository);

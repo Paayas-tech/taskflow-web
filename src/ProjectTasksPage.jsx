@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import CalendarPage from "./CalendarPage";
 import ProjectBoard from "./ProjectBoard";
 import ProjectMembersModal from "./ProjectMembersModal";
+import ProjectTaskQuickCreate from "./ProjectTaskQuickCreate";
 import TaskEditModal from "./TaskEditModal";
 import TaskForm from "./TaskForm";
 import TaskRow from "./TaskRow";
@@ -9,13 +9,11 @@ import {
   archiveProjectTask,
   createProjectTask,
   deleteProjectTask,
-  getProjectColumns,
-  getProjectMembers,
-  getProjectTasks,
   reorderProjectTasks,
   setTaskAssignee,
   updateProjectTask,
 } from "./application/projectService";
+import { consumeProjectWorkspace } from "./application/projectWorkspaceLoader";
 import { isArchived, isTaskComplete } from "./domain/taskDomain";
 
 const emptyTaskForm = {
@@ -45,7 +43,7 @@ const sortProjectTasks = (tasks, sort) => [...tasks].sort((first, second) => {
 export default function ProjectTasksPage({
   userId, projectId, project, projects, projectsLoading, projectsError,
   onRetryProjects, lists, onBack, browserNotificationsEnabled,
-  formatSettings, weekStartsOn = 0, refreshToken = 0,
+  formatSettings, refreshToken = 0,
 }) {
   const [view, setView] = useState("board");
   const [tasks, setTasks] = useState([]);
@@ -60,6 +58,7 @@ export default function ProjectTasksPage({
   const [statusFilter, setStatusFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [sort, setSort] = useState("created");
+  const [quickCreateTarget, setQuickCreateTarget] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [createValues, setCreateValues] = useState({ ...emptyTaskForm, projectId });
   const [createError, setCreateError] = useState("");
@@ -81,11 +80,11 @@ export default function ProjectTasksPage({
     if (initialLoad) setLoading(true);
     setLoadError("");
     try {
-      const [projectTasks, projectColumns, projectMembers] = await Promise.all([
-        getProjectTasks(userId, projectId),
-        getProjectColumns(userId, projectId),
-        getProjectMembers(userId, projectId),
-      ]);
+      const {
+        tasks: projectTasks,
+        columns: projectColumns,
+        members: projectMembers,
+      } = await consumeProjectWorkspace(userId, projectId);
       if (requestId !== workspaceRequestRef.current) return;
       setTasks(projectTasks);
       setColumns(projectColumns);
@@ -113,6 +112,7 @@ export default function ProjectTasksPage({
     setSearchTerm("");
     setStatusFilter("all");
     setAssigneeFilter("all");
+    setQuickCreateTarget(null);
     setCreateValues({ ...emptyTaskForm, projectId });
     void loadWorkspace();
     return () => {
@@ -152,6 +152,17 @@ export default function ProjectTasksPage({
       ...emptyTaskForm, ...schedule, projectId, status: statusForColumn(column),
     });
     setShowCreate(true);
+  };
+  const startQuickCreate = (column = null) => {
+    if (!canEditTasks) return;
+    const defaultColumn =
+      column || columns.find((candidate) => candidate.category === "todo") || columns[0];
+    setQuickCreateTarget(view === "list" ? "list" : defaultColumn?.id || null);
+  };
+  const cancelQuickCreate = () => setQuickCreateTarget(null);
+  const openQuickCreateDetails = (column = null, title = "") => {
+    setQuickCreateTarget(null);
+    openCreate(column, title ? { title } : {});
   };
   const closeCreate = () => {
     if (creating) return;
@@ -243,6 +254,22 @@ export default function ProjectTasksPage({
       createSubmissionRef.current = false;
       setCreating(false);
     }
+  };
+
+  const handleQuickCreate = async (title, column = null) => {
+    if (!canEditTasks) {
+      throw new Error("This project is read-only for your account.");
+    }
+    const normalizedTitle = String(title || "").trim();
+    if (!normalizedTitle) throw new Error("Task title cannot be empty.");
+    await createProjectTask(userId, projectId, {
+      ...emptyTaskForm,
+      title: normalizedTitle,
+      projectId,
+      listId: null,
+      status: statusForColumn(column),
+    });
+    await loadWorkspace();
   };
 
   const handleUpdate = async (taskId, data) => {
@@ -341,7 +368,8 @@ export default function ProjectTasksPage({
   }
 
   return (
-    <section className="project-tasks-page" aria-labelledby="project-task-title">
+    <section className={`project-tasks-page${selectedTask ? " has-task-panel" : ""}`} aria-labelledby="project-task-title" aria-busy={loading}>
+      <div className="project-tasks-workspace-main">
       <button className="project-back-button" type="button" onClick={onBack}>← Projects</button>
       <header className="project-task-hero">
         <div className="project-task-identity">
@@ -350,7 +378,6 @@ export default function ProjectTasksPage({
         </div>
         <div className="project-card-actions">
           <button ref={membersButtonRef} className="ghost-btn compact-btn" type="button" onClick={() => setShowMembers(true)}>Members</button>
-          {canEditTasks && <button className="primary-btn" type="button" onClick={() => openCreate()}>+ New project task</button>}
         </div>
       </header>
 
@@ -358,8 +385,19 @@ export default function ProjectTasksPage({
 
       <div className="project-view-toolbar">
         <div className="project-view-switcher" role="group" aria-label="Project view">
-          {["board", "list", "calendar"].map((option) => (
-            <button key={option} type="button" className={view === option ? "active" : ""} aria-pressed={view === option} onClick={() => setView(option)}>{option[0].toUpperCase() + option.slice(1)}</button>
+          {["board", "list"].map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={view === option ? "active" : ""}
+              aria-pressed={view === option}
+              onClick={() => {
+                setView(option);
+                setQuickCreateTarget(null);
+              }}
+            >
+              {option[0].toUpperCase() + option.slice(1)}
+            </button>
           ))}
         </div>
         {view === "list" && (
@@ -375,21 +413,45 @@ export default function ProjectTasksPage({
       {mutationError && <div className="inline-error" role="alert"><p>{mutationError}</p><button className="ghost-btn compact-btn" type="button" onClick={() => setMutationError("")}>Dismiss</button></div>}
       {loadError && activeTasks.length > 0 && <div className="inline-error" role="alert"><p>{loadError}</p><button className="ghost-btn compact-btn" type="button" onClick={loadWorkspace}>Try again</button></div>}
 
-      {loading ? (
-        <div className="project-task-state" role="status"><div className="state-spinner" /><h3>Loading project tasks...</h3><p>Your project workspace is being retrieved securely.</p></div>
-      ) : loadError && activeTasks.length === 0 ? (
+      {loadError && activeTasks.length === 0 ? (
         <div className="project-task-state error-state" role="alert"><h3>Project tasks unavailable</h3><p>{loadError}</p><button className="ghost-btn" type="button" onClick={loadWorkspace}>Try again</button></div>
-      ) : activeTasks.length === 0 ? (
-        <div className="project-task-state"><h3>No tasks in this project</h3><p>{canEditTasks ? "Create the first task to start planning this work." : "There are no tasks to review yet."}</p>{canEditTasks && <button className="primary-btn" type="button" onClick={() => openCreate()}>Create project task</button>}</div>
       ) : view === "board" ? (
-        <ProjectBoard columns={columns} tasks={activeTasks} onMoveTasks={handleMoveTasks} onEditTask={openEditor} onCreateTask={openCreate} readOnly={!canEditTasks} />
-      ) : view === "calendar" ? (
-        <CalendarPage tasks={activeTasks} tasksLoading={false} tasksError="" onRetry={loadWorkspace} onUpdateTask={canEditTasks ? handleUpdate : undefined} onQuickUpdateTask={canEditTasks ? handleQuickUpdate : undefined} quickTaskPendingIds={pendingIds} onDeleteTask={canEditTasks ? handleDelete : undefined} onArchiveTask={canEditTasks ? handleArchive : undefined} onCreateTask={canEditTasks ? (schedule) => openCreate(null, typeof schedule === "string" ? { dueDate: schedule } : schedule) : undefined} lists={lists} projects={projects} projectsLoading={projectsLoading} projectsError={projectsError} onRetryProjects={onRetryProjects} browserNotificationsEnabled={browserNotificationsEnabled} formatSettings={formatSettings} weekStartsOn={weekStartsOn} />
-      ) : filteredTasks.length === 0 ? (
-        <div className="project-task-state"><h3>No matching project tasks</h3><p>Clear the search or choose another status.</p><button className="ghost-btn" type="button" onClick={() => { setSearchTerm(""); setStatusFilter("all"); }}>Clear filters</button></div>
+        <ProjectBoard
+          columns={columns}
+          tasks={activeTasks}
+          onMoveTasks={handleMoveTasks}
+          onEditTask={openEditor}
+          onStartQuickCreate={startQuickCreate}
+          onQuickCreate={handleQuickCreate}
+          onCancelQuickCreate={cancelQuickCreate}
+          onAddTaskDetails={openQuickCreateDetails}
+          quickCreateColumnId={quickCreateTarget}
+          readOnly={!canEditTasks}
+        />
       ) : (
         <div className="tasks-page-list project-task-list">
+          {quickCreateTarget === "list" && canEditTasks && (
+            <ProjectTaskQuickCreate
+              contextLabel={project.name}
+              onCreate={(title) => handleQuickCreate(title)}
+              onCancel={cancelQuickCreate}
+              onAddDetails={(title) => openQuickCreateDetails(null, title)}
+            />
+          )}
           {filteredTasks.map((task) => <TaskRow key={task.id} task={task} lists={lists} projects={projects} completionBusy={pendingIds.has(task.id)} selected={selectedTaskId === task.id} onToggleCompletion={canEditTasks ? handleCompletion : undefined} onEdit={openEditor} onArchive={canEditTasks ? () => handleArchive(task.id) : undefined} formatSettings={formatSettings} />)}
+          {filteredTasks.length === 0 && quickCreateTarget !== "list" && (
+            <div className="project-task-list-empty">
+              <p>{activeTasks.length === 0 ? "No tasks in this project yet." : "No tasks match these filters."}</p>
+              {canEditTasks ? (
+                <button className="ghost-btn compact-btn" type="button" onClick={() => startQuickCreate()}>+ Add task</button>
+              ) : activeTasks.length > 0 ? (
+                <button className="ghost-btn compact-btn" type="button" onClick={() => { setSearchTerm(""); setStatusFilter("all"); setAssigneeFilter("all"); }}>Clear filters</button>
+              ) : null}
+            </div>
+          )}
+          {canEditTasks && quickCreateTarget !== "list" && filteredTasks.length > 0 && (
+            <button className="project-list-add-task" type="button" onClick={() => startQuickCreate()}>+ Add task</button>
+          )}
         </div>
       )}
 
@@ -402,7 +464,9 @@ export default function ProjectTasksPage({
         </div>
       )}
 
-      {selectedTask && <TaskEditModal key={selectedTask.id} task={selectedTask} lists={lists} projects={editableProjects} projectsLoading={projectsLoading} projectsError={projectsError} onRetryProjects={onRetryProjects} browserNotificationsEnabled={browserNotificationsEnabled} onUpdateTask={canEditTasks ? handleUpdate : undefined} onDeleteTask={canEditTasks ? handleDelete : undefined} onArchiveTask={canEditTasks ? handleArchive : undefined} onClose={() => setSelectedTaskId(null)} returnFocusElement={editTriggerRef.current} userId={userId} projectId={projectId} projectMembers={members} canAssign={canEditTasks} onAssigneeChange={canEditTasks ? handleAssigneeChange : undefined} readOnly={!canEditTasks} />}
+      </div>
+
+      {selectedTask && <TaskEditModal key={selectedTask.id} task={selectedTask} lists={lists} projects={editableProjects} projectsLoading={projectsLoading} projectsError={projectsError} onRetryProjects={onRetryProjects} browserNotificationsEnabled={browserNotificationsEnabled} onUpdateTask={canEditTasks ? handleUpdate : undefined} onDeleteTask={canEditTasks ? handleDelete : undefined} onArchiveTask={canEditTasks ? handleArchive : undefined} onClose={() => setSelectedTaskId(null)} returnFocusElement={editTriggerRef.current} userId={userId} projectId={projectId} projectMembers={members} canAssign={canEditTasks} onAssigneeChange={canEditTasks ? handleAssigneeChange : undefined} readOnly={!canEditTasks} presentation="panel" />}
       {showMembers && <ProjectMembersModal userId={userId} project={project} onClose={() => setShowMembers(false)} returnFocusElement={membersButtonRef.current} />}
     </section>
   );

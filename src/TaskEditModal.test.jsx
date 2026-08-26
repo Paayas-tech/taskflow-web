@@ -76,9 +76,9 @@ vi.mock("./TaskForm", () => ({
     </form>
   ),
 }));
-vi.mock("./ActivityFeed", () => ({ default: () => null }));
+vi.mock("./ActivityFeed", () => ({ default: () => <section aria-label="Task history view">Task history content</section> }));
 vi.mock("./TaskAssigneeSelector", () => ({ default: () => null }));
-vi.mock("./TaskComments", () => ({ default: () => null }));
+vi.mock("./TaskComments", () => ({ default: () => <section aria-label="Task comments view">Task comments content</section> }));
 
 import TaskEditModal from "./TaskEditModal";
 
@@ -307,11 +307,75 @@ describe("TaskEditModal lifecycle integration", () => {
     expect(dialog.props["aria-modal"]).toBe("true");
     expect(textContent(title)).toBe("Edit Task");
     expect(textContent(description)).toContain("Update this task");
-    expect(textContent(document.activeElement?.node)).toBe("Archive task");
+    expect(textContent(document.activeElement?.node)).toBe("Archive");
     expect(document.body.style.overflow).toBe("hidden");
 
     runner.unmount();
     expect(document.body.style.overflow).toBe("clip");
+  });
+
+  it("renders as a non-modal contextual panel when requested", () => {
+    const runner = createRunner(baseProps({ presentation: "panel" }));
+    const panel = findElement(runner.output, (node) => node.props?.role === "complementary");
+    const backdrop = findElement(
+      runner.output,
+      (node) => node.props?.className?.includes("edit-task-modal-backdrop")
+    );
+    const title = findElement(
+      runner.output,
+      (node) => node.props?.id === panel.props["aria-labelledby"]
+    );
+
+    expect(panel.props.className).toContain("task-details-panel");
+    expect(panel.props["aria-modal"]).toBeUndefined();
+    expect(backdrop.props.className).toContain("task-panel-backdrop");
+    expect(textContent(title)).toBe("Original task");
+    expect(document.body.style.overflow).toBe("");
+  });
+
+  it("keeps panel lifecycle actions compact and accessibly labelled", () => {
+    const runner = createRunner(baseProps({ presentation: "panel" }));
+    const archive = findElement(runner.output, (node) => node.props?.title === "Archive");
+    const remove = findElement(runner.output, (node) => node.props?.title === "Delete");
+    const close = findElement(runner.output, (node) => node.props?.title === "Close");
+
+    expect(archive.props["aria-label"]).toBe("Archive task");
+    expect(remove.props["aria-label"]).toBe("Delete task");
+    expect(close.props["aria-label"]).toBe("Close Edit Task dialog");
+    expect(findElement(archive, (node) => node.type === "svg")).toBeTruthy();
+    expect(findElement(remove, (node) => node.type === "svg")).toBeTruthy();
+    expect(findElement(close, (node) => node.type === "svg")).toBeTruthy();
+  });
+
+  it("keeps details, comments, and history on separate task pages", () => {
+    const runner = createRunner(baseProps({
+      userId: "user-1",
+      projectId: "project-1",
+      projectMembers: [],
+    }));
+
+    expect(textContent(runner.output)).toContain("Edit Task");
+    expect(textContent(runner.output)).not.toContain("Task comments content");
+    expect(textContent(runner.output)).not.toContain("Task history content");
+
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "Comments"
+    ).props.onClick();
+    runner.render();
+
+    expect(textContent(runner.output)).toContain("Task comments content");
+    expect(textContent(runner.output)).not.toContain("Task history content");
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Task form")).toBeUndefined();
+
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "History"
+    ).props.onClick();
+    runner.render();
+
+    expect(textContent(runner.output)).toContain("Task history content");
+    expect(textContent(runner.output)).not.toContain("Task comments content");
   });
 
   it("preserves Escape, backdrop, content, explicit close, and cleanup focus behavior", () => {
@@ -398,7 +462,7 @@ describe("TaskEditModal lifecycle integration", () => {
   it("preserves archive action behavior", async () => {
     const props = baseProps();
     const runner = createRunner(props);
-    const archive = findElement(runner.output, (node) => textContent(node) === "Archive task");
+    const archive = findElement(runner.output, (node) => textContent(node) === "Archive");
     await archive.props.onClick();
     expect(props.onArchiveTask).toHaveBeenCalledWith("task-1");
     expect(props.onClose).toHaveBeenCalledTimes(1);
@@ -407,7 +471,7 @@ describe("TaskEditModal lifecycle integration", () => {
   it("keeps the nested delete alert dialog as the active focus boundary", () => {
     const props = baseProps();
     const runner = createRunner(props);
-    const deleteButton = findElement(runner.output, (node) => textContent(node) === "Delete task");
+    const deleteButton = findElement(runner.output, (node) => node.props?.["aria-label"] === "Delete task");
     deleteButton.props.onClick();
     runner.render();
     const alertDialog = findElement(runner.output, (node) => node.props?.role === "alertdialog");

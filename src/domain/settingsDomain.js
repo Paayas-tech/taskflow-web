@@ -34,7 +34,6 @@ export const TASKFLOW_BACKGROUNDS = Object.freeze([
 export const SETTINGS_BACKGROUND_IDS = TASKFLOW_BACKGROUNDS.map(({ id }) => id);
 export const SETTINGS_DEFAULT_VIEWS = [
   "dashboard",
-  "today",
   "tasks",
   "projects",
   "calendar",
@@ -101,7 +100,7 @@ const isTimeOnly = (value) => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value ||
 
 const allowedViewPaths = new Set([
   "/",
-  "/today",
+  "/inbox",
   "/tasks",
   "/projects",
   "/calendar",
@@ -297,7 +296,7 @@ export const resolveThemeMode = (mode, systemPrefersDark = false) =>
 export const defaultViewPath = (defaultView, lastViewedPath = "/") => {
   const paths = {
     dashboard: "/",
-    today: "/today",
+    today: "/",
     tasks: "/tasks",
     projects: "/projects",
     calendar: "/calendar",

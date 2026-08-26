@@ -62,10 +62,10 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
     return result;
   }, {});
   return (
-    <section className="settings-section" aria-labelledby={`activity-${taskId || projectId}`}>
+    <section className="settings-section task-history-panel" aria-labelledby={`activity-${taskId || projectId}`}>
       <div className="section-heading-row"><div><p className="card-label">History</p><h3 id={`activity-${taskId || projectId}`}>Recent activity</h3></div><button className="ghost-btn compact-btn" type="button" onClick={loadActivity}>Refresh</button></div>
       {liveNotice && <p className="form-hint" role="status">{liveNotice}</p>}
-      {loading ? <p role="status">Loading activity...</p> : error ? <p className="form-error" role="alert">{error}</p> : visible.length === 0 ? <p className="form-hint">No activity yet.</p> : <div className="settings-list">{Object.entries(groups).map(([label, items]) => <section key={label}><h4>{label}</h4>{items.map((item) => <ActivityRow key={item.id} activity={item} />)}</section>)}</div>}
+      {loading ? <div className="task-collaboration-state" role="status"><span className="state-spinner" /><p>Loading activity…</p></div> : error ? <p className="form-error" role="alert">{error}</p> : visible.length === 0 ? <div className="task-collaboration-empty"><span aria-hidden="true">↻</span><strong>No activity yet</strong><p>Task updates will be recorded here.</p></div> : <div className="settings-list task-history-list">{Object.entries(groups).map(([label, items]) => <section key={label}><h4>{label}</h4>{items.map((item) => <ActivityRow key={item.id} activity={item} />)}</section>)}</div>}
     </section>
   );
 }

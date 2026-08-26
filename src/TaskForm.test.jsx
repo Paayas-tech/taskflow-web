@@ -172,6 +172,17 @@ afterEach(() => {
 });
 
 describe("TaskForm reminder coordination", () => {
+  it("uses one due date without exposing an unnecessary end-date control", () => {
+    const runner = createRunner(baseProps({
+      values: baseValues({ dueDate: "2026-08-26", endDate: "2026-08-28" }),
+    }));
+    runner.render();
+
+    expect(byName(runner.output, "dueDate")).toBeDefined();
+    expect(byName(runner.output, "endDate")).toBeUndefined();
+    expect(textContent(runner.output)).not.toContain("End date");
+  });
+
   it("offers authorized project members as assignees without exposing IDs", () => {
     const onChange = vi.fn();
     const memberId = "414b9bdb-dad5-467e-b361-8d3cb82eeac8";

@@ -21,10 +21,19 @@ export default function ProjectBoard({
   tasks,
   onMoveTasks,
   onEditTask,
-  onCreateTask,
+  onStartQuickCreate,
+  onQuickCreate,
+  onCancelQuickCreate,
+  onAddTaskDetails,
+  quickCreateColumnId,
+  collapsible = false,
+  initiallyCollapsedColumnIds = [],
   readOnly = false,
 }) {
   const [activeTaskId, setActiveTaskId] = useState(null);
+  const [collapsedColumnIds, setCollapsedColumnIds] = useState(
+    () => new Set(initiallyCollapsedColumnIds)
+  );
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -34,6 +43,15 @@ export default function ProjectBoard({
     [columns, tasks]
   );
   const activeTask = tasks.find((task) => task.id === activeTaskId);
+
+  const toggleColumn = (columnId) => {
+    setCollapsedColumnIds((current) => {
+      const next = new Set(current);
+      if (next.has(columnId)) next.delete(columnId);
+      else next.add(columnId);
+      return next;
+    });
+  };
 
   const handleDragEnd = ({ active, over }) => {
     if (readOnly) return;
@@ -67,7 +85,14 @@ export default function ProjectBoard({
             column={column}
             tasks={tasksByColumn.get(column.id) || []}
             onEdit={onEditTask}
-            onCreateTask={onCreateTask}
+            onStartQuickCreate={onStartQuickCreate}
+            onQuickCreate={onQuickCreate}
+            onCancelQuickCreate={onCancelQuickCreate}
+            onAddTaskDetails={onAddTaskDetails}
+            quickCreateActive={quickCreateColumnId === column.id}
+            collapsible={collapsible}
+            collapsed={collapsible && collapsedColumnIds.has(column.id)}
+            onToggleCollapse={() => toggleColumn(column.id)}
             readOnly={readOnly}
           />
         ))}

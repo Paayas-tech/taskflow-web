@@ -71,6 +71,10 @@ export const createTaskService = (
     async createTask(userId, taskData = {}) {
       const title = String(taskData.title || "").trim();
       if (!title) throw new Error("Task title cannot be empty.");
+      const description = String(taskData.description || "");
+      if (description.length > 1000) {
+        throw new Error("Task descriptions must be 1,000 characters or fewer.");
+      }
 
       const status = normalizeTaskStatus(
         taskData.status,
@@ -94,7 +98,7 @@ export const createTaskService = (
 
       const row = await repository.createPersonalTask(userId, {
         title,
-        description: taskData.description || "",
+        description,
         notes: taskData.notes || "",
         status: statusToDatabase(status),
         priority: normalizeTaskPriority(taskData.priority),
@@ -131,6 +135,13 @@ export const createTaskService = (
     async updateTask(userId, taskId, data = {}) {
       const currentTask = await getNormalizedTask(userId, taskId);
       const updatedData = { ...data };
+
+      if (hasOwn(updatedData, "description")) {
+        updatedData.description = String(updatedData.description || "");
+        if (updatedData.description.length > 1000) {
+          throw new Error("Task descriptions must be 1,000 characters or fewer.");
+        }
+      }
 
       if (hasOwn(updatedData, "priority")) {
         updatedData.priority = normalizeTaskPriority(updatedData.priority);

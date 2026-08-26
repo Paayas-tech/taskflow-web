@@ -10,6 +10,7 @@ export default function CommentRow({ comment, currentUserId, profilesById, menti
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const ownComment = comment.userId === currentUserId;
+  const authorName = safeDisplayName(comment);
 
   const save = async () => {
     if (busy) return;
@@ -52,10 +53,11 @@ export default function CommentRow({ comment, currentUserId, profilesById, menti
   };
 
   return (
-    <article className="settings-card" aria-busy={busy}>
+    <article className="settings-card task-comment-row" aria-busy={busy}>
+      <span className="task-collaboration-avatar" aria-hidden="true">{authorName.slice(0, 1).toUpperCase()}</span>
       <div className="section-heading-row">
         <div>
-          <strong>{safeDisplayName(comment)}</strong>
+          <strong>{authorName}</strong>
           <p className="form-hint">
             {comment.createdAt ? new Date(comment.createdAt).toLocaleString() : "Just now"}
             {comment.editedAt ? " · edited" : ""}

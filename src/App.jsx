@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import ArchivedTasksPage from "./ArchivedTasksPage";
-import CalendarPage from "./CalendarPage";
 import ConfigurationErrorScreen from "./ConfigurationErrorScreen";
 import Dashboard from "./Dashboard";
+import DashboardInviteModal from "./DashboardInviteModal";
+import InboxPage from "./InboxPage";
 import Login from "./Login";
 import NotificationsPanel from "./NotificationsPanel";
 import ProfileCompletionPrompt from "./ProfileCompletionPrompt";
@@ -12,8 +13,8 @@ import ProjectTasksPage from "./ProjectTasksPage";
 import Recover from "./Recover";
 import SettingsPage from "./SettingsPage";
 import TaskForm from "./TaskForm";
+import TaskEditModal from "./TaskEditModal";
 import TasksPage from "./TasksPage";
-import TodayPage from "./TodayPage";
 import {
   onAuthStateChange,
   signOut,
@@ -57,6 +58,7 @@ import {
   filterActiveTasks,
   filterArchivedTasks,
 } from "./domain/archivedTasksDomain";
+import { isTaskComplete } from "./domain/taskDomain";
 import { isSupabaseConfigured } from "./infrastructure/supabase/client";
 import {
   isNavigationItemActive,
@@ -76,6 +78,12 @@ const navIcons = {
       <rect x="14" y="3" width="7" height="7" rx="1.5" />
       <rect x="3" y="14" width="7" height="7" rx="1.5" />
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </>
+  ),
+  inbox: (
+    <>
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+      <path d="M10 21h4" />
     </>
   ),
   today: (
@@ -193,6 +201,14 @@ function App() {
   const [projectInvitationsLoading, setProjectInvitationsLoading] = useState(false);
   const [projectInvitationsError, setProjectInvitationsError] = useState("");
   const [showTaskForm, setShowTaskForm] = useState(false);
+  const [dashboardTaskView, setDashboardTaskView] = useState("upcoming");
+  const [dashboardQuickCreateOpen, setDashboardQuickCreateOpen] = useState(false);
+  const [dashboardTaskOpenRequest, setDashboardTaskOpenRequest] = useState(null);
+  const [taskFilterRequest, setTaskFilterRequest] = useState(null);
+  const [dashboardSearchQuery, setDashboardSearchQuery] = useState("");
+  const [dashboardChartPeriod, setDashboardChartPeriod] = useState("7-days");
+  const [dashboardSummaryPeriod, setDashboardSummaryPeriod] = useState("week");
+  const [dashboardInviteOpen, setDashboardInviteOpen] = useState(false);
   const [taskFormSaving, setTaskFormSaving] = useState(false);
   const [taskFormError, setTaskFormError] = useState("");
   const [taskForm, setTaskForm] = useState(emptyTaskForm);
@@ -1020,6 +1036,40 @@ function App() {
     setShowTaskForm(true);
   };
 
+  const handleDashboardQuickCreate = async (title, initialValues = {}) => {
+    const defaultListId = settings.taskDefaults.listId;
+    const validDefaultListId = lists.some((list) => list.id === defaultListId)
+      ? defaultListId
+      : null;
+    await createTask(user.uid, {
+      description: "",
+      notes: "",
+      status: "todo",
+      completed: false,
+      priority: "medium",
+      dueDate: "",
+      endDate: "",
+      startTime: "",
+      endTime: "",
+      reminder: false,
+      reminderAt: "",
+      listId: validDefaultListId,
+      projectId: null,
+      ...initialValues,
+      title,
+    });
+    await loadTasks();
+  };
+
+  const handleDashboardCreateStart = (title = "", showDetails = false) => {
+    if (showDetails) {
+      setDashboardQuickCreateOpen(false);
+      openTaskForm(title ? { title } : {});
+      return;
+    }
+    setDashboardQuickCreateOpen(true);
+  };
+
   const closeTaskForm = useCallback(() => {
     if (taskFormSaving) return;
 
@@ -1054,7 +1104,7 @@ function App() {
 
     if (
       user &&
-      ["/", "/today", "/tasks", "/projects", "/calendar"].includes(path)
+      ["/", "/inbox", "/tasks", "/projects", "/calendar"].includes(path)
     ) {
       const nextSettings = updateSettingsLastViewed(settingsRef.current, path);
       settingsRef.current = nextSettings;
@@ -1104,6 +1154,9 @@ function App() {
     ["owner", "editor"].includes(project.viewerRole)
   );
   const currentView = routeViewFromPath(currentPath);
+  const dashboardSelectedTask = activeTasks.find(
+    (task) => task.id === dashboardTaskOpenRequest?.id
+  );
   const { title: pageTitle, subtitle: pageSubtitle } = pageMetadata({
     currentView,
     taskCount: tasks.length,
@@ -1121,8 +1174,27 @@ function App() {
           <div className="brand">TaskFlow</div>
         </div>
 
+        <div className="sidebar-profile">
+          <div className="sidebar-avatar" aria-hidden="true">
+            {(settings.profile.displayName || user.email)?.[0]?.toUpperCase() || "U"}
+          </div>
+          <div className="sidebar-account-copy">
+            <strong>{settings.profile.displayName || user.email}</strong>
+            <span>Signed in</span>
+          </div>
+          <button
+            className={`sidebar-settings${currentView === "settings" || currentView === "archived" ? " active" : ""}`}
+            type="button"
+            onClick={() => navigate("/settings")}
+            aria-label="Settings"
+            title="Settings"
+          >
+            <NavigationIcon name="settings" />
+          </button>
+        </div>
+
         <nav className="nav-list" aria-label="Primary navigation">
-          {navigationItems.map((item) => {
+          {navigationItems.filter((item) => item.label !== "Settings").map((item) => {
             const isActive = isNavigationItemActive(
               item.path,
               currentPath,
@@ -1157,13 +1229,6 @@ function App() {
         </nav>
 
         <div className="sidebar-account">
-          <div className="sidebar-avatar" aria-hidden="true">
-            {(settings.profile.displayName || user.email)?.[0]?.toUpperCase() || "U"}
-          </div>
-          <div className="sidebar-account-copy">
-            <strong>{settings.profile.displayName || user.email}</strong>
-            <span>Signed in</span>
-          </div>
           <button
             className="sidebar-logout"
             type="button"
@@ -1189,29 +1254,13 @@ function App() {
       </aside>
 
       <main className={`main-content view-${currentView}`}>
-        <header className="topbar">
+        {currentView !== "project" && currentView !== "dashboard" && currentView !== "tasks" && <header className="topbar">
           <div className="topbar-title">
             <h1>{pageTitle}</h1>
             <p>{pageSubtitle}</p>
           </div>
 
-          <NotificationsPanel userId={user.uid} onNavigate={navigate} />
-
-          {currentView === "projects" ? (
-            <div className="topbar-actions">
-              <button
-                ref={newProjectButtonRef}
-                className="primary-btn"
-                type="button"
-                onClick={() => setProjectCreateRequest((request) => request + 1)}
-                aria-haspopup="dialog"
-                aria-controls="create-project-dialog"
-              >
-                + New Project
-              </button>
-            </div>
-          ) : currentView !== "settings" && currentView !== "archived" &&
-            !(currentView === "project" && selectedProject?.viewerRole === "viewer") && (
+          {currentView !== "projects" && currentView !== "tasks" && currentView !== "inbox" && currentView !== "settings" && currentView !== "archived" && (
             <div className="topbar-actions">
               <button
                 ref={newTaskButtonRef}
@@ -1219,9 +1268,7 @@ function App() {
                 type="button"
                 onClick={() =>
                   openTaskForm(
-                    currentView === "project" && selectedProject
-                      ? { projectId: selectedProject.id }
-                      : {}
+                    {}
                   )
                 }
                 disabled={taskFormSaving}
@@ -1233,7 +1280,7 @@ function App() {
               </button>
             </div>
           )}
-        </header>
+        </header>}
 
         {!settingsLoading &&
           settingsLoadedUserId === user.uid &&
@@ -1331,6 +1378,11 @@ function App() {
             quickTaskPendingIds={quickTaskPendingIds}
             onDeleteTask={handleDeleteTask}
             onArchiveTask={handleArchiveTask}
+            onInlineCreateTask={handleDashboardQuickCreate}
+            onCreateScheduledTask={(schedule) => openTaskForm(schedule)}
+            createTaskTriggerRef={newTaskButtonRef}
+            openTaskRequest={dashboardTaskOpenRequest}
+            filterRequest={taskFilterRequest}
             lists={lists}
             listsLoading={listsLoading}
             listsError={listsError}
@@ -1339,61 +1391,7 @@ function App() {
             onRenameList={handleRenameList}
             onDeleteList={handleDeleteList}
             formatSettings={settings.time}
-            projects={projects}
-            projectsLoading={projectsLoading}
-            projectsError={projectsError}
-            onRetryProjects={loadProjects}
-            browserNotificationsEnabled={
-              settings.reminder.enableBrowserNotifications
-            }
-          />
-        </div>
-
-        <div className="route-content" hidden={currentView !== "today"}>
-          <TodayPage
-            tasks={activeTasks}
-            tasksLoading={tasksLoading}
-            tasksError={tasksError}
-            onRetry={loadTasks}
-            onUpdateTask={handleUpdateTask}
-            onQuickUpdateTask={handleQuickUpdateTask}
-            quickTaskPendingIds={quickTaskPendingIds}
-            onDeleteTask={handleDeleteTask}
-            onArchiveTask={handleArchiveTask}
-            lists={lists}
-            formatSettings={settings.time}
-            myDaySettings={settings.myDay}
-            projects={editableProjects}
-            projectsLoading={projectsLoading}
-            projectsError={projectsError}
-            onRetryProjects={loadProjects}
-            browserNotificationsEnabled={
-              settings.reminder.enableBrowserNotifications
-            }
-          />
-        </div>
-
-        <div className="route-content" hidden={currentView !== "calendar"}>
-          <CalendarPage
-            tasks={activeTasks}
-            tasksLoading={tasksLoading}
-            tasksError={tasksError}
-            onRetry={loadTasks}
-            onUpdateTask={handleUpdateTask}
-            onQuickUpdateTask={handleQuickUpdateTask}
-            quickTaskPendingIds={quickTaskPendingIds}
-            onDeleteTask={handleDeleteTask}
-            onArchiveTask={handleArchiveTask}
-            onCreateTask={(schedule) =>
-              openTaskForm(
-                typeof schedule === "string"
-                  ? { dueDate: schedule }
-                  : schedule
-              )
-            }
-            formatSettings={settings.time}
             weekStartsOn={weekStartIndex(settings.time.weekStartsOn)}
-            lists={lists}
             projects={projects}
             projectsLoading={projectsLoading}
             projectsError={projectsError}
@@ -1401,6 +1399,8 @@ function App() {
             browserNotificationsEnabled={
               settings.reminder.enableBrowserNotifications
             }
+            initialWorkspaceView={currentPath === "/calendar" ? "calendar" : "list"}
+            onWorkspaceViewChange={(view) => navigate(view === "calendar" ? "/calendar" : "/tasks")}
           />
         </div>
 
@@ -1439,7 +1439,6 @@ function App() {
             onRetryProjects={loadProjects}
             lists={lists}
             formatSettings={settings.time}
-            weekStartsOn={weekStartIndex(settings.time.weekStartsOn)}
             refreshToken={projectTaskRefreshToken}
             onBack={() => navigate("/projects")}
             onCreateTask={() =>
@@ -1453,6 +1452,7 @@ function App() {
 
         <div className="route-content" hidden={currentView !== "dashboard"}>
           <Dashboard
+            isActive={currentView === "dashboard"}
             tasks={activeTasks}
             tasksLoading={tasksLoading}
             tasksError={tasksError}
@@ -1469,8 +1469,80 @@ function App() {
             onOpenProject={(projectId) =>
               navigate(projectPath(projectId))
             }
-            onOpenInvitations={() => navigate("/projects")}
+            onOpenInvitations={() => setDashboardInviteOpen(true)}
+            displayName={
+              settings.profile.displayName ||
+              user.user_metadata?.display_name ||
+              user.user_metadata?.full_name ||
+              "there"
+            }
+            taskView={dashboardTaskView}
+            onTaskViewChange={setDashboardTaskView}
+            quickCreateOpen={dashboardQuickCreateOpen}
+            onStartQuickCreate={handleDashboardCreateStart}
+            onCreateTask={() => openTaskForm({})}
+            createTaskTriggerRef={newTaskButtonRef}
+            onQuickCreate={handleDashboardQuickCreate}
+            onCancelQuickCreate={() => setDashboardQuickCreateOpen(false)}
+            onOpenTask={(task) => {
+              setDashboardTaskOpenRequest({ id: task.id, request: Date.now() });
+            }}
+            onFilterTasks={(filters) => {
+              setDashboardTaskOpenRequest(null);
+              setTaskFilterRequest({ ...filters, request: Date.now() });
+              navigate("/tasks");
+            }}
+            onViewAllTasks={() => navigate("/tasks")}
+            onViewAllProjects={() => navigate("/projects")}
+            notificationControl={<NotificationsPanel userId={user.uid} onNavigate={navigate} />}
+            searchQuery={dashboardSearchQuery}
+            onSearchChange={setDashboardSearchQuery}
+            chartPeriod={dashboardChartPeriod}
+            onChartPeriodChange={setDashboardChartPeriod}
+            summaryPeriod={dashboardSummaryPeriod}
+            onSummaryPeriodChange={setDashboardSummaryPeriod}
+            onToggleTask={(task) => {
+              const completing = !isTaskComplete(task);
+              return handleQuickUpdateTask(task.id, {
+                completed: completing,
+                status: completing ? "completed" : "todo",
+                completedAt: completing ? new Date().toISOString() : null,
+              });
+            }}
+            quickTaskPendingIds={quickTaskPendingIds}
+            projects={projects}
+            projectsLoading={projectsLoading}
+            projectsError={projectsError}
+            onRetryProjects={loadProjects}
+            onCreateProject={() => {
+              setProjectCreateRequest((request) => request + 1);
+              navigate("/projects");
+            }}
           />
+          {currentView === "dashboard" && dashboardSelectedTask && (
+            <TaskEditModal
+              key={dashboardSelectedTask.id}
+              task={dashboardSelectedTask}
+              lists={lists}
+              projects={projects}
+              projectsLoading={projectsLoading}
+              projectsError={projectsError}
+              onRetryProjects={loadProjects}
+              browserNotificationsEnabled={settings.reminder.enableBrowserNotifications}
+              onUpdateTask={handleUpdateTask}
+              onDeleteTask={handleDeleteTask}
+              onArchiveTask={handleArchiveTask}
+              onClose={() => setDashboardTaskOpenRequest(null)}
+              presentation="panel"
+            />
+          )}
+          {currentView === "dashboard" && dashboardInviteOpen && (
+            <DashboardInviteModal userId={user.uid} projects={projects} onClose={() => setDashboardInviteOpen(false)} />
+          )}
+        </div>
+
+        <div className="route-content" hidden={currentView !== "inbox"}>
+          <InboxPage userId={user.uid} onNavigate={navigate} />
         </div>
 
         <div className="route-content" hidden={currentView !== "settings"}>

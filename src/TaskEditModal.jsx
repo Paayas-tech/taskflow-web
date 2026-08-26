@@ -30,6 +30,7 @@ export default function TaskEditModal({
   canAssign = false,
   onAssigneeChange,
   readOnly = false,
+  presentation = "modal",
 }) {
   const [values, setValues] = useState(() =>
     taskFormValuesFromTask(task, lists)
@@ -44,6 +45,7 @@ export default function TaskEditModal({
   const [assigneeId, setAssigneeId] = useState(task.assigneeId || null);
   const [assigneeBusy, setAssigneeBusy] = useState(false);
   const [assigneeError, setAssigneeError] = useState("");
+  const [activePage, setActivePage] = useState("details");
   const dialogRef = useRef(null);
   const confirmationDialogRef = useRef(null);
   const deleteButtonRef = useRef(null);
@@ -57,11 +59,18 @@ export default function TaskEditModal({
   const deleteTitleId = `${dialogId}-delete-title`;
   const deleteDescriptionId = `${dialogId}-delete-description`;
   const archived = isArchived(task);
+  const isPanel = presentation === "panel";
   const busy = saving || deleting || assigneeBusy || Boolean(lifecycleAction);
+  const pageTitle = activePage === "comments"
+    ? "Comments"
+    : activePage === "history"
+      ? "History"
+      : isPanel ? task.title : "Edit Task";
 
   busyRef.current = busy;
 
   useEffect(() => {
+    if (isPanel) return undefined;
     const previousScrollX = window.scrollX;
     const previousScrollY = window.scrollY;
     const focusFrame = window.requestAnimationFrame(() => {
@@ -79,7 +88,7 @@ export default function TaskEditModal({
         returnFocusElement?.focus({ preventScroll: true });
       });
     };
-  }, [returnFocusElement]);
+  }, [isPanel, returnFocusElement]);
 
   useEffect(() => {
     if (!confirmingDelete) return undefined;
@@ -129,7 +138,7 @@ export default function TaskEditModal({
   }, [confirmingDelete]);
 
   const { onBackdropMouseDown } = useModalLifecycle({
-    isOpen: true,
+    isOpen: !isPanel,
     modalRef: dialogRef,
     onClose,
     isDismissDisabled: busy,
@@ -259,79 +268,150 @@ export default function TaskEditModal({
   return (
     <>
       <div
-        className="task-modal-backdrop edit-task-modal-backdrop"
+        className={`task-modal-backdrop edit-task-modal-backdrop${isPanel ? " task-panel-backdrop" : ""}`}
         onMouseDown={onBackdropMouseDown}
       >
         <section
           ref={dialogRef}
-          className="task-modal edit-task-modal"
-          role="dialog"
-          aria-modal="true"
+          className={`task-modal edit-task-modal${isPanel ? " task-details-panel" : ""}`}
+          role={isPanel ? "complementary" : "dialog"}
+          aria-modal={isPanel ? undefined : "true"}
           aria-labelledby={titleId}
           aria-describedby={descriptionId}
           aria-busy={busy}
         >
           <div className="task-modal-header edit-task-modal-header">
             <div>
-              <p className="card-label">Task details</p>
-              <h2 id={titleId}>Edit Task</h2>
+              <p className="card-label">{isPanel ? "Task details" : task.title}</p>
+              <h2 id={titleId}>{pageTitle}</h2>
               <p id={descriptionId}>
-                Update this task without leaving your current workspace.
+                {activePage === "comments"
+                  ? "Discuss this task with project members."
+                  : activePage === "history"
+                    ? "Review task-specific changes and activity."
+                    : "Update this task without leaving your current workspace."}
               </p>
             </div>
 
             <div className="edit-task-modal-actions">
-              {(archived ? onRestoreTask : onArchiveTask) && (
+              {isPanel && activePage === "details" && !readOnly && (
+                <label className="task-panel-complete">
+                  <input
+                    type="checkbox"
+                    checked={values.status === "completed"}
+                    onChange={(event) => setValues((previous) => ({
+                      ...previous,
+                      status: event.target.checked ? "completed" : "todo",
+                    }))}
+                    disabled={busy}
+                  />
+                  <span>{values.status === "completed" ? "Completed" : "Mark complete"}</span>
+                </label>
+              )}
+              {activePage === "details" && (archived ? onRestoreTask : onArchiveTask) && (
                 <button
-                  className={archived ? "secondary-btn" : "ghost-btn"}
+                  className={`${archived ? "secondary-btn" : "ghost-btn"}${isPanel ? " task-panel-icon-btn" : ""}`}
                   type="button"
                   onClick={handleLifecycleAction}
                   disabled={busy}
+                  aria-label={archived ? "Restore task" : "Archive task"}
+                  title={archived ? "Restore" : "Archive"}
                 >
-                  {lifecycleAction
+                  {isPanel && !lifecycleAction ? (
+                    archived
+                      ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16v11H4zM3 4h18v4H3zM12 11v5m0-5-2 2m2-2 2 2" /></svg>
+                      : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16v11H4zM3 4h18v4H3zM9 12h6" /></svg>
+                  ) : lifecycleAction
                     ? archived
                       ? "Restoring..."
                       : "Archiving..."
                     : archived
-                      ? "Restore task"
-                      : "Archive task"}
+                      ? "Restore"
+                      : "Archive"}
                 </button>
               )}
-              {onDeleteTask && (
+              {activePage === "details" && onDeleteTask && (
                 <button
                   ref={deleteButtonRef}
-                  className="danger-btn"
+                  className={`danger-btn${isPanel ? " task-panel-icon-btn" : ""}`}
                   type="button"
                   onClick={requestDelete}
                   disabled={busy}
+                  aria-label={archived ? "Delete task permanently" : "Delete task"}
+                  title={archived ? "Delete permanently" : "Delete"}
                 >
-                  {archived ? "Delete permanently" : "Delete task"}
+                  {isPanel ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg> : archived ? "Delete permanently" : "Delete"}
                 </button>
               )}
               <button
-                className="ghost-btn compact-btn task-modal-close"
+                className={`ghost-btn compact-btn task-modal-close${isPanel ? " task-panel-icon-btn" : ""}`}
                 type="button"
                 onClick={closeModal}
                 disabled={busy}
                 aria-label="Close Edit Task dialog"
+                title="Close"
               >
-                Close
+                {isPanel ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg> : "Close"}
               </button>
             </div>
           </div>
 
-          {lifecycleError && (
+          {isPanel && !projectId && (
+            <nav className="task-modal-pages task-panel-pages" aria-label="Task details sections">
+              {["details", "subtasks", "activity"].map((page) => (
+                <button
+                  key={page}
+                  type="button"
+                  className={activePage === page ? "active" : ""}
+                  aria-current={activePage === page ? "page" : undefined}
+                  onClick={() => setActivePage(page)}
+                  disabled={busy}
+                >
+                  {page[0].toUpperCase() + page.slice(1)}
+                </button>
+              ))}
+            </nav>
+          )}
+
+          {userId && projectId && (
+            <nav className="task-modal-pages" aria-label="Task workspace">
+              {["details", "comments", "history"].map((page) => (
+                <button
+                  key={page}
+                  type="button"
+                  className={activePage === page ? "active" : ""}
+                  aria-current={activePage === page ? "page" : undefined}
+                  onClick={() => setActivePage(page)}
+                  disabled={busy}
+                >
+                  {page[0].toUpperCase() + page.slice(1)}
+                </button>
+              ))}
+            </nav>
+          )}
+
+          {activePage === "details" && lifecycleError && (
             <p className="form-error task-lifecycle-error" role="alert">
               {lifecycleError}
             </p>
           )}
 
-          {readOnly ? (
+          {userId && projectId && activePage === "details" && (
+            <TaskAssigneeSelector
+              assigneeId={assigneeId}
+              members={projectMembers}
+              disabled={!canAssign || !onAssigneeChange}
+              busy={assigneeBusy}
+              error={assigneeError}
+              onChange={handleAssigneeChange}
+            />
+          )}
+
+          {activePage === "details" && (readOnly ? (
             <section className="settings-section" aria-label="Read-only task details">
               <p className="form-hint">You have view-only access to this task.</p>
               <h3>{task.title}</h3>
               {task.description && <p>{task.description}</p>}
-              {task.notes && <p><strong>Notes:</strong> {task.notes}</p>}
               <p className="form-hint">Status: {task.status} · Priority: {task.priority}{task.dueDate ? ` · Due ${task.dueDate}` : ""}</p>
             </section>
           ) : (
@@ -351,30 +431,42 @@ export default function TaskEditModal({
               onRetryProjects={onRetryProjects}
               browserNotificationsEnabled={browserNotificationsEnabled}
             />
-          )}
+          ))}
 
-          {userId && projectId && (
-            <>
-              <TaskAssigneeSelector
-                assigneeId={assigneeId}
-                members={projectMembers}
-                disabled={!canAssign || !onAssigneeChange}
-                busy={assigneeBusy}
-                error={assigneeError}
-                onChange={handleAssigneeChange}
-              />
+          {userId && projectId && activePage === "comments" && (
+            <div className="task-modal-page task-modal-comments-page">
               <TaskComments
                 userId={userId}
                 taskId={task.id}
                 members={projectMembers}
               />
+            </div>
+          )}
+
+          {userId && projectId && activePage === "history" && (
+            <div className="task-modal-page task-modal-history-page">
               <ActivityFeed
                 userId={userId}
                 projectId={projectId}
                 taskId={task.id}
-                compact
               />
-            </>
+            </div>
+          )}
+
+          {isPanel && !projectId && activePage === "subtasks" && (
+            <section className="task-panel-empty-state" aria-labelledby={`${dialogId}-subtasks-title`}>
+              <span aria-hidden="true">✓</span>
+              <h3 id={`${dialogId}-subtasks-title`}>No subtasks available</h3>
+              <p>Personal tasks do not currently support subtasks.</p>
+            </section>
+          )}
+
+          {isPanel && !projectId && activePage === "activity" && (
+            <section className="task-panel-empty-state" aria-labelledby={`${dialogId}-activity-title`}>
+              <span aria-hidden="true">↻</span>
+              <h3 id={`${dialogId}-activity-title`}>Activity is unavailable</h3>
+              <p>Task history is available for project tasks, but not for personal tasks yet.</p>
+            </section>
           )}
         </section>
       </div>

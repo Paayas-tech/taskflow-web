@@ -47,6 +47,12 @@ const formatSelectedDate = (dateKey) => {
   }).format(date);
 };
 
+const formatCompactSelectedDate = (dateKey) => {
+  const date = localDateFromDateOnly(dateKey);
+  if (!date) return dateKey;
+  return new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric" }).format(date);
+};
+
 const formatWeekRange = (dateKey, weekStartsOn) => {
   const week = buildCalendarWeek(dateKey, weekStartsOn);
   if (!week.length) return "Week";
@@ -94,6 +100,8 @@ export default function CalendarPage({
   browserNotificationsEnabled,
   formatSettings = {},
   weekStartsOn = 0,
+  onOpenTask,
+  embedded = false,
 }) {
   const now = new Date();
   const todayKey = dateOnlyKey(now);
@@ -106,16 +114,17 @@ export default function CalendarPage({
   const [mutationError, setMutationError] = useState("");
   const editTriggerRef = useRef(null);
 
+  const effectiveWeekStartsOn = embedded ? 1 : weekStartsOn;
   const monthGrid = useMemo(
-    () => buildCalendarMonthGrid(visibleMonth, weekStartsOn),
-    [visibleMonth, weekStartsOn]
+    () => buildCalendarMonthGrid(visibleMonth, effectiveWeekStartsOn),
+    [visibleMonth, effectiveWeekStartsOn]
   );
   const orderedWeekdayLabels = useMemo(
     () => [
-      ...weekdayLabels.slice(weekStartsOn),
-      ...weekdayLabels.slice(0, weekStartsOn),
+      ...weekdayLabels.slice(effectiveWeekStartsOn),
+      ...weekdayLabels.slice(0, effectiveWeekStartsOn),
     ],
-    [weekStartsOn]
+    [effectiveWeekStartsOn]
   );
   const weeks = useMemo(() => chunkWeeks(monthGrid), [monthGrid]);
   const normalizedTasks = useMemo(
@@ -160,10 +169,10 @@ export default function CalendarPage({
           normalizedTasks.filter(isMultiDayTask),
           gridStartDate,
           gridEndDate,
-          weekStartsOn
+          effectiveWeekStartsOn
         )
       ),
-    [gridEndDate, gridStartDate, normalizedTasks, weekStartsOn]
+    [effectiveWeekStartsOn, gridEndDate, gridStartDate, normalizedTasks]
   );
   const segmentsByWeek = useMemo(() => {
     const grouped = new Map();
@@ -249,6 +258,10 @@ export default function CalendarPage({
 
   const openEditor = (task, triggerElement) => {
     if (!onUpdateTask) return;
+    if (onOpenTask) {
+      onOpenTask(task, triggerElement);
+      return;
+    }
     editTriggerRef.current = triggerElement || null;
     setSelectedTaskId(task.id);
     setMutationError("");
@@ -308,6 +321,96 @@ export default function CalendarPage({
           <button className="ghost-btn" type="button" onClick={onRetry}>
             Try again
           </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (embedded) {
+    const compactWeekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    return (
+      <section className="calendar-page calendar-compact" aria-labelledby="calendar-view-title">
+        <header className="calendar-compact-header">
+          <div className="calendar-compact-month-controls">
+            <button type="button" onClick={() => changeMonth(-1)} aria-label="Previous month">‹</button>
+            <h2 id="calendar-view-title">{formatMonth(visibleMonth)}</h2>
+            <button type="button" onClick={() => changeMonth(1)} aria-label="Next month">›</button>
+          </div>
+          <button className="calendar-compact-today" type="button" onClick={returnToToday}>Today</button>
+        </header>
+
+        {mutationError && (
+          <div className="inline-error task-mutation-error" role="alert">
+            <p>{mutationError}</p>
+            <button className="ghost-btn compact-btn" type="button" onClick={() => setMutationError("")}>Dismiss</button>
+          </div>
+        )}
+
+        <div className="calendar-compact-layout">
+          <div className="calendar-compact-grid-shell">
+            <div className="calendar-compact-weekdays" aria-hidden="true">
+              {compactWeekdays.map((label) => <span key={label}><span>{label.slice(0, 3)}</span><span>{label}</span></span>)}
+            </div>
+            <div className="calendar-compact-grid" role="grid" aria-label={formatMonth(visibleMonth)}>
+              {monthGrid.map((cell) => {
+                const dateTasks = agendaByDate.get(cell.key) || [];
+                const selected = cell.key === selectedDateKey;
+                const isToday = cell.key === todayKey;
+                const isPast = cell.key < todayKey;
+                const className = [
+                  "calendar-compact-day",
+                  cell.inCurrentMonth ? "" : "is-outside",
+                  selected ? "is-selected" : "",
+                  isToday ? "is-today" : "",
+                  isPast ? "is-past" : "",
+                ].filter(Boolean).join(" ");
+                return (
+                  <button
+                    type="button"
+                    role="gridcell"
+                    className={className}
+                    aria-selected={selected}
+                    aria-label={formatSelectedDate(cell.key) + (dateTasks.length ? ", " + dateTasks.length + " " + (dateTasks.length === 1 ? "task" : "tasks") : "")}
+                    key={cell.key}
+                    onClick={() => selectDate(cell.key)}
+                  >
+                    <span className="calendar-compact-date">{cell.day}</span>
+                    {dateTasks.length > 0 && (
+                      <span className="calendar-task-indicators" aria-hidden="true">
+                        {Array.from({ length: Math.min(dateTasks.length, 3) }, (_, index) => <i key={index} />)}
+                        {dateTasks.length > 3 && <small>+{dateTasks.length - 3}</small>}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <aside className="calendar-compact-agenda" aria-labelledby="calendar-compact-selected-date">
+            <header>
+              <div><h3 id="calendar-compact-selected-date">{formatCompactSelectedDate(selectedDateKey)}</h3><span>{selectedDateTasks.length} {selectedDateTasks.length === 1 ? "task" : "tasks"}</span></div>
+              {onCreateTask && <button type="button" onClick={() => createOnDate(selectedDateKey)}>+ Add task</button>}
+            </header>
+            {selectedDateTasks.length === 0 ? (
+              <p className="calendar-compact-empty">No tasks for this day</p>
+            ) : (
+              <div className="calendar-compact-task-list">
+                {selectedDateTasks.map((task) => {
+                  const projectName = projects.find((project) => project.id === task.projectId)?.name;
+                  const listName = lists.find((list) => list.id === task.listId)?.name;
+                  return (
+                    <article className="calendar-compact-task" key={task.id}>
+                      <button className={"calendar-compact-check" + (isTaskComplete(task) ? " is-complete" : "")} type="button" onClick={() => handleCompletionChange(task)} disabled={quickTaskPendingIds.has(task.id)} aria-label={(isTaskComplete(task) ? "Reopen " : "Complete ") + task.title}>{isTaskComplete(task) ? "✓" : ""}</button>
+                      <button className="calendar-compact-task-title" type="button" onClick={(event) => openEditor(task, event.currentTarget)}>{task.title}</button>
+                      <span className={"priority priority-" + (task.priority || "medium")}>{task.priority || "medium"}</span>
+                      {(projectName || listName) && <small>{projectName || listName}</small>}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </aside>
         </div>
       </section>
     );
@@ -554,7 +657,7 @@ export default function CalendarPage({
             onSelectDate={selectDate}
             onCreateTask={onCreateTask}
             onEditTask={openEditor}
-            weekStartsOn={weekStartsOn}
+            weekStartsOn={effectiveWeekStartsOn}
             formatSettings={formatSettings}
           />
         ) : (
@@ -633,7 +736,7 @@ export default function CalendarPage({
       </div>
       )}
 
-      {selectedTask && (
+      {!embedded && selectedTask && (
         <TaskEditModal
           key={selectedTask.id}
           task={selectedTask}

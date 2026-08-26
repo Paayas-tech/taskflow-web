@@ -67,10 +67,14 @@ export const createProjectService = (
   async createProject(userId, projectData = {}) {
     const name = String(projectData.name || "").trim();
     if (!name) throw new Error("Project name cannot be empty.");
+    const description = String(projectData.description || "");
+    if (description.length > 1000) {
+      throw new Error("Project descriptions must be 1,000 characters or fewer.");
+    }
 
     return repository.createProject(userId, {
       name,
-      description: String(projectData.description || ""),
+      description,
       color: String(projectData.color || ""),
       status: "active",
       due_date: projectData.dueDate || null,
@@ -86,6 +90,9 @@ export const createProjectService = (
     }
     if (Object.prototype.hasOwnProperty.call(data, "description")) {
       patch.description = String(data.description || "");
+      if (patch.description.length > 1000) {
+        throw new Error("Project descriptions must be 1,000 characters or fewer.");
+      }
     }
     if (Object.prototype.hasOwnProperty.call(data, "color")) {
       patch.color = String(data.color || "");

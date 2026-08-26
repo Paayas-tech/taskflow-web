@@ -212,7 +212,7 @@ function createRunner(props) {
 function openPanel(runner) {
   const trigger = findElement(
     runner.output,
-    (node) => node.type === "button" && textContent(node).startsWith("Notifications")
+    (node) => node.type === "button" && node.props?.["aria-label"]?.startsWith("Notifications")
   );
   trigger.props.onClick();
   runner.render();
@@ -220,7 +220,7 @@ function openPanel(runner) {
     dialog: findElement(runner.output, (node) => node.props?.role === "dialog"),
     trigger: findElement(
       runner.output,
-      (node) => node.type === "button" && textContent(node).startsWith("Notifications")
+      (node) => node.type === "button" && node.props?.["aria-label"]?.startsWith("Notifications")
     ),
   };
 }

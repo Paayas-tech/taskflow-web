@@ -1,9 +1,5 @@
 import { useId, useState } from "react";
 import {
-  deriveIsAllDay,
-  getScheduleValidationError,
-} from "./domain/calendarDomain";
-import {
   calculateReminderPreset,
   defaultReminderAt,
   getReminderValidationError,
@@ -47,8 +43,6 @@ export default function TaskForm({
   const selectedProjectIsUnavailable =
     selectedProjectId &&
     !projects.some((project) => project.id === selectedProjectId);
-  const isAllDay = deriveIsAllDay(values);
-  const scheduleError = getScheduleValidationError(values);
   const reminderError = getReminderValidationError(values);
 
   const updateField = (name, value, type = "text") => {
@@ -62,19 +56,8 @@ export default function TaskForm({
     });
   };
 
-  const handleAllDayChange = (event) => {
-    if (event.target.checked) {
-      updateField("startTime", "");
-      updateField("endTime", "");
-      return;
-    }
-
-    updateField("startTime", values.startTime || "09:00");
-    updateField("endTime", values.endTime || "10:00");
-  };
-
   const handleSubmit = (event) => {
-    if (scheduleError || reminderError) {
+    if (reminderError) {
       event.preventDefault();
       return;
     }
@@ -161,24 +144,15 @@ export default function TaskForm({
             <textarea
               name="description"
               placeholder="Add a short description"
-              rows="3"
+              rows="2"
+              maxLength="1000"
               value={values.description}
               onChange={onChange}
               disabled={busy}
             />
+            <small className="task-description-count">{String(values.description || "").length}/1000</small>
           </label>
 
-          <label className="task-form-field">
-            <span>Notes</span>
-            <textarea
-              name="notes"
-              placeholder="Capture supporting notes or context"
-              rows="4"
-              value={values.notes}
-              onChange={onChange}
-              disabled={busy}
-            />
-          </label>
         </div>
       </section>
 
@@ -270,7 +244,7 @@ export default function TaskForm({
           )}
 
           <label className="task-form-field">
-            <span>Start / due date</span>
+            <span>Due date</span>
             <input
               type="date"
               name="dueDate"
@@ -281,40 +255,6 @@ export default function TaskForm({
             />
           </label>
 
-          <label className="task-form-field">
-            <span>End date <small>Optional</small></span>
-            <input
-              type="date"
-              name="endDate"
-              value={values.endDate || ""}
-              onChange={onChange}
-              onInput={onChange}
-              min={values.dueDate || undefined}
-              disabled={busy}
-            />
-          </label>
-
-          <label className="task-form-field">
-            <span>Start time <small>Optional</small></span>
-            <input
-              type="time"
-              name="startTime"
-              value={values.startTime || ""}
-              onChange={onChange}
-              disabled={busy || isAllDay}
-            />
-          </label>
-
-          <label className="task-form-field">
-            <span>End time <small>Optional</small></span>
-            <input
-              type="time"
-              name="endTime"
-              value={values.endTime || ""}
-              onChange={onChange}
-              disabled={busy || isAllDay}
-            />
-          </label>
 
           <label className="task-form-field">
             <span>Status</span>
@@ -344,30 +284,6 @@ export default function TaskForm({
             </select>
           </label>
         </div>
-
-        <label className="task-all-day-field">
-          <input
-            type="checkbox"
-            checked={isAllDay}
-            onChange={handleAllDayChange}
-            disabled={busy}
-          />
-          <span>
-            <strong>All day</strong>
-            Clear specific times and show this as an all-day calendar item.
-          </span>
-        </label>
-
-        <p className="task-schedule-hint">
-          Until TaskFlow adds task and event types, this date is both a task
-          deadline and a calendar start date.
-        </p>
-
-        {scheduleError && (
-          <p className="form-error task-schedule-error" role="alert">
-            {scheduleError}
-          </p>
-        )}
 
         <label className="task-reminder-field">
           <input
@@ -464,7 +380,7 @@ export default function TaskForm({
         <button
           className="primary-btn"
           type="submit"
-          disabled={busy || Boolean(scheduleError) || Boolean(reminderError)}
+          disabled={busy || Boolean(reminderError)}
         >
           {busy ? busyLabel : submitLabel}
         </button>

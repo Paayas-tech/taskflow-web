@@ -48,7 +48,6 @@ const titleCase = (value) =>
 
 const defaultViewOptions = [
   ["dashboard", "Dashboard"],
-  ["today", "Today"],
   ["tasks", "All Tasks"],
   ["projects", "Projects"],
   ["calendar", "Calendar"],

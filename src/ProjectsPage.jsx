@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import InvitationRow from "./InvitationRow";
 import { useModalLifecycle } from "./components/modal/useModalLifecycle";
+import { prefetchProjectWorkspace } from "./application/projectWorkspaceLoader";
 
 const projectColors = [
   "#6657c8",
@@ -75,6 +76,7 @@ export default function ProjectsPage({
   const [values, setValues] = useState(emptyProjectForm);
   const [saving, setSaving] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
+  const [viewingProject, setViewingProject] = useState(null);
   const [projectToDelete, setProjectToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
@@ -82,6 +84,9 @@ export default function ProjectsPage({
   const [projectActionId, setProjectActionId] = useState(null);
   const [invitationActionId, setInvitationActionId] = useState("");
   const [formError, setFormError] = useState("");
+  const [projectSearch, setProjectSearch] = useState("");
+  const [ownershipFilter, setOwnershipFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const dialogRef = useRef(null);
   const projectNameInputRef = useRef(null);
   const submissionRef = useRef(false);
@@ -102,6 +107,7 @@ export default function ProjectsPage({
   };
 
   const openEditProject = (project) => {
+    setViewingProject(null);
     setEditingProject(project);
     setValues({
       name: project.name || "",
@@ -133,6 +139,10 @@ export default function ProjectsPage({
     restoreFocus: true,
     lockBodyScroll: true,
   });
+
+  const closeProjectDetails = useCallback(() => {
+    setViewingProject(null);
+  }, []);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -196,6 +206,7 @@ export default function ProjectsPage({
       await onUpdateProject(project.id, {
         status: project.status === "archived" ? "active" : "archived",
       });
+      setViewingProject(null);
     } catch (error) {
       console.error("Error updating project archive state:", error);
       setProjectActionError(
@@ -222,12 +233,16 @@ export default function ProjectsPage({
     }
   };
 
-  const ownedProjects = projects.filter(
-    (project) => project.ownerId === userId || project.viewerRole === "owner"
-  );
-  const sharedProjects = projects.filter(
-    (project) => project.ownerId !== userId && project.viewerRole !== "owner"
-  );
+  const visibleProjects = projects.filter((project) => {
+    const isOwner = project.ownerId === userId || project.viewerRole === "owner";
+    const matchesSearch = `${project.name || ""} ${project.description || ""}`
+      .toLowerCase()
+      .includes(projectSearch.trim().toLowerCase());
+    const matchesOwnership = ownershipFilter === "all"
+      || (ownershipFilter === "owned" ? isOwner : !isOwner);
+    const matchesStatus = statusFilter === "all" || project.status === statusFilter;
+    return matchesSearch && matchesOwnership && matchesStatus;
+  });
 
   const renderProjectCard = (project) => {
     const createdAt = formatCreatedAt(project.createdAt);
@@ -235,41 +250,37 @@ export default function ProjectsPage({
     const isOwner = project.ownerId === userId || project.viewerRole === "owner";
 
     return (
-      <article className="project-card" key={project.id}>
-        <div className="project-card-accent" aria-hidden="true">
-          <span style={{ backgroundColor: project.color || projectColors[0] }} />
-        </div>
-        <div className="project-card-heading">
-          <div>
+      <article
+        className={`project-table-row${viewingProject?.id === project.id ? " selected" : ""}`}
+        key={project.id}
+      >
+        <button
+          className="project-row-primary"
+          type="button"
+          onClick={() => {
+            setViewingProject(project);
+            void prefetchProjectWorkspace(userId, project.id)?.catch(() => {});
+          }}
+          aria-label={`View details for ${project.name}`}
+        >
+          <span className="project-row-icon" style={{ "--project-color": project.color || projectColors[0] }} aria-hidden="true">□</span>
+          <span className="project-row-name">
             <h3>{project.name}</h3>
-            <span className={`project-status project-status-${project.status}`}>
-              {statusLabels[project.status] || "Active"}
-            </span>
-            {!isOwner && (
-              <span className="project-status">{project.viewerRole || "member"}</span>
-            )}
-          </div>
-        </div>
-        {project.description && <p className="project-description">{project.description}</p>}
-        <div className="project-metadata">
-          {dueDate && <span>Due {dueDate}</span>}
-          {createdAt && <span>Created {createdAt}</span>}
-          {!dueDate && !createdAt && <span>Ready for planning</span>}
-        </div>
-        <div className="project-card-actions">
-          <button className="ghost-btn compact-btn" type="button" onClick={() => onOpenProject(project.id)} aria-label={`View tasks in ${project.name}`}>View project</button>
-          {isOwner && (
-            <>
-              <button className="ghost-btn compact-btn" type="button" onClick={() => openEditProject(project)}>Edit</button>
-              <button className="ghost-btn compact-btn" type="button" onClick={() => toggleProjectArchive(project)} disabled={projectActionId === project.id}>
-                {projectActionId === project.id
-                  ? project.status === "archived" ? "Restoring..." : "Archiving..."
-                  : project.status === "archived" ? "Restore" : "Archive"}
-              </button>
-              <button className="danger-btn compact-btn" type="button" onClick={() => { setDeleteError(""); setProjectToDelete(project); }}>Delete</button>
-            </>
-          )}
-        </div>
+            <small>{project.description || "Ready for planning"}</small>
+          </span>
+        </button>
+        <span className="project-row-access">{isOwner ? "Owner" : project.viewerRole || "Member"}</span>
+        <span><span className={`project-status project-status-${project.status}`}>{statusLabels[project.status] || "Active"}</span></span>
+        <span className="project-row-date">{formatCreatedAt(project.updatedAt) || createdAt || (dueDate ? `Due ${dueDate}` : "—")}</span>
+        <button
+          className="project-row-more"
+          type="button"
+          onClick={() => {
+            setViewingProject(project);
+            void prefetchProjectWorkspace(userId, project.id)?.catch(() => {});
+          }}
+          aria-label={`More details for ${project.name}`}
+        >•••</button>
       </article>
     );
   };
@@ -331,15 +342,111 @@ export default function ProjectsPage({
           </button>
         </div>
       ) : (
-        <div>
-          <section aria-labelledby="owned-projects-title">
-            <h3 id="owned-projects-title">My Projects</h3>
-            {ownedProjects.length ? <div className="projects-grid">{ownedProjects.map(renderProjectCard)}</div> : <p className="project-description">You do not own any projects yet.</p>}
-          </section>
-          <section aria-labelledby="shared-projects-title">
-            <h3 id="shared-projects-title">Shared with Me</h3>
-            {sharedProjects.length ? <div className="projects-grid">{sharedProjects.map(renderProjectCard)}</div> : <p className="project-description">Projects you accept will appear here.</p>}
-          </section>
+        <div className={`projects-workspace${viewingProject ? " has-details" : ""}`}>
+          <div className="projects-workspace-main">
+            <div className="projects-toolbar" aria-label="Project search and filters">
+              <label className="projects-search">
+                <span aria-hidden="true">⌕</span>
+                <input
+                  type="search"
+                  value={projectSearch}
+                  onChange={(event) => setProjectSearch(event.target.value)}
+                  placeholder="Search projects..."
+                  aria-label="Search projects"
+                />
+              </label>
+              <div className="projects-filters">
+                <label>
+                  <span className="sr-only">Ownership</span>
+                  <select value={ownershipFilter} onChange={(event) => setOwnershipFilter(event.target.value)}>
+                    <option value="all">All access</option>
+                    <option value="owned">Owner</option>
+                    <option value="shared">Shared with me</option>
+                  </select>
+                </label>
+                <label>
+                  <span className="sr-only">Status</span>
+                  <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                    <option value="all">All statuses</option>
+                    <option value="active">Active</option>
+                    <option value="completed">Completed</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="projects-list-actions">
+              <button
+                ref={createTriggerRef}
+                className="primary-btn compact-btn"
+                type="button"
+                onClick={openCreateProject}
+                aria-haspopup="dialog"
+                aria-controls="create-project-dialog"
+              >
+                + Add project
+              </button>
+            </div>
+
+            <div className="project-table" role="table" aria-label="Projects">
+              <div className="project-table-header" role="row">
+                <span>Name</span><span>Access</span><span>Status</span><span>Last modified</span><span aria-hidden="true" />
+              </div>
+              <div className="project-table-body">
+                {visibleProjects.map(renderProjectCard)}
+                {visibleProjects.length === 0 && (
+                  <div className="project-table-empty">
+                    <strong>No matching projects</strong>
+                    <span>Try changing your search or filters.</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            <p className="projects-result-count">Showing {visibleProjects.length} of {projects.length} projects</p>
+          </div>
+
+          {viewingProject && (
+            <div className="project-context-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeProjectDetails(); }}>
+            <aside className="project-context-panel" role="dialog" aria-modal="true" aria-labelledby="project-details-title">
+              <div className="project-context-header">
+                <span className="project-row-icon" style={{ "--project-color": viewingProject.color || projectColors[0] }} aria-hidden="true">□</span>
+                <div><p className="card-label">Project</p><h2 id="project-details-title">{viewingProject.name}</h2></div>
+                <span className={`project-status project-status-${viewingProject.status}`}>{statusLabels[viewingProject.status] || "Active"}</span>
+                <button className="icon-btn" type="button" onClick={closeProjectDetails} aria-label="Close project details">×</button>
+              </div>
+              <div className="project-context-tabs" aria-label="Project details sections">
+                <span className="active">Overview</span>
+              </div>
+              <div className="project-context-content">
+                <section>
+                  <h3>Description</h3>
+                  <p>{viewingProject.description || "No description has been added yet."}</p>
+                </section>
+                <dl className="project-context-facts">
+                  <div><dt>Your access</dt><dd>{viewingProject.viewerRole || (viewingProject.ownerId === userId ? "owner" : "member")}</dd></div>
+                  <div><dt>Status</dt><dd><span className={`project-status project-status-${viewingProject.status}`}>{statusLabels[viewingProject.status] || "Active"}</span></dd></div>
+                  {formatCreatedAt(viewingProject.createdAt) && <div><dt>Created</dt><dd>{formatCreatedAt(viewingProject.createdAt)}</dd></div>}
+                  {formatCreatedAt(viewingProject.updatedAt) && <div><dt>Last modified</dt><dd>{formatCreatedAt(viewingProject.updatedAt)}</dd></div>}
+                  {formatProjectDueDate(viewingProject.dueDate) && <div><dt>Due date</dt><dd>{formatProjectDueDate(viewingProject.dueDate)}</dd></div>}
+                </dl>
+              </div>
+              <div className="project-context-actions">
+                <button className="primary-btn" type="button" onClick={() => onOpenProject(viewingProject.id)}>Open project</button>
+                {(viewingProject.ownerId === userId || viewingProject.viewerRole === "owner") && (
+                  <details className="project-context-menu">
+                    <summary aria-label="Project actions" title="Project actions">•••</summary>
+                    <div>
+                      <button type="button" onClick={() => openEditProject(viewingProject)}>Edit</button>
+                      <button type="button" onClick={() => toggleProjectArchive(viewingProject)} disabled={projectActionId === viewingProject.id}>{projectActionId === viewingProject.id ? "Updating..." : viewingProject.status === "archived" ? "Restore" : "Archive"}</button>
+                      <button className="is-danger" type="button" onClick={() => { setDeleteError(""); setViewingProject(null); setProjectToDelete(viewingProject); }}>Delete</button>
+                    </div>
+                  </details>
+                )}
+              </div>
+            </aside>
+            </div>
+          )}
         </div>
       )}
 
@@ -396,9 +503,11 @@ export default function ProjectsPage({
                   value={values.description}
                   onChange={handleChange}
                   placeholder="What outcome are you working toward?"
-                  rows="4"
+                  rows="2"
+                  maxLength="1000"
                   disabled={saving}
                 />
+                <small className="task-description-count">{values.description.length}/1000</small>
               </label>
 
               <fieldset className="project-color-field" disabled={saving}>
