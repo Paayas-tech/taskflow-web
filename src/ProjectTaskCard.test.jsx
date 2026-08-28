@@ -62,6 +62,28 @@ describe("ProjectTaskCard assignee presentation", () => {
     expect(assignee.props.title).toBe("Assigned to Priya Shah");
   });
 
+  it("shows a formatted due date and omits it when the task has none", () => {
+    const dated = ProjectTaskCard({
+      task: {
+        id: "task-a",
+        title: "Prepare release",
+        priority: "medium",
+        dueDate: "2099-01-02",
+      },
+      onEdit: vi.fn(),
+      formatSettings: { dateFormat: "DD/MM/YYYY" },
+    });
+    const undated = ProjectTaskCard({
+      task: { id: "task-b", title: "Review release", priority: "medium" },
+      onEdit: vi.fn(),
+    });
+
+    const dueDate = find(dated, (node) => node.type === "time");
+    expect(textContent(dueDate)).toBe("02/01/2099");
+    expect(dueDate.props.dateTime).toBe("2099-01-02");
+    expect(find(undated, (node) => node.type === "time")).toBeUndefined();
+  });
+
   it("labels unassigned work explicitly", () => {
     const output = ProjectTaskCard({
       task: { id: "task-a", title: "Prepare release", priority: "medium" },

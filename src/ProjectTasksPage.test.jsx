@@ -155,6 +155,14 @@ function findElement(root, predicate) {
   return match;
 }
 
+function findElements(root, predicate) {
+  const matches = [];
+  walk(root, (node) => {
+    if (predicate(node)) matches.push(node);
+  });
+  return matches;
+}
+
 function textContent(node) {
   if (Array.isArray(node)) return node.map(textContent).join("");
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -388,6 +396,57 @@ describe("ProjectTasksPage workspace coordination", () => {
         (node) => node.type === "button" && textContent(node) === "Calendar"
       )
     ).toBeUndefined();
+  });
+
+  it("groups the List view by the existing project columns without duplicating tasks", async () => {
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "List"
+    ).props.onClick();
+    runner.render(props);
+
+    const sections = findElements(
+      runner.output,
+      (node) => node.props?.className === "project-task-list-section"
+    );
+    expect(sections).toHaveLength(3);
+    expect(textContent(sections[0])).toContain("To do1Plan launch");
+    expect(textContent(sections[1])).toContain("Doing1Ship launch");
+    expect(textContent(sections[2])).toContain("Done0No tasks");
+    expect(childCalls.rows.map(({ task }) => task.id)).toEqual(["task-a", "task-b"]);
+  });
+
+  it("moves a completed List task into Done immediately", async () => {
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "List"
+    ).props.onClick();
+    runner.render(props);
+    const taskRow = childCalls.rows.find(({ task }) => task.id === "task-a");
+
+    await taskRow.onToggleCompletion(taskRow.task);
+    runner.render(props);
+
+    const sections = findElements(
+      runner.output,
+      (node) => node.props?.className === "project-task-list-section"
+    );
+    expect(textContent(sections[0])).not.toContain("Plan launch");
+    expect(textContent(sections[2])).toContain("Done1Plan launch");
+    expect(projectService.updateProjectTask).toHaveBeenCalledWith(
+      "user-a",
+      "project-a",
+      "task-a",
+      { completed: true, status: "completed" }
+    );
   });
 
   it.each(["owner", "editor"])("keeps column creation available for %s access without a duplicate header action", async (role) => {

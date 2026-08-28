@@ -336,6 +336,10 @@ export const filterTasks = (
   } = {}
 ) => tasks.filter((task) => {
   if (isArchived(task)) return false;
+  // Personal task views are a second line of defense behind the repository's
+  // `project_id IS NULL` query. A project-scoped row must never be classified
+  // into All, Inbox, Today, Upcoming, Completed, or a personal list.
+  if (task.projectId) return false;
 
   const belongsToSelectedList =
     selectedListKey === "all" ||

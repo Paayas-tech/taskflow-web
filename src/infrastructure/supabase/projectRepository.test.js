@@ -73,6 +73,48 @@ describe("Supabase project repository", () => {
     expect(query.calls).not.toContainEqual(["eq", "created_by", "user-a"]);
   });
 
+  it("hydrates an assignee name from Supabase's to-one assignment relationship", async () => {
+    const projectsQuery = queryResult({
+      data: { id: "project-a", owner_id: "owner-a", name: "Launch" },
+      error: null,
+    });
+    const membershipQuery = queryResult({
+      data: { project_id: "project-a", user_id: "user-a", role: "editor" },
+      error: null,
+    });
+    const tasksQuery = queryResult({
+      data: [{
+        id: "task-a",
+        project_id: "project-a",
+        title: "Prepare launch",
+        task_assignments: { user_id: "member-a", assigned_at: null },
+      }],
+      error: null,
+    });
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ user_id: "member-a", display_name: "Priya Shah", avatar_url: null }],
+      error: null,
+    });
+    const client = {
+      from: vi.fn((table) => ({
+        projects: projectsQuery,
+        project_members: membershipQuery,
+        tasks: tasksQuery,
+      })[table]),
+      rpc,
+    };
+    const repository = createProjectRepository(client);
+
+    const tasks = await repository.getProjectTasks("user-a", "project-a");
+
+    expect(rpc).toHaveBeenCalledWith("get_visible_user_profiles", {
+      target_user_ids: ["member-a"],
+    });
+    expect(tasks[0]).toEqual(expect.objectContaining({
+      assignee_display_name: "Priya Shah",
+    }));
+  });
+
   it("filters assigned project tasks by the authenticated user", async () => {
     const query = queryResult({
       data: [{ id: "task-a", task_assignments: [{ user_id: "user-a" }] }],

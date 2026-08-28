@@ -29,6 +29,7 @@ export default function ProjectBoard({
   collapsible = false,
   initiallyCollapsedColumnIds = [],
   readOnly = false,
+  formatSettings = {},
 }) {
   const [activeTaskId, setActiveTaskId] = useState(null);
   const [collapsedColumnIds, setCollapsedColumnIds] = useState(
@@ -94,6 +95,7 @@ export default function ProjectBoard({
             collapsed={collapsible && collapsedColumnIds.has(column.id)}
             onToggleCollapse={() => toggleColumn(column.id)}
             readOnly={readOnly}
+            formatSettings={formatSettings}
           />
         ))}
       </div>

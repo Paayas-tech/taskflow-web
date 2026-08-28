@@ -1,7 +1,5 @@
 import { useState } from "react";
 import {
-  classifyDateOnly,
-  dateOnlyKey,
   isArchived,
   isTaskComplete,
 } from "./domain/taskDomain";
@@ -10,6 +8,7 @@ import {
   isReminderDue,
 } from "./domain/reminderDomain";
 import { formatDateOnlyForDisplay } from "./domain/settingsDomain";
+import { taskDueDateMeta } from "./domain/taskDueDateDomain";
 
 const statusLabels = {
   todo: "To do",
@@ -33,22 +32,6 @@ const legacyListColors = {
 
 const displayListColor = (color) =>
   legacyListColors[color?.toLowerCase()] || color || "#7d71cf";
-
-const dueDateMetaFor = (value, dateFormat) => {
-  if (!value) return { label: "No due date", tone: "undated" };
-
-  const todayKey = dateOnlyKey(new Date());
-  const dateGroup = classifyDateOnly(value, todayKey);
-  if (dateGroup === "overdue") {
-    return {
-      label: `Overdue · ${formatDateOnlyForDisplay(value, dateFormat)}`,
-      tone: "overdue",
-    };
-  }
-  if (dateGroup === "today") return { label: "Due today", tone: "today" };
-
-  return { label: formatDateOnlyForDisplay(value, dateFormat), tone: "upcoming" };
-};
 
 const formatArchivedDate = (value, dateFormat) => {
   const archivedDate = new Date(value);
@@ -83,7 +66,9 @@ export default function TaskRow({
   const lifecycleBusy = actionBusy || localActionBusy;
   const taskList = lists.find((list) => list.id === task.listId);
   const taskProject = projects.find((project) => project.id === task.projectId);
-  const dueDateMeta = dueDateMetaFor(task.dueDate, formatSettings.dateFormat);
+  const dueDateMeta = taskDueDateMeta(task.dueDate, {
+    dateFormat: formatSettings.dateFormat,
+  });
   const reminderDue = isReminderDue(task);
   const reminderMeta = task.reminderAt
     ? formatReminderMetadata(task.reminderAt, new Date(), {
@@ -196,9 +181,14 @@ export default function TaskRow({
               {task.assigneeName || "TaskFlow user"}
             </span>
           )}
-          <span className={`task-due-meta task-due-${dueDateMeta.tone}`}>
-            {dueDateMeta.label}
-          </span>
+          {dueDateMeta && (
+            <time
+              className={`task-due-meta task-due-${dueDateMeta.tone}`}
+              dateTime={task.dueDate}
+            >
+              {dueDateMeta.label}
+            </time>
+          )}
           <span className={`priority priority-${task.priority}`}>
             {priorityLabels[task.priority] || "Medium priority"}
           </span>

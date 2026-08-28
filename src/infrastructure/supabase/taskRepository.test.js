@@ -64,4 +64,16 @@ describe("Supabase task repository", () => {
       projectId: null,
     });
   });
+
+  it("treats project scope as authoritative over a legacy personal-list placement", () => {
+    expect(
+      taskRowToDocument({
+        project_id: "project-a",
+        task_list_placements: [{ list_id: "list-a" }],
+      })
+    ).toMatchObject({
+      projectId: "project-a",
+      listId: null,
+    });
+  });
 });
