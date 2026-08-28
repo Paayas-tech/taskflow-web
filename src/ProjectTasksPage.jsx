@@ -15,6 +15,7 @@ import {
 } from "./application/projectService";
 import { consumeProjectWorkspace } from "./application/projectWorkspaceLoader";
 import { isArchived, isTaskComplete } from "./domain/taskDomain";
+import { groupProjectTasksByColumn } from "./domain/projectBoardDomain";
 
 const emptyTaskForm = {
   title: "", description: "", notes: "", status: "todo", priority: "medium",
@@ -26,6 +27,13 @@ const statusForColumn = (column) =>
   column?.category === "done"
     ? "completed"
     : column?.category === "in_progress" ? "in-progress" : "todo";
+
+const categoryForStatus = (status) =>
+  status === "completed" || status === "done"
+    ? "done"
+    : status === "in-progress" || status === "in_progress"
+      ? "in_progress"
+      : "todo";
 
 const sortProjectTasks = (tasks, sort) => [...tasks].sort((first, second) => {
   if (sort === "due") {
@@ -138,6 +146,10 @@ export default function ProjectTasksPage({
     });
     return sortProjectTasks(matches, sort);
   }, [activeTasks, assigneeFilter, searchTerm, sort, statusFilter]);
+  const listTasksByColumn = useMemo(
+    () => groupProjectTasksByColumn(columns, filteredTasks, { preserveTaskOrder: true }),
+    [columns, filteredTasks]
+  );
   const selectedTask = activeTasks.find((task) => task.id === selectedTaskId);
   const canEditTasks = ["owner", "editor"].includes(project?.viewerRole);
   const editableProjects = projects.filter((candidate) =>
@@ -281,8 +293,13 @@ export default function ProjectTasksPage({
     if (!canEditTasks) throw new Error("This project is read-only for your account.");
     const previous = tasks;
     setPendingIds((ids) => new Set(ids).add(taskId));
+    const statusColumn = Object.prototype.hasOwnProperty.call(data, "status")
+      ? columns.find((column) => column.category === categoryForStatus(data.status))
+      : null;
     setTasks((current) => current.map((task) =>
-      task.id === taskId ? { ...task, ...data } : task
+      task.id === taskId
+        ? { ...task, ...data, ...(statusColumn ? { columnId: statusColumn.id } : {}) }
+        : task
     ));
     try {
       await updateProjectTask(userId, projectId, taskId, data);
@@ -427,6 +444,7 @@ export default function ProjectTasksPage({
           onAddTaskDetails={openQuickCreateDetails}
           quickCreateColumnId={quickCreateTarget}
           readOnly={!canEditTasks}
+          formatSettings={formatSettings}
         />
       ) : (
         <div className="tasks-page-list project-task-list">
@@ -438,7 +456,22 @@ export default function ProjectTasksPage({
               onAddDetails={(title) => openQuickCreateDetails(null, title)}
             />
           )}
-          {filteredTasks.map((task) => <TaskRow key={task.id} task={task} lists={lists} projects={projects} completionBusy={pendingIds.has(task.id)} selected={selectedTaskId === task.id} onToggleCompletion={canEditTasks ? handleCompletion : undefined} onEdit={openEditor} onArchive={canEditTasks ? () => handleArchive(task.id) : undefined} formatSettings={formatSettings} />)}
+          {columns.map((column) => {
+            const sectionTasks = listTasksByColumn.get(column.id) || [];
+            const sectionTitleId = `project-list-section-${column.id}`;
+            return (
+              <section className="project-task-list-section" key={column.id} aria-labelledby={sectionTitleId}>
+                <header className="project-task-list-section-header">
+                  <h3 id={sectionTitleId}>{column.name}</h3>
+                  <span aria-label={`${sectionTasks.length} tasks`}>{sectionTasks.length}</span>
+                </header>
+                <div className="project-task-list-section-rows">
+                  {sectionTasks.map((task) => <TaskRow key={task.id} task={task} lists={lists} projects={projects} completionBusy={pendingIds.has(task.id)} selected={selectedTaskId === task.id} onToggleCompletion={canEditTasks ? handleCompletion : undefined} onEdit={openEditor} onArchive={canEditTasks ? () => handleArchive(task.id) : undefined} formatSettings={formatSettings} />)}
+                  {sectionTasks.length === 0 && <p className="project-task-list-section-empty">No tasks</p>}
+                </div>
+              </section>
+            );
+          })}
           {filteredTasks.length === 0 && quickCreateTarget !== "list" && (
             <div className="project-task-list-empty">
               <p>{activeTasks.length === 0 ? "No tasks in this project yet." : "No tasks match these filters."}</p>

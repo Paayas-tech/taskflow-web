@@ -4,20 +4,41 @@ export const taskIdFromProjectDnd = (value) =>
 export const columnIdFromProjectDnd = (value) =>
   String(value || "").startsWith("column:") ? String(value).slice(7) : null;
 
-export function groupProjectTasksByColumn(columns, tasks) {
+const taskStatusCategory = (task = {}) => {
+  if (task.status === "completed" || task.status === "done" || task.completed === true) {
+    return "done";
+  }
+  if (task.status === "in-progress" || task.status === "in_progress") {
+    return "in_progress";
+  }
+  return "todo";
+};
+
+export function groupProjectTasksByColumn(
+  columns,
+  tasks,
+  { preserveTaskOrder = false } = {}
+) {
   const firstColumnId = columns[0]?.id || null;
   const groups = new Map(columns.map((column) => [column.id, []]));
 
   tasks.forEach((task) => {
-    const columnId = groups.has(task.columnId) ? task.columnId : firstColumnId;
+    const statusColumn = columns.find(
+      (column) => column.category === taskStatusCategory(task)
+    );
+    const columnId = groups.has(task.columnId)
+      ? task.columnId
+      : statusColumn?.id || firstColumnId;
     if (columnId) groups.get(columnId).push(task);
   });
 
-  groups.forEach((columnTasks) =>
-    columnTasks.sort(
-      (first, second) => (first.position ?? 0) - (second.position ?? 0)
-    )
-  );
+  if (!preserveTaskOrder) {
+    groups.forEach((columnTasks) =>
+      columnTasks.sort(
+        (first, second) => (first.position ?? 0) - (second.position ?? 0)
+      )
+    );
+  }
 
   return groups;
 }

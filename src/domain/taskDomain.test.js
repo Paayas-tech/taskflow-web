@@ -435,6 +435,28 @@ describe("task search and filtering", () => {
 });
 
 describe("task editing and project scoping", () => {
+  it("excludes project tasks from every personal-list filter", () => {
+    const projectTask = task({
+      id: "project-task",
+      projectId: "project-a",
+      listId: "work",
+      dueDate: "2026-08-13",
+      completed: true,
+      status: "completed",
+    });
+    const personalTask = task({ id: "personal-task", listId: "work" });
+    const filters = [
+      { selectedListKey: "all" },
+      { selectedListKey: "work", knownListIds: new Set(["work"]) },
+      { selectedListKey: "all", dueDate: "today", todayKey: "2026-08-13" },
+      { selectedListKey: "all", completion: "completed" },
+    ];
+
+    filters.forEach((options) => {
+      expect(filterTasks([projectTask, personalTask], options)).not.toContain(projectTask);
+    });
+  });
+
   it("preserves projectId when building edit form values and payloads", () => {
     const values = taskFormValuesFromTask(
       task({ projectId: "project-a", listId: "work" }),

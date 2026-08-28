@@ -33,6 +33,15 @@ const throwIfError = (error) => {
   if (error) throw error;
 };
 
+// PostgREST exposes task_assignments as a to-one object because task_id is
+// unique, while older local fixtures represented the relationship as an array.
+// Accept both shapes at this boundary so profile hydration matches the row
+// shape returned by Supabase in production.
+const taskAssignmentFromRow = (row = {}) => {
+  const relationship = row.task_assignments;
+  return Array.isArray(relationship) ? relationship[0] || null : relationship || null;
+};
+
 const normalizeProjectRow = (row = {}, viewerRole = null) => ({
   id: row.id,
   ownerId: row.owner_id,
@@ -287,12 +296,12 @@ export const createProjectRepository = (client = null) => {
       throwIfError(error);
       const rows = data || [];
       const profiles = await getVisibleUserProfiles(
-        rows.map((row) => row.task_assignments?.[0]?.user_id)
+        rows.map((row) => taskAssignmentFromRow(row)?.user_id)
       );
       const names = new Map(profiles.map((profile) => [profile.userId, profile.displayName]));
       return rows.map((row) => ({
         ...row,
-        assignee_display_name: names.get(row.task_assignments?.[0]?.user_id) || "",
+        assignee_display_name: names.get(taskAssignmentFromRow(row)?.user_id) || "",
       }));
     },
 
@@ -305,12 +314,12 @@ export const createProjectRepository = (client = null) => {
       throwIfError(error);
       const rows = data || [];
       const profiles = await getVisibleUserProfiles(
-        rows.map((row) => row.task_assignments?.[0]?.user_id)
+        rows.map((row) => taskAssignmentFromRow(row)?.user_id)
       );
       const names = new Map(profiles.map((profile) => [profile.userId, profile.displayName]));
       return rows.map((row) => ({
         ...row,
-        assignee_display_name: names.get(row.task_assignments?.[0]?.user_id) || "",
+        assignee_display_name: names.get(taskAssignmentFromRow(row)?.user_id) || "",
       }));
     },
 

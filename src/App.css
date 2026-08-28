@@ -1966,6 +1966,45 @@ a:focus-visible {
   border-top: 1px solid var(--border);
 }
 
+.project-task-list-section + .project-task-list-section {
+  border-top: 1px solid var(--border);
+}
+
+.project-task-list-section-header {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--surface-soft);
+}
+
+.project-task-list-section-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.project-task-list-section-header span {
+  display: inline-grid;
+  min-width: 21px;
+  min-height: 21px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 750;
+}
+
+.project-task-list-section-empty {
+  margin: 0;
+  padding: 12px 14px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
 .project-task-state {
   display: grid;
   min-height: 260px;

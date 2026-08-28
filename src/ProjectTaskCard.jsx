@@ -1,5 +1,6 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { taskDueDateMeta } from "./domain/taskDueDateDomain";
 
 const priorityLabel = (priority) =>
   priority === "high" ? "High" : priority === "low" ? "Low" : "Medium";
@@ -12,7 +13,12 @@ const initials = (name) =>
     .map((part) => part[0]?.toUpperCase() || "")
     .join("") || "?";
 
-export default function ProjectTaskCard({ task, onEdit, readOnly = false }) {
+export default function ProjectTaskCard({
+  task,
+  onEdit,
+  readOnly = false,
+  formatSettings = {},
+}) {
   const {
     attributes,
     listeners,
@@ -24,6 +30,9 @@ export default function ProjectTaskCard({ task, onEdit, readOnly = false }) {
   const assigneeName = task.assigneeId
     ? task.assigneeName || "TaskFlow user"
     : "Unassigned";
+  const dueDateMeta = taskDueDateMeta(task.dueDate, {
+    dateFormat: formatSettings.dateFormat,
+  });
 
   return (
     <article
@@ -54,7 +63,14 @@ export default function ProjectTaskCard({ task, onEdit, readOnly = false }) {
           <span className={`task-priority priority-${task.priority}`}>
             {priorityLabel(task.priority)}
           </span>
-          {task.dueDate && <time dateTime={task.dueDate}>{task.dueDate}</time>}
+          {dueDateMeta && (
+            <time
+              className={`task-due-meta task-due-${dueDateMeta.tone}`}
+              dateTime={task.dueDate}
+            >
+              {dueDateMeta.label}
+            </time>
+          )}
         </span>
         <span
           className={`project-task-assignee${task.assigneeId ? "" : " is-unassigned"}`}

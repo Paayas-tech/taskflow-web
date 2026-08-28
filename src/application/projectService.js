@@ -30,6 +30,11 @@ const normalizeInvitationEmail = (email) => {
   return normalized;
 };
 
+const taskAssignmentFromRow = (row = {}) => {
+  const relationship = row.task_assignments;
+  return Array.isArray(relationship) ? relationship[0] || null : relationship || null;
+};
+
 const createScopedTaskService = (repository, placementRepository, projectId) =>
   createTaskService({
     getPersonalTasks: (userId) => repository.getProjectTasks(userId, projectId),
@@ -41,7 +46,11 @@ const createScopedTaskService = (repository, placementRepository, projectId) =>
       repository.updateProjectTask(userId, projectId, taskId, values),
     deletePersonalTask: (userId, taskId) =>
       repository.deleteProjectTask(userId, projectId, taskId),
-    setTaskList: (...args) => placementRepository.setTaskList(...args),
+    // Project scope takes precedence over personal-list placement. The shared
+    // task service still calls this hook during create/update, so always clear
+    // any placement instead of forwarding a personal list id.
+    setTaskList: (userId, taskId) =>
+      placementRepository.setTaskList(userId, taskId, null),
     // The project service performs cross-scope relocation after the ordinary
     // task patch succeeds, so the shared task service must not relocate here.
     relocatePersonalTask: () => Promise.resolve(),
@@ -152,28 +161,34 @@ export const createProjectService = (
   async getProjectTasks(userId, projectId) {
     const rows = await repository.getProjectTasks(userId, projectId);
     return sortTasksNewestFirst(
-      rows.map((row) => ({
-        ...normalizeTaskDocument(row.id, repository.taskRowToDocument(row)),
-        assigneeId: row.task_assignments?.[0]?.user_id || null,
-        assigneeName: row.assignee_display_name || "",
-        columnId: row.column_id || null,
-        position: Number.isFinite(row.position) ? row.position : null,
-        version: Number.isFinite(row.version) ? row.version : 1,
-      }))
+      rows.map((row) => {
+        const assignment = taskAssignmentFromRow(row);
+        return {
+          ...normalizeTaskDocument(row.id, repository.taskRowToDocument(row)),
+          assigneeId: assignment?.user_id || null,
+          assigneeName: row.assignee_display_name || "",
+          columnId: row.column_id || null,
+          position: Number.isFinite(row.position) ? row.position : null,
+          version: Number.isFinite(row.version) ? row.version : 1,
+        };
+      })
     );
   },
 
   async getAssignedProjectTasks(userId, now = new Date()) {
     const rows = await repository.getAssignedProjectTasks(userId);
-    const assignments = rows.map((row) => ({
-      ...normalizeTaskDocument(row.id, repository.taskRowToDocument(row)),
-      assigneeId: row.task_assignments?.[0]?.user_id || userId,
-      assigneeName: row.assignee_display_name || "",
-      assignedAt: row.task_assignments?.[0]?.assigned_at || null,
-      projectName: row.projects?.name || "Untitled project",
-      projectStatus: row.projects?.status || "active",
-      columnId: row.column_id || null,
-    }));
+    const assignments = rows.map((row) => {
+      const assignment = taskAssignmentFromRow(row);
+      return {
+        ...normalizeTaskDocument(row.id, repository.taskRowToDocument(row)),
+        assigneeId: assignment?.user_id || userId,
+        assigneeName: row.assignee_display_name || "",
+        assignedAt: assignment?.assigned_at || null,
+        projectName: row.projects?.name || "Untitled project",
+        projectStatus: row.projects?.status || "active",
+        columnId: row.column_id || null,
+      };
+    });
     return sortAssignedTasksForAttention(assignments, dateOnlyKey(now));
   },
 

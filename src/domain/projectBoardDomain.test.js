@@ -82,6 +82,29 @@ describe("groupProjectTasksByColumn", () => {
     expect(inputTasks).toEqual(taskSnapshot);
     expect(groups.get("todo")[0]).toBe(inputTasks[1]);
   });
+
+  it("preserves filtered List order while assigning every task to one section", () => {
+    const categorizedColumns = [
+      { id: "todo", category: "todo" },
+      { id: "doing", category: "in_progress" },
+      { id: "done", category: "done" },
+    ];
+    const orderedForList = [
+      { id: "newer", columnId: "todo", position: 8 },
+      { id: "done", columnId: "done", position: 0 },
+      { id: "older", columnId: "todo", position: 1 },
+      { id: "status-fallback", columnId: "missing", status: "in-progress" },
+    ];
+
+    const groups = groupProjectTasksByColumn(categorizedColumns, orderedForList, {
+      preserveTaskOrder: true,
+    });
+
+    expect(groups.get("todo").map(({ id }) => id)).toEqual(["newer", "older"]);
+    expect(groups.get("doing").map(({ id }) => id)).toEqual(["status-fallback"]);
+    expect(groups.get("done").map(({ id }) => id)).toEqual(["done"]);
+    expect([...groups.values()].flat()).toHaveLength(orderedForList.length);
+  });
 });
 
 describe("buildProjectTaskPlacements", () => {

@@ -114,6 +114,28 @@ describe("Supabase project application service", () => {
     );
   });
 
+  it("clears personal-list placement when creating a project task", async () => {
+    const repository = {
+      createProjectTask: vi.fn().mockResolvedValue({ id: "task-a" }),
+      deleteProjectTask: vi.fn(),
+    };
+    const placementRepository = {
+      setTaskList: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = createProjectService(repository, placementRepository);
+
+    await service.createProjectTask("owner-a", "project-a", {
+      title: "Prepare launch",
+      listId: "legacy-list-a",
+    });
+
+    expect(placementRepository.setTaskList).toHaveBeenCalledWith(
+      "owner-a",
+      "task-a",
+      null
+    );
+  });
+
   it("normalizes and orders assigned project task metadata", async () => {
     const repository = {
       getAssignedProjectTasks: vi.fn().mockResolvedValue([
@@ -162,6 +184,68 @@ describe("Supabase project application service", () => {
         assigneeId: "user-a",
       })
     );
+  });
+
+  it("restores a persisted assignee from Supabase's to-one relationship shape", async () => {
+    const repository = {
+      getProjectTasks: vi.fn().mockResolvedValue([
+        {
+          id: "task-a",
+          title: "Prepare launch",
+          status: "todo",
+          priority: "medium",
+          task_assignments: {
+            user_id: "member-a",
+            assigned_at: "2026-08-28T08:30:00.000Z",
+          },
+          assignee_display_name: "Priya Shah",
+        },
+      ]),
+      taskRowToDocument: (row) => row,
+    };
+    const service = createProjectService(repository);
+
+    const result = await service.getProjectTasks("owner-a", "project-a");
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: "task-a",
+        assigneeId: "member-a",
+        assigneeName: "Priya Shah",
+      }),
+    ]);
+  });
+
+  it("normalizes assigned-task metadata from Supabase's to-one relationship shape", async () => {
+    const repository = {
+      getAssignedProjectTasks: vi.fn().mockResolvedValue([
+        {
+          id: "task-a",
+          title: "Prepare launch",
+          status: "todo",
+          priority: "medium",
+          task_assignments: {
+            user_id: "member-a",
+            assigned_at: "2026-08-28T08:30:00.000Z",
+          },
+          assignee_display_name: "Priya Shah",
+          projects: { name: "Launch", status: "active" },
+        },
+      ]),
+      taskRowToDocument: (row) => row,
+    };
+    const service = createProjectService(repository);
+
+    const result = await service.getAssignedProjectTasks(
+      "member-a",
+      new Date(2026, 7, 28)
+    );
+
+    expect(result[0]).toEqual(expect.objectContaining({
+      assigneeId: "member-a",
+      assigneeName: "Priya Shah",
+      assignedAt: "2026-08-28T08:30:00.000Z",
+    }));
   });
 
   it("returns an empty assigned-task list", async () => {

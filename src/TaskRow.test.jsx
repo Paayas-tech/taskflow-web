@@ -53,4 +53,9 @@ describe("TaskRow assignee identity", () => {
     expect(renderedText).toContain("TaskFlow user");
     expect(renderedText).not.toContain(assigneeId);
   });
+
+  it("shows a formatted due date and omits the undated placeholder", () => {
+    expect(textContent(renderTask({ dueDate: "2099-01-02" }))).toContain("02/01/2099");
+    expect(textContent(renderTask())).not.toContain("No due date");
+  });
 });

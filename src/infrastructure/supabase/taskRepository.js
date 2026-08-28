@@ -30,7 +30,9 @@ export const taskRowToDocument = (row = {}) => ({
   endTime: row.end_time ? String(row.end_time).slice(0, 5) : "",
   reminder: row.reminder_enabled === true,
   reminderAt: row.reminder_at || "",
-  listId: row.task_list_placements?.[0]?.list_id || null,
+  // A project is the authoritative task scope. Ignore legacy personal-list
+  // placements when both relationships exist.
+  listId: row.project_id ? null : row.task_list_placements?.[0]?.list_id || null,
   projectId: row.project_id || null,
   columnId: row.column_id || null,
   position: Number.isFinite(row.position) ? row.position : null,
@@ -139,6 +141,16 @@ export const createTaskRepository = (client = null) => {
         .maybeSingle();
       throwIfError(error);
       if (!data) throw new Error("The selected task is unavailable.");
+
+      // Moving a personal task into a project must also remove its former
+      // personal-list context. Existing RLS still scopes this deletion to the
+      // authenticated user's own placement.
+      const { error: placementError } = await database()
+        .from("task_list_placements")
+        .delete()
+        .eq("task_id", taskId)
+        .eq("user_id", userId);
+      throwIfError(placementError);
     },
 
     async setTaskList(userId, taskId, listId) {
