@@ -387,7 +387,7 @@ describe("TaskEditModal lifecycle integration", () => {
   });
 
   it("opens Stories as task-focused pages with summary details and linked task actions", () => {
-    const relatedTask = { id: "task-2", title: "Build task board", status: "completed", completed: true };
+    const relatedTask = { id: "task-2", title: "Build task board", status: "completed", completed: true, assigneeId: "user-2", assigneeName: "Paayas" };
     const remainingTask = { id: "task-3", title: "Build task list", status: "todo", completed: false };
     const props = baseProps({
       userId: "user-1",
@@ -413,6 +413,10 @@ describe("TaskEditModal lifecycle integration", () => {
     expect(textContent(runner.output)).toContain("2026-09-05");
     expect(textContent(runner.output)).toContain("Paayas");
     expect(textContent(runner.output)).toContain("1/2 tasks completed");
+    expect(textContent(runner.output)).toContain("50% complete");
+    expect(textContent(runner.output)).toContain("2Total tasks1Completed1Remaining");
+    expect(textContent(runner.output)).toContain("Paayas1");
+    expect(textContent(runner.output)).toContain("Unassigned1");
     expect(textContent(runner.output)).toContain("+ New Task");
 
     findElement(

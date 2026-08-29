@@ -9033,6 +9033,27 @@ button.settings-list-row:hover,
 .story-page-meta > span { display: grid; gap: 3px; min-width: 0; }
 .story-page-meta small { color: var(--text-muted); font-size: 0.7rem; }
 .story-page-meta strong { overflow: hidden; color: var(--text-primary); font-size: 0.8rem; text-overflow: ellipsis; white-space: nowrap; }
+.story-workload-overview { display: grid; gap: 11px; border: 1px solid var(--border); border-radius: 10px; padding: 14px 15px; background: color-mix(in srgb, var(--surface-soft) 58%, var(--surface)); }
+.story-workload-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.story-workload-heading h3 { margin: 0; color: var(--text-primary); font-size: 0.8rem; }
+.story-workload-heading p { margin: 2px 0 0; color: var(--text-muted); font-size: 0.66rem; }
+.story-workload-heading > strong { color: var(--accent); font-size: 0.8rem; }
+.story-progress-track { height: 7px; overflow: hidden; border-radius: 999px; background: var(--surface-muted); }
+.story-progress-track > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 180ms ease; }
+.story-workload-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.story-workload-stats > span { display: grid; justify-items: center; gap: 2px; padding: 9px 6px; text-align: center; }
+.story-workload-stats > span + span { border-left: 1px solid var(--border); }
+.story-workload-stats strong { color: var(--text-primary); font-size: 0.9rem; }
+.story-workload-stats small { color: var(--text-muted); font-size: 0.62rem; }
+.story-workload-breakdowns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+.story-workload-breakdowns h4 { margin: 0 0 7px; color: var(--text-muted); font-size: 0.62rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+.story-workload-breakdowns > div > div { display: grid; gap: 6px; }
+.story-workload-breakdowns span { display: grid; min-width: 0; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 6px; }
+.story-workload-breakdowns i { display: grid; width: 16px; height: 16px; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 0.52rem; font-style: normal; font-weight: 800; }
+.story-status-breakdown span:nth-child(2) i { background: var(--warning-soft); color: var(--warning); }
+.story-status-breakdown span:nth-child(3) i { background: var(--sage-soft); color: var(--sage); }
+.story-workload-breakdowns small { overflow: hidden; color: var(--text-secondary); font-size: 0.66rem; text-overflow: ellipsis; white-space: nowrap; }
+.story-workload-breakdowns strong { color: var(--text-primary); font-size: 0.68rem; }
 .story-task-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .story-task-summary span { color: var(--text-muted); font-size: 0.82rem; }
 .story-task-summary span strong { color: var(--text-primary); }
@@ -9105,6 +9126,7 @@ button.settings-list-row:hover,
 .story-editor-form .task-form-controls-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 @media (max-width: 560px) {
   .story-task-page { padding-inline: 16px; }
+  .story-workload-breakdowns { grid-template-columns: minmax(0, 1fr); }
   .story-task-summary { align-items: stretch; flex-direction: column; }
   .story-task-summary .primary-btn { align-self: flex-start; }
   .story-task-action { align-items: flex-start; flex-direction: column; }

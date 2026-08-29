@@ -4,6 +4,7 @@ import ActivityFeed from "./ActivityFeed";
 import TaskAssigneeSelector from "./TaskAssigneeSelector";
 import TaskComments from "./TaskComments";
 import StoryBulkActionBar from "./StoryBulkActionBar";
+import StoryOverviewPanel from "./StoryOverviewPanel";
 import { useModalLifecycle } from "./components/modal/useModalLifecycle";
 import {
   buildTaskEditPayload,
@@ -30,6 +31,7 @@ export default function TaskEditModal({
   projectId = null,
   projectMembers = [],
   projectStories = [],
+  projectColumns = [],
   canAssign = false,
   onAssigneeChange,
   readOnly = false,
@@ -563,6 +565,7 @@ export default function TaskEditModal({
                   <span><small>Assignee</small><strong>{task.assigneeId ? task.assigneeName || "TaskFlow user" : "Unassigned"}</strong></span>
                 </div>
               </div>
+              <StoryOverviewPanel tasks={relatedTasks} columns={projectColumns} members={projectMembers} />
               <div className="story-task-summary">
                 <div className="story-task-summary-title">
                   {!readOnly && onBulkUpdateRelatedTasks && relatedTasks.length > 0 && (
