@@ -275,4 +275,26 @@ describe("focused settings sections", () => {
     signOut.props.onClick();
     expect(onSignOut).toHaveBeenCalledOnce();
   });
+
+  it("shows a permanent-deletion warning before running account deletion", () => {
+    const onDeleteAccount = vi.fn();
+    const onCancelDelete = vi.fn();
+    const output = resolveNode(
+      SettingsSignOutSection({
+        onSignOut: vi.fn(),
+        onDeleteAccount,
+        confirmingDelete: true,
+        onCancelDelete,
+      })
+    );
+    const deleteButton = button(output, "Permanently delete account");
+    const dialog = findElement(output, (node) => node.props?.role === "alertdialog");
+
+    expect(textContent(dialog)).toContain("All of your account data");
+    expect(deleteButton.props.disabled).toBe(false);
+    deleteButton.props.onClick();
+    expect(onDeleteAccount).toHaveBeenCalledOnce();
+    button(output, "Cancel").props.onClick();
+    expect(onCancelDelete).toHaveBeenCalledOnce();
+  });
 });

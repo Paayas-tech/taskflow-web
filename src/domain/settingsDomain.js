@@ -3,7 +3,7 @@ import {
   normalizeCalendarConnections,
 } from "./calendarConnectionDomain";
 
-export const SETTINGS_THEME_MODES = ["light", "dark", "system"];
+export const SETTINGS_THEME_MODES = ["light", "dark"];
 
 export const TASKFLOW_BACKGROUNDS = Object.freeze([
   Object.freeze({
@@ -51,7 +51,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     enableInAppReminders: true,
     enableSound: false,
   }),
-  theme: Object.freeze({ mode: "system" }),
+  theme: Object.freeze({ mode: "light" }),
   background: Object.freeze({ selected: "calm" }),
   // Kept as a compatibility mirror for preferences saved by earlier builds.
   appearance: Object.freeze({ background: "calm" }),
@@ -115,7 +115,10 @@ export const normalizeDefaultReminderTime = (value) => {
 
 export const normalizeSettings = (value = {}, user = {}) => {
   const reminder = value?.reminder || {};
-  const requestedTheme = value?.theme?.mode;
+  // "system" was the old default. Treat it as light so existing accounts do
+  // not unexpectedly inherit a dark operating-system theme.
+  const requestedTheme =
+    value?.theme?.mode === "system" ? "light" : value?.theme?.mode;
   const displayName = String(
     value?.profile?.displayName ?? user?.displayName ?? ""
   )
@@ -235,7 +238,7 @@ export const getSettingsValidationError = (settings = {}) => {
       settings?.theme?.mode ?? DEFAULT_SETTINGS.theme.mode
     )
   ) {
-    return "Choose light, dark, or system theme mode.";
+    return "Choose light or dark theme mode.";
   }
 
   if (

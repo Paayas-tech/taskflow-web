@@ -17,6 +17,9 @@ export default function ProjectColumn({
   onToggleCollapse,
   readOnly = false,
   formatSettings = {},
+  bulkSelectionEnabled = false,
+  selectedTaskIds = new Set(),
+  onToggleTaskSelection,
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `column:${column.id}` });
 
@@ -59,7 +62,7 @@ export default function ProjectColumn({
         >
           <div className="project-board-column-list">
             {tasks.map((task) => (
-              <ProjectTaskCard key={task.id} task={task} onEdit={onEdit} readOnly={readOnly} formatSettings={formatSettings} />
+              <ProjectTaskCard key={task.id} task={task} onEdit={onEdit} readOnly={readOnly} formatSettings={formatSettings} bulkSelectionEnabled={bulkSelectionEnabled} bulkSelected={selectedTaskIds.has(task.id)} onToggleBulkSelection={onToggleTaskSelection} />
             ))}
             {quickCreateActive && !readOnly && (
               <ProjectTaskQuickCreate

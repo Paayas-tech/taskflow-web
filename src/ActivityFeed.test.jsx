@@ -76,6 +76,19 @@ function textContent(node) {
   return childrenOf(node).map(textContent).join("");
 }
 
+function findElement(node, predicate) {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const match = findElement(child, predicate);
+      if (match) return match;
+    }
+    return null;
+  }
+  if (!node || typeof node !== "object") return null;
+  if (predicate(node)) return node;
+  return findElement(childrenOf(node), predicate);
+}
+
 function createRunner(props) {
   const runner = { cursor: 0, pending: [], slots: [], output: null };
   function render() {
@@ -125,6 +138,32 @@ afterEach(() => {
 });
 
 describe("ActivityFeed realtime fallback", () => {
+  it("uses the shared activity timeline heading", async () => {
+    projectService.subscribeToProjectActivity.mockReturnValue(vi.fn());
+    const runner = createRunner({ userId: "user-a", projectId: "project-a" });
+    await flush(runner);
+
+    expect(textContent(runner.output)).toContain("Activity history");
+    expect(textContent(runner.output)).toContain("A timeline of changes and updates.");
+    expect(textContent(runner.output)).toContain("Refresh");
+  });
+
+  it("reloads history and confirms a successful manual refresh", async () => {
+    projectService.subscribeToProjectActivity.mockReturnValue(vi.fn());
+    const runner = createRunner({ userId: "user-a", projectId: "project-a" });
+    await flush(runner);
+    const refresh = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node).includes("Refresh")
+    );
+
+    await refresh.props.onClick();
+    runner.render();
+
+    expect(projectService.getProjectActivity).toHaveBeenCalledTimes(2);
+    expect(textContent(runner.output)).toContain("History is up to date.");
+  });
+
   it("keeps fetched activity visible when live updates fail and recovers", async () => {
     let onStatus;
     const cleanup = vi.fn();

@@ -34,16 +34,18 @@ export default function TaskForm({
   defaultReminderMinutes = 15,
   browserNotificationsEnabled = true,
   projectMembers = [],
+  projectStories = [],
 }) {
   const projectFieldId = useId();
   const reminderFieldId = useId();
   const [reminderPreset, setReminderPreset] = useState("custom");
   const [reminderPresetError, setReminderPresetError] = useState("");
+  const isStory = values.workType === "story";
   const selectedProjectId = values.projectId || "";
   const selectedProjectIsUnavailable =
     selectedProjectId &&
     !projects.some((project) => project.id === selectedProjectId);
-  const reminderError = getReminderValidationError(values);
+  const reminderError = isStory ? "" : getReminderValidationError(values);
 
   const updateField = (name, value, type = "text") => {
     onChange({
@@ -117,13 +119,13 @@ export default function TaskForm({
   };
 
   return (
-    <form className="task-editor-form" onSubmit={handleSubmit} noValidate>
+    <form className={`task-editor-form${isStory ? " story-editor-form" : ""}`} onSubmit={handleSubmit} noValidate>
       <section className="task-form-section task-form-primary">
         <label className="task-form-field task-title-field">
-          <span>Task title</span>
+          <span>{isStory ? "Story title" : "Task title"}</span>
           <input
             name="title"
-            placeholder="What needs to be done?"
+            placeholder={isStory ? "What larger piece of work does this Story represent?" : "What needs to be done?"}
             value={values.title}
             onChange={onChange}
             disabled={busy}
@@ -135,7 +137,7 @@ export default function TaskForm({
       <section className="task-form-section task-form-supporting">
         <div className="task-form-section-heading">
           <strong>Details</strong>
-          <span>Add context that will help when you return to this task.</span>
+          <span>{isStory ? "Explain the outcome covered by this Story." : "Add context that will help when you return to this task."}</span>
         </div>
 
         <div className="task-form-supporting-grid">
@@ -158,12 +160,12 @@ export default function TaskForm({
 
       <section className="task-form-section task-form-organization">
         <div className="task-form-section-heading">
-          <strong>Organization</strong>
-          <span>Choose where this task belongs and when it needs attention.</span>
+          <strong>{isStory ? "Planning" : "Organization"}</strong>
+          <span>{isStory ? "Set ownership, timing, status, and priority." : "Choose where this task belongs and when it needs attention."}</span>
         </div>
 
         <div className="task-form-controls-grid">
-          <label className="task-form-field">
+          {!isStory && <label className="task-form-field">
             <span>List</span>
             <select
               name="listId"
@@ -178,9 +180,9 @@ export default function TaskForm({
                 </option>
               ))}
             </select>
-          </label>
+          </label>}
 
-          <div className="task-form-field task-project-field">
+          {!isStory && <div className="task-form-field task-project-field">
             <label htmlFor={projectFieldId}>Project</label>
             <select
               id={projectFieldId}
@@ -222,7 +224,7 @@ export default function TaskForm({
                 )}
               </span>
             )}
-          </div>
+          </div>}
 
           {selectedProjectId && projectMembers.length > 0 && (
             <label className="task-form-field">
@@ -238,6 +240,23 @@ export default function TaskForm({
                   <option key={member.userId} value={member.userId}>
                     {safeDisplayName(member)} · {member.role}
                   </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {selectedProjectId && values.workType !== "story" && projectStories.length > 0 && (
+            <label className="task-form-field">
+              <span>Story</span>
+              <select
+                name="storyId"
+                value={values.storyId || ""}
+                onChange={onChange}
+                disabled={busy}
+              >
+                <option value="">No story</option>
+                {projectStories.map((story) => (
+                  <option key={story.id} value={story.id}>{story.title}</option>
                 ))}
               </select>
             </label>
@@ -285,7 +304,7 @@ export default function TaskForm({
           </label>
         </div>
 
-        <label className="task-reminder-field">
+        {!isStory && <label className="task-reminder-field">
           <input
             type="checkbox"
             name="reminder"
@@ -297,9 +316,9 @@ export default function TaskForm({
             <strong>Reminder</strong>
             Schedule a browser or in-app notification.
           </span>
-        </label>
+        </label>}
 
-        {values.reminder && (
+        {!isStory && values.reminder && (
           <div className="task-reminder-controls">
             <label className="task-form-field" htmlFor={`${reminderFieldId}-preset`}>
               <span>Reminder timing</span>

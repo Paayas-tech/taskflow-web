@@ -97,4 +97,21 @@ describe("ProjectTaskCard assignee presentation", () => {
     expect(textContent(assignee)).toContain("Unassigned");
     expect(assignee.props.title).toBe("No assignee");
   });
+
+  it("shows an optional Story-filter bulk checkbox without changing card opening", () => {
+    const onToggleBulkSelection = vi.fn();
+    const output = ProjectTaskCard({
+      task: { id: "task-a", title: "Prepare release", priority: "medium" },
+      onEdit: vi.fn(),
+      bulkSelectionEnabled: true,
+      bulkSelected: true,
+      onToggleBulkSelection,
+    });
+    const checkbox = find(output, (node) => node.props?.["aria-label"] === "Select Prepare release");
+
+    expect(checkbox.props.checked).toBe(true);
+    expect(output.props.className).toContain("is-bulk-selected");
+    checkbox.props.onChange();
+    expect(onToggleBulkSelection).toHaveBeenCalledWith("task-a");
+  });
 });

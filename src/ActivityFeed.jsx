@@ -21,19 +21,32 @@ const activityGroup = (value) => {
 export default function ActivityFeed({ userId, projectId, taskId = null, compact = false }) {
   const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [liveNotice, setLiveNotice] = useState("");
+  const [refreshNotice, setRefreshNotice] = useState("");
 
   const loadActivity = useCallback(async () => {
     setError("");
     try {
       setActivity(taskId ? await getTaskActivity(userId, taskId, 20) : await getProjectActivity(userId, projectId, 30));
+      return true;
     } catch {
       setError("We couldn't load recent activity.");
+      return false;
     } finally {
       setLoading(false);
     }
   }, [projectId, taskId, userId]);
+
+  const refreshActivity = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshNotice("");
+    const succeeded = await loadActivity();
+    if (succeeded) setRefreshNotice("History is up to date.");
+    setRefreshing(false);
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -63,8 +76,13 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
   }, {});
   return (
     <section className="settings-section task-history-panel" aria-labelledby={`activity-${taskId || projectId}`}>
-      <div className="section-heading-row"><div><p className="card-label">History</p><h3 id={`activity-${taskId || projectId}`}>Recent activity</h3></div><button className="ghost-btn compact-btn" type="button" onClick={loadActivity}>Refresh</button></div>
+      <div className="collaboration-panel-heading">
+        <span className="collaboration-heading-icon" aria-hidden="true">↻</span>
+        <div><h3 id={`activity-${taskId || projectId}`}>Activity history</h3><p>A timeline of changes and updates.</p></div>
+        <button className="ghost-btn compact-btn collaboration-refresh" type="button" onClick={refreshActivity} disabled={refreshing}><span className={refreshing ? "is-spinning" : ""} aria-hidden="true">↻</span><span>{refreshing ? "Refreshing…" : "Refresh"}</span></button>
+      </div>
       {liveNotice && <p className="form-hint" role="status">{liveNotice}</p>}
+      {refreshNotice && <p className="form-success collaboration-refresh-notice" role="status">{refreshNotice}</p>}
       {loading ? <div className="task-collaboration-state" role="status"><span className="state-spinner" /><p>Loading activity…</p></div> : error ? <p className="form-error" role="alert">{error}</p> : visible.length === 0 ? <div className="task-collaboration-empty"><span aria-hidden="true">↻</span><strong>No activity yet</strong><p>Task updates will be recorded here.</p></div> : <div className="settings-list task-history-list">{Object.entries(groups).map(([label, items]) => <section key={label}><h4>{label}</h4>{items.map((item) => <ActivityRow key={item.id} activity={item} />)}</section>)}</div>}
     </section>
   );

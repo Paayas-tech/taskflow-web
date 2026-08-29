@@ -54,6 +54,15 @@ const memberB = { userId: "00000000-0000-4000-8000-000000000102", displayName: "
 describe("TaskComments structured mention UI", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("uses the shared compact discussion header and composer copy", () => {
+    const view = runner(() => TaskComments({ userId: "owner", taskId: "task", members: [] }));
+    const tree = view.render();
+
+    expect(text(tree)).toContain("CommentsShare updates and mention project members.");
+    expect(findAll(tree, (node) => node.type === "label" && text(node) === "Write a comment")).toHaveLength(1);
+    expect(findAll(tree, (node) => node.type === "textarea")[0].props.placeholder).toContain("choose a teammate");
+  });
+
   it("offers only supplied project members and stores the selected member ID", async () => {
     const view = runner(() => TaskComments({ userId: "owner", taskId: "task", members: [memberA, memberB] }));
     let tree = view.render();

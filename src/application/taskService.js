@@ -46,6 +46,7 @@ const mapTaskPatchToDatabase = (data) => {
     reminderAt: "reminder_at",
     archivedAt: "archived_at",
     completedAt: "completed_at",
+    storyId: "story_id",
   };
 
   Object.entries(fields).forEach(([source, target]) => {
@@ -111,6 +112,8 @@ export const createTaskService = (
         reminder_at: reminderAt || null,
         completed_at: completed ? now() : null,
         archived_at: null,
+        work_type: taskData.workType === "story" ? "story" : "task",
+        story_id: taskData.storyId || null,
       });
 
       try {

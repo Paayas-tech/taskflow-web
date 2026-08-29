@@ -5,6 +5,7 @@ import {
   isCurrentAuthRequest,
   isEmailConfirmationError,
   isInvalidCredentialsError,
+  shouldWaitForOnboardingSettings,
   validateSignUpName,
 } from "./authDomain";
 
@@ -41,6 +42,26 @@ describe("authenticated request ownership", () => {
     expect(isCurrentAuthRequest("user-a", "user-a")).toBe(true);
     expect(isCurrentAuthRequest("user-b", "user-a")).toBe(false);
     expect(isCurrentAuthRequest(null, "user-a")).toBe(false);
+  });
+});
+
+describe("post-verification onboarding transition", () => {
+  const newUser = { uid: "user-a", onboardingRequired: true };
+
+  it("keeps a new user on the loading screen until settings are resolved", () => {
+    expect(shouldWaitForOnboardingSettings(newUser, false, "")).toBe(true);
+    expect(shouldWaitForOnboardingSettings(newUser, true, "user-a")).toBe(true);
+    expect(shouldWaitForOnboardingSettings(newUser, false, "user-a")).toBe(false);
+  });
+
+  it("does not delay established users for onboarding", () => {
+    expect(
+      shouldWaitForOnboardingSettings(
+        { uid: "user-a", onboardingRequired: false },
+        true,
+        ""
+      )
+    ).toBe(false);
   });
 });
 

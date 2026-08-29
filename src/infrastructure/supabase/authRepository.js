@@ -13,7 +13,10 @@ export const createAuthRepository = (client = null) => {
       email,
       password,
       options: {
-        data: { display_name: String(displayName || "").trim() },
+        data: {
+          display_name: String(displayName || "").trim(),
+          onboarding_completed: false,
+        },
         ...(emailRedirectTo ? { emailRedirectTo } : {}),
       },
     });
@@ -45,6 +48,16 @@ export const createAuthRepository = (client = null) => {
       type: "signup",
       email,
       options: emailRedirectTo ? { emailRedirectTo } : {},
+    });
+    throwIfError(error);
+    return data;
+  },
+
+  async verifySignupOtp({ email, token }) {
+    const { data, error } = await database().auth.verifyOtp({
+      email,
+      token,
+      type: "email",
     });
     throwIfError(error);
     return data;
@@ -107,6 +120,28 @@ export const createAuthRepository = (client = null) => {
     }
 
     return data.user || null;
+  },
+
+  async completeOnboarding() {
+    const { data, error } = await database().auth.updateUser({
+      data: { onboarding_completed: true },
+    });
+    throwIfError(error);
+    return data.user || null;
+  },
+
+  async deleteAccount() {
+    const { data, error } = await database().functions.invoke("delete-account", {
+      body: {},
+    });
+    throwIfError(error);
+    if (!data?.success) {
+      throw new Error("Account deletion was not completed.");
+    }
+
+    const signOutResult = await database().auth.signOut({ scope: "local" });
+    throwIfError(signOutResult.error);
+    return true;
   },
   });
 };

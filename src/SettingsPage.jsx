@@ -67,6 +67,9 @@ export default function SettingsPage({
   onSignOut,
   signOutPending = false,
   signOutError = "",
+  onDeleteAccount,
+  deleteAccountPending = false,
+  deleteAccountError = "",
   onNavigate,
   profileRequest = 0,
   onOpenProjectCreate,
@@ -79,6 +82,7 @@ export default function SettingsPage({
   const [backgroundSearch, setBackgroundSearch] = useState("");
   const [confirmingFilterReset, setConfirmingFilterReset] = useState(false);
   const [projectActionId, setProjectActionId] = useState("");
+  const [confirmingAccountDelete, setConfirmingAccountDelete] = useState(false);
   const [calendarSetupProviderId, setCalendarSetupProviderId] = useState("");
   const calendarDialogRef = useRef(null);
   const validationError = useMemo(
@@ -92,7 +96,7 @@ export default function SettingsPage({
   const selectedList = customLists.find(
     (list) => list.id === settings.taskDefaults.listId
   );
-  const themeLabel = settings.theme.mode === "system" ? "Auto" : titleCase(settings.theme.mode);
+  const themeLabel = titleCase(settings.theme.mode);
   const backgroundLabel =
     TASKFLOW_BACKGROUNDS.find(
       ({ id }) => id === settings.background.selected
@@ -380,7 +384,6 @@ export default function SettingsPage({
             value={settings.theme.mode}
             onSelect={(mode) => commitSection("theme", { mode }, "Theme saved.")}
             options={[
-              ["system", "Auto", "Follow your system appearance"],
               ["light", "Light", "Always use the light theme"],
               ["dark", "Dark", "Always use the dark theme"],
             ]}
@@ -691,6 +694,15 @@ export default function SettingsPage({
         onSignOut={onSignOut}
         pending={signOutPending}
         error={signOutError}
+        onDeleteAccount={onDeleteAccount}
+        deletePending={deleteAccountPending}
+        deleteError={deleteAccountError}
+        confirmingDelete={confirmingAccountDelete}
+        onBeginDelete={() => setConfirmingAccountDelete(true)}
+        onCancelDelete={() => {
+          if (deleteAccountPending) return;
+          setConfirmingAccountDelete(false);
+        }}
       />
     </div>
   );

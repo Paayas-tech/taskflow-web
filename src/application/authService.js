@@ -9,6 +9,7 @@ export const normalizeAuthUser = (user) => {
     uid: id,
     email: user.email || "",
     displayName: user.user_metadata?.display_name || user.displayName || "",
+    onboardingRequired: user.user_metadata?.onboarding_completed === false,
     raw: user,
   };
 };
@@ -36,6 +37,11 @@ export const resendConfirmation = (email, options = {}) =>
     emailRedirectTo: options.emailRedirectTo || "",
   });
 
+export const verifySignupOtp = async (email, token) => {
+  const data = await repository.verifySignupOtp({ email, token });
+  return { ...data, user: normalizeAuthUser(data.user) };
+};
+
 export const signIn = async (email, password) => {
   const data = await repository.signIn({ email, password });
   return { ...data, user: normalizeAuthUser(data.user) };
@@ -58,3 +64,8 @@ export const onAuthStateChange = (callback) =>
 
 export const updateDisplayName = async (displayName) =>
   normalizeAuthUser(await repository.updateDisplayName(displayName));
+
+export const completeOnboarding = async () =>
+  normalizeAuthUser(await repository.completeOnboarding());
+
+export const deleteAccount = () => repository.deleteAccount();

@@ -12,12 +12,25 @@ const labels = {
   comment_deleted: "deleted a comment",
 };
 
+const activityIcons = {
+  task_created: "+",
+  task_updated: "✎",
+  task_completed: "✓",
+  task_status_changed: "↔",
+  task_assigned: "@",
+  task_unassigned: "−",
+  comment_added: "↩",
+  comment_updated: "✎",
+  comment_deleted: "×",
+};
+
 export default function ActivityRow({ activity }) {
   const actorName = activity.userId ? safeDisplayName(activity) : "TaskFlow";
+  const fallbackLabel = String(activity.type || "activity update").replaceAll("_", " ");
   return (
     <article className="settings-card task-history-row">
-      <span className="task-collaboration-avatar" aria-hidden="true">{actorName.slice(0, 1).toUpperCase()}</span>
-      <div><p><strong>{actorName}</strong> {labels[activity.type] || activity.type.replaceAll("_", " ")}{activity.metadata?.taskTitle ? ` · ${activity.metadata.taskTitle}` : ""}</p><time className="form-hint" dateTime={activity.createdAt || undefined}>{activity.createdAt ? new Date(activity.createdAt).toLocaleString() : "Just now"}</time></div>
+      <span className={`task-history-icon task-history-icon-${activity.type || "default"}`} aria-hidden="true">{activityIcons[activity.type] || "•"}</span>
+      <div className="task-history-content"><p><strong>{actorName}</strong> {labels[activity.type] || fallbackLabel}{activity.metadata?.taskTitle ? <span className="task-history-subject">{activity.metadata.taskTitle}</span> : null}</p><time dateTime={activity.createdAt || undefined}>{activity.createdAt ? new Date(activity.createdAt).toLocaleString() : "Just now"}</time></div>
     </article>
   );
 }

@@ -298,6 +298,7 @@ function latestQuickCreate() {
 }
 
 beforeEach(() => {
+  const storedValues = new Map();
   globalThis.document = {
     activeElement: null,
     body: { style: { overflow: "" } },
@@ -306,6 +307,10 @@ beforeEach(() => {
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
     requestAnimationFrame: (callback) => { callback(); return 1; },
+    localStorage: {
+      getItem: vi.fn((key) => storedValues.get(key) ?? null),
+      setItem: vi.fn((key, value) => storedValues.set(key, value)),
+    },
   };
   childCalls.boards.length = 0;
   childCalls.rows.length = 0;
@@ -333,6 +338,85 @@ afterEach(() => {
 });
 
 describe("ProjectTasksPage workspace coordination", () => {
+  it("shows the Stories explanation once and remembers dismissal", async () => {
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    expect(textContent(runner.output)).toContain(
+      "Stories group related tasks. Create a Story, then add tasks inside it."
+    );
+    findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Dismiss Stories explanation"
+    ).props.onClick();
+    runner.render(props);
+
+    expect(textContent(runner.output)).not.toContain(
+      "Stories group related tasks. Create a Story, then add tasks inside it."
+    );
+    expect(window.localStorage.setItem).toHaveBeenCalledWith(
+      "taskflow:stories-onboarding:v1:user-a",
+      "dismissed"
+    );
+
+    const revisit = createRunner(props);
+    await flushWorkspace(revisit, props);
+    expect(textContent(revisit.output)).not.toContain(
+      "Stories group related tasks. Create a Story, then add tasks inside it."
+    );
+  });
+
+  it("shows clear Story and filter guidance when a project has no Stories", async () => {
+    projectService.getProjectTasks.mockResolvedValue([]);
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    expect(textContent(runner.output)).toContain("No Stories yet");
+    expect(textContent(runner.output)).toContain(
+      "Stories help you group related tasks. Create your first Story."
+    );
+    expect(findElement(
+      runner.output,
+      (node) => node.props?.title === "See tasks grouped by Story."
+    )).toBeDefined();
+    expect(findElements(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "+ New Story"
+    ).length).toBeGreaterThan(0);
+  });
+
+  it("opens the Story creation form for project editors", async () => {
+    const props = baseProps({
+      project: { ...baseProps().project, viewerRole: "editor" },
+    });
+    props.projects = [props.project];
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    expect(textContent(runner.output)).toContain(
+      "Group related tasks into stories."
+    );
+    expect(textContent(runner.output)).toContain("Uncategorized");
+
+    const createStory = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "+ New Story"
+    );
+    expect(createStory).toBeDefined();
+    createStory.props.onClick();
+    runner.render(props);
+
+    expect(latestForm()).toEqual(expect.objectContaining({
+      submitLabel: "Create Story",
+      values: expect.objectContaining({
+        projectId: "project-a",
+        workType: "story",
+      }),
+    }));
+  });
+
   it("opens and closes selected tasks in an in-workspace side panel", async () => {
     const props = baseProps();
     const runner = createRunner(props);
@@ -356,6 +440,194 @@ describe("ProjectTasksPage workspace coordination", () => {
       findElement(runner.output, (node) => node.props?.className?.includes("project-tasks-page"))
         .props.className
     ).not.toContain("has-task-panel");
+  });
+
+  it("opens Story tasks and returns to the same Story context", async () => {
+    const story = {
+      ...tasks[0],
+      id: "story-a",
+      title: "Projects section",
+      workType: "story",
+    };
+    const linkedTask = {
+      ...tasks[1],
+      id: "story-task-a",
+      title: "Build task board",
+      storyId: story.id,
+      workType: "task",
+      status: "completed",
+      completed: true,
+    };
+    projectService.getProjectTasks.mockResolvedValue([story, linkedTask]);
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    const storyCard = findElement(
+      runner.output,
+      (node) => node.type === "button" && node.props?.title === "Open Story and view its tasks"
+    );
+    storyCard.props.onClick({ currentTarget: { focus: vi.fn() } });
+    runner.render(props);
+
+    expect(childCalls.taskEditors.at(-1)).toEqual(expect.objectContaining({
+      task: expect.objectContaining({ id: story.id }),
+      relatedTasks: [expect.objectContaining({ id: linkedTask.id })],
+    }));
+    expect(textContent(runner.output)).toContain("1/1 tasks completed");
+
+    childCalls.taskEditors.at(-1).onOpenRelatedTask(linkedTask);
+    runner.render(props);
+    expect(childCalls.taskEditors.at(-1).task.id).toBe(linkedTask.id);
+    expect(childCalls.taskEditors.at(-1).onBackToStory).toEqual(expect.any(Function));
+
+    childCalls.taskEditors.at(-1).onBackToStory();
+    runner.render(props);
+    expect(childCalls.taskEditors.at(-1).task.id).toBe(story.id);
+  });
+
+  it("routes Story bulk updates through existing services and reports partial failures", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const story = { ...tasks[0], id: "story-a", title: "Projects", workType: "story" };
+    const firstTask = { ...tasks[0], id: "story-task-a", storyId: story.id, workType: "task" };
+    const secondTask = { ...tasks[1], id: "story-task-b", storyId: story.id, workType: "task" };
+    projectService.getProjectTasks.mockResolvedValue([story, firstTask, secondTask]);
+    projectService.updateProjectTask.mockImplementation((_userId, _projectId, taskId) =>
+      taskId === secondTask.id ? Promise.reject(new Error("denied")) : Promise.resolve()
+    );
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && node.props?.title === "Open Story and view its tasks"
+    ).props.onClick({ currentTarget: { focus: vi.fn() } });
+    runner.render(props);
+
+    const result = await childCalls.taskEditors.at(-1).onBulkUpdateRelatedTasks(
+      [firstTask.id, secondTask.id],
+      { type: "priority", value: "high" }
+    );
+    expect(projectService.updateProjectTask).toHaveBeenCalledWith(
+      "user-a", "project-a", firstTask.id, { priority: "high" }
+    );
+    expect(result).toEqual({ updated: 1, failed: 1, failedIds: [secondTask.id] });
+  });
+
+  it("limits bulk assignee and Story destinations to the current project context", async () => {
+    const story = { ...tasks[0], id: "story-a", title: "Projects", workType: "story" };
+    const destination = { ...tasks[0], id: "story-b", title: "Launch", workType: "story" };
+    const linkedTask = { ...tasks[1], id: "story-task-a", storyId: story.id, workType: "task" };
+    projectService.getProjectTasks.mockResolvedValue([story, destination, linkedTask]);
+    projectService.getProjectMembers.mockResolvedValue([
+      { userId: "user-a", role: "owner", displayName: "Paayas" },
+      { userId: "member-a", role: "editor", displayName: "Priya" },
+    ]);
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && node.props?.title === "Open Story and view its tasks"
+    ).props.onClick({ currentTarget: { focus: vi.fn() } });
+    runner.render(props);
+
+    await childCalls.taskEditors.at(-1).onBulkUpdateRelatedTasks(
+      [linkedTask.id],
+      { type: "assignee", value: "member-a" }
+    );
+    expect(projectService.setTaskAssignee).toHaveBeenCalledWith(
+      "user-a", "project-a", linkedTask.id, "member-a"
+    );
+
+    await childCalls.taskEditors.at(-1).onBulkUpdateRelatedTasks(
+      [linkedTask.id],
+      { type: "story", value: destination.id }
+    );
+    expect(projectService.updateProjectTask).toHaveBeenCalledWith(
+      "user-a", "project-a", linkedTask.id, { storyId: destination.id }
+    );
+    await expect(childCalls.taskEditors.at(-1).onBulkUpdateRelatedTasks(
+      [linkedTask.id],
+      { type: "story", value: "outside-project-story" }
+    )).rejects.toThrow("Choose a Story from this project.");
+  });
+
+  it("enables bulk selection only for a specific Story filter and clears it when the view changes", async () => {
+    const story = { ...tasks[0], id: "story-a", title: "Projects", workType: "story" };
+    const firstTask = { ...tasks[0], id: "story-task-a", storyId: story.id, workType: "task" };
+    const secondTask = { ...tasks[1], id: "story-task-b", storyId: story.id, workType: "task" };
+    projectService.getProjectTasks.mockResolvedValue([story, firstTask, secondTask]);
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    expect(latestBoard().bulkSelectionEnabled).toBe(false);
+    findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Filter project tasks by story"
+    ).props.onChange({ target: { value: story.id } });
+    runner.render(props);
+
+    expect(latestBoard().bulkSelectionEnabled).toBe(true);
+    latestBoard().onToggleTaskSelection(firstTask.id);
+    runner.render(props);
+    expect(latestBoard().selectedTaskIds.has(firstTask.id)).toBe(true);
+
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "List"
+    ).props.onClick();
+    runner.render(props);
+    runner.render(props);
+    expect(childCalls.rows.at(-1).bulkSelectionEnabled).toBe(true);
+    expect(childCalls.rows.at(-1).bulkSelected).toBe(false);
+
+    findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Filter project tasks by story"
+    ).props.onChange({ target: { value: "all" } });
+    runner.render(props);
+    expect(childCalls.rows.at(-1).bulkSelectionEnabled).toBe(false);
+  });
+
+  it("applies Board/List filtered bulk actions and shows success feedback", async () => {
+    const story = { ...tasks[0], id: "story-a", title: "Projects", workType: "story" };
+    const firstTask = { ...tasks[0], id: "story-task-a", storyId: story.id, workType: "task" };
+    const secondTask = { ...tasks[1], id: "story-task-b", storyId: story.id, workType: "task" };
+    projectService.getProjectTasks.mockResolvedValue([story, firstTask, secondTask]);
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+    findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Filter project tasks by story"
+    ).props.onChange({ target: { value: story.id } });
+    runner.render(props);
+
+    findElement(
+      runner.output,
+      (node) => node.props?.["aria-checked"] !== undefined
+    ).props.onChange();
+    runner.render(props);
+    expect(textContent(runner.output)).toContain("2 selected");
+
+    findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Change selected task status"
+    ).props.onChange({ target: { value: "completed" } });
+    await vi.waitFor(() => {
+      runner.render(props);
+      expect(textContent(runner.output)).toContain("2 tasks updated.");
+    });
+
+    expect(projectService.updateProjectTask).toHaveBeenCalledWith(
+      "user-a", "project-a", firstTask.id, { status: "completed", completed: true }
+    );
+    expect(projectService.updateProjectTask).toHaveBeenCalledWith(
+      "user-a", "project-a", secondTask.id, { status: "completed", completed: true }
+    );
   });
 
   it("shows the project workspace immediately while its tasks load", () => {
@@ -562,7 +834,7 @@ describe("ProjectTasksPage workspace coordination", () => {
     await flushWorkspace(runner, props);
 
     expect(latestBoard().readOnly).toBe(true);
-    expect(textContent(runner.output)).toContain("Your access: viewer · Read only");
+    expect(textContent(runner.output)).toContain("Your access · viewer · Read only");
     expect(
       findElement(
         runner.output,
