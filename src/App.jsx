@@ -6,6 +6,7 @@ import Dashboard from "./Dashboard";
 import DashboardInviteModal from "./DashboardInviteModal";
 import InboxPage from "./InboxPage";
 import Login from "./Login";
+import Onboarding from "./Onboarding";
 import NotificationsPanel from "./NotificationsPanel";
 import ProfileCompletionPrompt from "./ProfileCompletionPrompt";
 import ProjectsPage from "./ProjectsPage";
@@ -16,6 +17,8 @@ import TaskForm from "./TaskForm";
 import TaskEditModal from "./TaskEditModal";
 import TasksPage from "./TasksPage";
 import {
+  completeOnboarding,
+  deleteAccount,
   onAuthStateChange,
   signOut,
 } from "./application/authService";
@@ -53,7 +56,10 @@ import {
   resolveThemeMode,
   weekStartIndex,
 } from "./domain/settingsDomain";
-import { isCurrentAuthRequest } from "./domain/authDomain";
+import {
+  isCurrentAuthRequest,
+  shouldWaitForOnboardingSettings,
+} from "./domain/authDomain";
 import {
   filterActiveTasks,
   filterArchivedTasks,
@@ -178,7 +184,12 @@ function App() {
     pending: false,
     error: "",
   });
+  const [deleteAccountState, setDeleteAccountState] = useState({
+    pending: false,
+    error: "",
+  });
   const [passwordRecoverySession, setPasswordRecoverySession] = useState(false);
+  const [authEntryMode, setAuthEntryMode] = useState("signin");
   const [currentPath, setCurrentPath] = useState(() =>
     normalizePath(window.location.pathname)
   );
@@ -216,6 +227,7 @@ function App() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsError, setSettingsError] = useState("");
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [settingsSaveMessage, setSettingsSaveMessage] = useState("");
   const [settingsLoadedUserId, setSettingsLoadedUserId] = useState("");
   const [profileSettingsRequest, setProfileSettingsRequest] = useState(0);
@@ -246,10 +258,38 @@ function App() {
   }
 
   const handleSignOut = useCallback(() => {
+    setAuthEntryMode("signin");
     void signOutControllerRef.current.run();
   }, []);
 
+  const handleRestartSignup = useCallback(async () => {
+    setAuthEntryMode("signup");
+    const result = await signOutControllerRef.current.run();
+    if (!result.ok) {
+      throw new Error(result.error || "We couldn't restart signup. Please try again.");
+    }
+  }, []);
+
+  const handleDeleteAccount = useCallback(async () => {
+    if (deleteAccountState.pending) return;
+    setDeleteAccountState({ pending: true, error: "" });
+    try {
+      await deleteAccount();
+      setAuthEntryMode("signin");
+      setUser(null);
+      window.history.replaceState({}, "", "/");
+      setCurrentPath("/");
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      setDeleteAccountState({
+        pending: false,
+        error: "We couldn't delete your account. Please try again.",
+      });
+    }
+  }, [deleteAccountState.pending]);
+
   const handleSignInSuccess = useCallback(() => {
+    setAuthEntryMode("signin");
     defaultRouteAppliedRef.current = true;
     window.history.replaceState({}, "", "/");
     setCurrentPath("/");
@@ -263,6 +303,41 @@ function App() {
     setCurrentPath("/");
     window.scrollTo({ top: 0, behavior: "auto" });
   }, []);
+
+  const handleOnboardingComplete = useCallback(
+    async ({ displayName, purpose }) => {
+      if (!user) return;
+
+      setOnboardingSaving(true);
+      try {
+        const nextSettings = normalizeSettings(
+          {
+            ...settingsRef.current,
+            profile: { ...settingsRef.current.profile, displayName },
+            data: { ...settingsRef.current.data, onboardingPurpose: purpose },
+          },
+          user
+        );
+        const saved = await saveSettings(user, nextSettings);
+        await completeOnboarding();
+        settingsRef.current = saved.settings;
+        setSettings(saved.settings);
+        setUser((currentUser) =>
+          currentUser ? { ...currentUser, onboardingRequired: false } : currentUser
+        );
+
+        const destination = defaultViewPath(
+          saved.settings.navigation.defaultView,
+          saved.settings.navigation.lastViewedPath
+        );
+        window.history.replaceState({}, "", destination);
+        setCurrentPath(destination);
+      } finally {
+        setOnboardingSaving(false);
+      }
+    },
+    [user]
+  );
 
   const syncQuickTaskPendingIds = useCallback(() => {
     setQuickTaskPendingIds(
@@ -526,6 +601,7 @@ function App() {
         setTaskFormError("");
         setTaskFormSaving(false);
         setReminderNotice(null);
+        setDeleteAccountState({ pending: false, error: "" });
 
         const fallbackSettings = normalizeSettings(
           {},
@@ -1138,8 +1214,34 @@ function App() {
   if (!user) {
     return (
       <Login
+        initialMode={authEntryMode}
         onSignInSuccess={handleSignInSuccess}
         onRecoverPassword={() => navigate("/recover")}
+      />
+    );
+  }
+
+  if (
+    shouldWaitForOnboardingSettings(
+      user,
+      settingsLoading,
+      settingsLoadedUserId
+    )
+  ) {
+    return <div className="loading-screen">Loading...</div>;
+  }
+
+  if (
+    user.onboardingRequired &&
+    !settingsLoading &&
+    settingsLoadedUserId === user.uid
+  ) {
+    return (
+      <Onboarding
+        displayName={settings.profile.displayName || user.displayName}
+        saving={onboardingSaving}
+        onComplete={handleOnboardingComplete}
+        onStartOver={handleRestartSignup}
       />
     );
   }
@@ -1557,6 +1659,9 @@ function App() {
             onSave={handleSaveSettings}
             onCommit={handleSaveSettings}
             onSignOut={handleSignOut}
+            onDeleteAccount={handleDeleteAccount}
+            deleteAccountPending={deleteAccountState.pending}
+            deleteAccountError={deleteAccountState.error}
             signOutPending={signOutState.pending}
             signOutError={signOutState.error}
             onNavigate={navigate}

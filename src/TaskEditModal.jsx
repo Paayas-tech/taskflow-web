@@ -3,10 +3,12 @@ import TaskForm from "./TaskForm";
 import ActivityFeed from "./ActivityFeed";
 import TaskAssigneeSelector from "./TaskAssigneeSelector";
 import TaskComments from "./TaskComments";
+import StoryBulkActionBar from "./StoryBulkActionBar";
 import { useModalLifecycle } from "./components/modal/useModalLifecycle";
 import {
   buildTaskEditPayload,
   isArchived,
+  isTaskComplete,
   taskFormValuesFromTask,
 } from "./domain/taskDomain";
 
@@ -27,10 +29,16 @@ export default function TaskEditModal({
   userId = null,
   projectId = null,
   projectMembers = [],
+  projectStories = [],
   canAssign = false,
   onAssigneeChange,
   readOnly = false,
   presentation = "modal",
+  relatedTasks = [],
+  onOpenRelatedTask,
+  onCreateRelatedTask,
+  onBulkUpdateRelatedTasks,
+  onBackToStory,
 }) {
   const [values, setValues] = useState(() =>
     taskFormValuesFromTask(task, lists)
@@ -45,8 +53,18 @@ export default function TaskEditModal({
   const [assigneeId, setAssigneeId] = useState(task.assigneeId || null);
   const [assigneeBusy, setAssigneeBusy] = useState(false);
   const [assigneeError, setAssigneeError] = useState("");
-  const [activePage, setActivePage] = useState("details");
+  const [activePage, setActivePage] = useState(() =>
+    task.workType === "story" ? "tasks" : "details"
+  );
+  const [relatedTaskTitle, setRelatedTaskTitle] = useState("");
+  const [showRelatedTaskCreate, setShowRelatedTaskCreate] = useState(false);
+  const [creatingRelatedTask, setCreatingRelatedTask] = useState(false);
+  const [relatedTaskError, setRelatedTaskError] = useState("");
+  const [selectedRelatedTaskIds, setSelectedRelatedTaskIds] = useState(() => new Set());
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState(null);
   const dialogRef = useRef(null);
+  const relatedTaskInputRef = useRef(null);
   const confirmationDialogRef = useRef(null);
   const deleteButtonRef = useRef(null);
   const saveSubmissionRef = useRef(false);
@@ -61,13 +79,90 @@ export default function TaskEditModal({
   const archived = isArchived(task);
   const isPanel = presentation === "panel";
   const busy = saving || deleting || assigneeBusy || Boolean(lifecycleAction);
+  const isStory = task.workType === "story";
+  const completedRelatedTaskCount = relatedTasks.filter(isTaskComplete).length;
+  const allRelatedTasksSelected = relatedTasks.length > 0
+    && relatedTasks.every((relatedTask) => selectedRelatedTaskIds.has(relatedTask.id));
   const pageTitle = activePage === "comments"
     ? "Comments"
     : activePage === "history"
       ? "History"
-      : isPanel ? task.title : "Edit Task";
+      : activePage === "tasks"
+        ? task.title
+        : isPanel ? task.title : `Edit ${isStory ? "Story" : "Task"}`;
+
+  const createRelatedTask = async (event) => {
+    event.preventDefault();
+    const title = relatedTaskTitle.trim();
+    if (!title || !onCreateRelatedTask || creatingRelatedTask) return;
+    setCreatingRelatedTask(true);
+    setRelatedTaskError("");
+    try {
+      await onCreateRelatedTask(task, title);
+      setRelatedTaskTitle("");
+      setShowRelatedTaskCreate(false);
+    } catch (error) {
+      setRelatedTaskError(error.message || "We couldn't create this task.");
+    } finally {
+      setCreatingRelatedTask(false);
+    }
+  };
+
+  const toggleRelatedTaskSelection = (taskId) => {
+    setBulkMessage(null);
+    setSelectedRelatedTaskIds((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
+  const toggleAllRelatedTasks = () => {
+    setBulkMessage(null);
+    setSelectedRelatedTaskIds(allRelatedTasksSelected
+      ? new Set()
+      : new Set(relatedTasks.map((relatedTask) => relatedTask.id))
+    );
+  };
+
+  const runRelatedTasksBulkUpdate = async (type, rawValue) => {
+    if (!onBulkUpdateRelatedTasks || bulkUpdating || selectedRelatedTaskIds.size === 0) return;
+    setBulkUpdating(true);
+    setBulkMessage(null);
+    try {
+      const result = await onBulkUpdateRelatedTasks([...selectedRelatedTaskIds], { type, value: rawValue });
+      const updated = result?.updated || 0;
+      const failed = result?.failed || 0;
+      setSelectedRelatedTaskIds(new Set(result?.failedIds || []));
+      setBulkMessage({
+        error: failed > 0,
+        text: failed > 0
+          ? `${updated} of ${updated + failed} tasks updated; ${failed} failed due to permissions or another error.`
+          : `${updated} ${updated === 1 ? "task" : "tasks"} updated.`,
+      });
+    } catch (error) {
+      setBulkMessage({ error: true, text: error.message || "We couldn't update the selected tasks." });
+    } finally {
+      setBulkUpdating(false);
+    }
+  };
 
   busyRef.current = busy;
+
+  useEffect(() => {
+    if (!showRelatedTaskCreate) return undefined;
+    const focusFrame = window.requestAnimationFrame(() => relatedTaskInputRef.current?.focus());
+    return () => window.cancelAnimationFrame?.(focusFrame);
+  }, [showRelatedTaskCreate]);
+
+  useEffect(() => {
+    const visibleTaskIds = new Set(relatedTasks.map((relatedTask) => relatedTask.id));
+    setSelectedRelatedTaskIds((current) => {
+      const next = new Set([...current].filter((taskId) => visibleTaskIds.has(taskId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [relatedTasks]);
 
   useEffect(() => {
     if (isPanel) return undefined;
@@ -282,18 +377,25 @@ export default function TaskEditModal({
         >
           <div className="task-modal-header edit-task-modal-header">
             <div>
-              <p className="card-label">{isPanel ? "Task details" : task.title}</p>
+              <p className="card-label">{isPanel ? `${isStory ? "Story" : "Task"} details` : task.title}</p>
               <h2 id={titleId}>{pageTitle}</h2>
               <p id={descriptionId}>
                 {activePage === "comments"
                   ? "Discuss this task with project members."
                   : activePage === "history"
                     ? "Review task-specific changes and activity."
-                    : "Update this task without leaving your current workspace."}
+                    : activePage === "tasks"
+                      ? "View Story progress and manage its linked tasks."
+                      : "Update this task without leaving your current workspace."}
               </p>
             </div>
 
             <div className="edit-task-modal-actions">
+              {onBackToStory && (
+                <button className="ghost-btn compact-btn story-return-button" type="button" onClick={onBackToStory} disabled={busy}>
+                  ← Story
+                </button>
+              )}
               {isPanel && activePage === "details" && !readOnly && (
                 <label className="task-panel-complete">
                   <input
@@ -375,7 +477,7 @@ export default function TaskEditModal({
 
           {userId && projectId && (
             <nav className="task-modal-pages" aria-label="Task workspace">
-              {["details", "comments", "history"].map((page) => (
+              {(isStory ? ["details", "tasks", "comments", "history"] : ["details", "comments", "history"]).map((page) => (
                 <button
                   key={page}
                   type="button"
@@ -430,6 +532,7 @@ export default function TaskEditModal({
               projectsError={projectsError}
               onRetryProjects={onRetryProjects}
               browserNotificationsEnabled={browserNotificationsEnabled}
+              projectStories={projectStories}
             />
           ))}
 
@@ -441,6 +544,109 @@ export default function TaskEditModal({
                 members={projectMembers}
               />
             </div>
+          )}
+
+          {userId && projectId && isStory && activePage === "tasks" && (
+            <section className="story-task-page" aria-label={`Tasks in ${task.title}`}>
+              <div className="story-page-overview">
+                <div>
+                  <div className="story-page-heading">
+                    <p className="card-label">Story</p>
+                    <span className="story-progress-indicator">{completedRelatedTaskCount}/{relatedTasks.length} tasks completed</span>
+                  </div>
+                  <p>{task.description || "No description has been added to this Story yet."}</p>
+                </div>
+                <div className="story-page-meta" aria-label="Story summary">
+                  <span><small>Status</small><strong>{task.status === "completed" ? "Done" : task.status === "in-progress" ? "In progress" : "To do"}</strong></span>
+                  <span><small>Priority</small><strong>{task.priority === "high" ? "High" : task.priority === "low" ? "Low" : "Medium"}</strong></span>
+                  <span><small>Due date</small><strong>{task.dueDate || "No due date"}</strong></span>
+                  <span><small>Assignee</small><strong>{task.assigneeId ? task.assigneeName || "TaskFlow user" : "Unassigned"}</strong></span>
+                </div>
+              </div>
+              <div className="story-task-summary">
+                <div className="story-task-summary-title">
+                  {!readOnly && onBulkUpdateRelatedTasks && relatedTasks.length > 0 && (
+                    <label className="story-select-all">
+                      <input
+                        type="checkbox"
+                        checked={allRelatedTasksSelected}
+                        aria-checked={selectedRelatedTaskIds.size > 0 && !allRelatedTasksSelected ? "mixed" : allRelatedTasksSelected}
+                        onChange={toggleAllRelatedTasks}
+                        disabled={bulkUpdating}
+                      />
+                      <span>Select all</span>
+                    </label>
+                  )}
+                  <span><strong>Tasks</strong>{relatedTasks.length > 0 ? ` · ${relatedTasks.length} ${relatedTasks.length === 1 ? "task" : "tasks"}` : ""}</span>
+                </div>
+                {relatedTasks.length > 0 && !readOnly && onCreateRelatedTask && (
+                  <div className="story-task-action">
+                    <small>This task will be linked to this Story.</small>
+                    <button className="primary-btn compact-btn" type="button" onClick={() => setShowRelatedTaskCreate(true)}>+ New Task</button>
+                  </div>
+                )}
+              </div>
+              {!readOnly && onBulkUpdateRelatedTasks && selectedRelatedTaskIds.size > 0 && (
+                <StoryBulkActionBar
+                  selectedCount={selectedRelatedTaskIds.size}
+                  projectMembers={projectMembers}
+                  projectStories={projectStories}
+                  currentStoryId={task.id}
+                  busy={bulkUpdating}
+                  onAction={runRelatedTasksBulkUpdate}
+                  onClear={() => { setSelectedRelatedTaskIds(new Set()); setBulkMessage(null); }}
+                />
+              )}
+              {bulkMessage && <p className={bulkMessage.error ? "form-error story-bulk-message" : "form-success story-bulk-message"} role={bulkMessage.error ? "alert" : "status"}>{bulkMessage.text}</p>}
+              {showRelatedTaskCreate && !readOnly && onCreateRelatedTask && (
+                <form className="story-task-create" onSubmit={createRelatedTask}>
+                  <input
+                    ref={relatedTaskInputRef}
+                    aria-label="New task title"
+                    placeholder="Add a task to this Story"
+                    value={relatedTaskTitle}
+                    onChange={(event) => setRelatedTaskTitle(event.target.value)}
+                    disabled={creatingRelatedTask}
+                  />
+                  <button className="primary-btn compact-btn" type="submit" disabled={!relatedTaskTitle.trim() || creatingRelatedTask}>
+                    {creatingRelatedTask ? "Adding..." : "Add task"}
+                  </button>
+                </form>
+              )}
+              {relatedTaskError && <p className="form-error" role="alert">{relatedTaskError}</p>}
+              <div className="story-task-list">
+                {relatedTasks.map((relatedTask) => (
+                  <div className={`story-task-row${selectedRelatedTaskIds.has(relatedTask.id) ? " is-selected" : ""}`} key={relatedTask.id}>
+                    {!readOnly && onBulkUpdateRelatedTasks && (
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${relatedTask.title}`}
+                        checked={selectedRelatedTaskIds.has(relatedTask.id)}
+                        onChange={() => toggleRelatedTaskSelection(relatedTask.id)}
+                        disabled={bulkUpdating}
+                      />
+                    )}
+                    <button className="story-task-open" type="button" onClick={() => onOpenRelatedTask?.(relatedTask)}>
+                      <span className={`story-task-status story-task-status-${relatedTask.status}`} aria-hidden="true" />
+                      <span><strong>{relatedTask.title}</strong><small>{relatedTask.status === "completed" ? "Done" : relatedTask.status === "in-progress" ? "In progress" : "To do"}</small></span>
+                      <span aria-hidden="true">→</span>
+                    </button>
+                  </div>
+                ))}
+                {relatedTasks.length === 0 && (
+                  <div className="story-task-empty">
+                    <strong>No tasks in this Story yet.</strong>
+                    <p>Create your first task to get started.</p>
+                    {!readOnly && onCreateRelatedTask && (
+                      <div className="story-task-action story-task-empty-action">
+                        <small>This task will be linked to this Story.</small>
+                        <button className="primary-btn compact-btn" type="button" onClick={() => setShowRelatedTaskCreate(true)}>+ New Task</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
           )}
 
           {userId && projectId && activePage === "history" && (

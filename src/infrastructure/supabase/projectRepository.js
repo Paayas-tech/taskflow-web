@@ -8,6 +8,7 @@ const projectSelect = `
 
 const projectTaskSelect = `
   id, project_id, created_by, title, description, notes, priority, status,
+  work_type, story_id,
   column_id, position, version, due_date, start_date, start_time, end_date,
   end_time, reminder_enabled, reminder_at, completed_at, archived_at,
   created_at, updated_at, task_list_placements(list_id),
@@ -16,12 +17,20 @@ const projectTaskSelect = `
 
 const assignedProjectTaskSelect = `
   id, project_id, created_by, title, description, notes, priority, status,
+  work_type, story_id,
   column_id, position, version, due_date, start_date, start_time, end_date,
   end_time, reminder_enabled, reminder_at, completed_at, archived_at,
   created_at, updated_at, task_list_placements(list_id),
   task_assignments!inner(user_id, assigned_at),
   projects(id, name, status)
 `;
+const legacyProjectTaskSelect = projectTaskSelect.replace("  work_type, story_id,\n", "");
+const legacyAssignedProjectTaskSelect = assignedProjectTaskSelect.replace(
+  "  work_type, story_id,\n",
+  ""
+);
+const missingStorySchema = (error) =>
+  error?.code === "42703" && /work_type|story_id/i.test(error.message || "");
 
 const defaultColumnDefinitions = [
   { name: "To Do", category: "todo", position: 0, is_terminal: false },
@@ -287,12 +296,14 @@ export const createProjectRepository = (client = null) => {
       const project = await getAccessibleProject(userId, projectId);
       if (!project) return [];
 
-      const { data, error } = await database()
-        .from("tasks")
-        .select(projectTaskSelect)
+      const request = (selection) => database().from("tasks").select(selection)
         .eq("project_id", projectId)
         .order("position", { ascending: true, nullsFirst: false })
         .order("created_at", { ascending: false });
+      let { data, error } = await request(projectTaskSelect);
+      if (missingStorySchema(error)) {
+        ({ data, error } = await request(legacyProjectTaskSelect));
+      }
       throwIfError(error);
       const rows = data || [];
       const profiles = await getVisibleUserProfiles(
@@ -306,11 +317,13 @@ export const createProjectRepository = (client = null) => {
     },
 
     async getAssignedProjectTasks(userId) {
-      const { data, error } = await database()
-        .from("tasks")
-        .select(assignedProjectTaskSelect)
+      const request = (selection) => database().from("tasks").select(selection)
         .eq("task_assignments.user_id", userId)
         .order("due_date", { ascending: true, nullsFirst: false });
+      let { data, error } = await request(assignedProjectTaskSelect);
+      if (missingStorySchema(error)) {
+        ({ data, error } = await request(legacyAssignedProjectTaskSelect));
+      }
       throwIfError(error);
       const rows = data || [];
       const profiles = await getVisibleUserProfiles(
@@ -324,12 +337,12 @@ export const createProjectRepository = (client = null) => {
     },
 
     async getProjectTask(userId, projectId, taskId) {
-      const { data, error } = await database()
-        .from("tasks")
-        .select(projectTaskSelect)
-        .eq("id", taskId)
-        .eq("project_id", projectId)
-        .maybeSingle();
+      const request = (selection) => database().from("tasks").select(selection)
+        .eq("id", taskId).eq("project_id", projectId).maybeSingle();
+      let { data, error } = await request(projectTaskSelect);
+      if (missingStorySchema(error)) {
+        ({ data, error } = await request(legacyProjectTaskSelect));
+      }
       throwIfError(error);
       return data || null;
     },
@@ -400,6 +413,7 @@ export const createProjectRepository = (client = null) => {
         .from("tasks")
         .update({
           project_id: targetProjectId || null,
+          story_id: null,
           column_id: columnId,
           position,
         })

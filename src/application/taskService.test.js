@@ -69,6 +69,35 @@ describe("Supabase task application service", () => {
     expect(repository.createPersonalTask).not.toHaveBeenCalled();
   });
 
+  it("persists Story work items and task-to-Story relationships", async () => {
+    const repository = {
+      createPersonalTask: vi.fn().mockResolvedValue(row()),
+      setTaskList: vi.fn().mockResolvedValue(undefined),
+      deletePersonalTask: vi.fn(),
+    };
+    const service = createTaskService(repository);
+
+    await service.createTask("user-a", {
+      title: "Projects section",
+      workType: "story",
+    });
+    await service.createTask("user-a", {
+      title: "Task board",
+      storyId: "story-a",
+    });
+
+    expect(repository.createPersonalTask).toHaveBeenNthCalledWith(
+      1,
+      "user-a",
+      expect.objectContaining({ work_type: "story", story_id: null })
+    );
+    expect(repository.createPersonalTask).toHaveBeenNthCalledWith(
+      2,
+      "user-a",
+      expect.objectContaining({ work_type: "task", story_id: "story-a" })
+    );
+  });
+
   it("synchronizes completion status and timestamp", async () => {
     const repository = {
       getPersonalTask: vi.fn().mockResolvedValue(row()),

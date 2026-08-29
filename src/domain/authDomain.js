@@ -9,6 +9,10 @@ export const isInvalidCredentialsError = (error) =>
   ["invalid_credentials", "user_not_found"].includes(error?.code) ||
   hasMessage(error, /invalid login credentials/i);
 
+export const isExistingAccountError = (error) =>
+  ["user_already_exists", "email_exists"].includes(error?.code) ||
+  hasMessage(error, /already (?:been )?registered|already exists/i);
+
 export const getSignUpOutcome = (result) => {
   if (!result?.user?.id) {
     const error = new Error("Unexpected signup response.");
@@ -21,6 +25,16 @@ export const getSignUpOutcome = (result) => {
 
 export const isCurrentAuthRequest = (activeUserId, requestUserId) =>
   Boolean(requestUserId) && activeUserId === requestUserId;
+
+export const shouldWaitForOnboardingSettings = (
+  user,
+  settingsLoading,
+  settingsLoadedUserId
+) =>
+  Boolean(
+    user?.onboardingRequired &&
+      (settingsLoading || settingsLoadedUserId !== user.uid)
+  );
 
 export const validateSignUpName = (name) => {
   const normalizedName = String(name || "").trim();
@@ -39,8 +53,7 @@ export const friendlyAuthError = (error, isLogin) => {
   }
 
   if (
-    ["user_already_exists", "email_exists"].includes(error?.code) ||
-    hasMessage(error, /already (?:been )?registered|already exists/i)
+    isExistingAccountError(error)
   ) {
     return "An account already exists for this email address.";
   }

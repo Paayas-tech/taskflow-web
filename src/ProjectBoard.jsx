@@ -30,6 +30,9 @@ export default function ProjectBoard({
   initiallyCollapsedColumnIds = [],
   readOnly = false,
   formatSettings = {},
+  bulkSelectionEnabled = false,
+  selectedTaskIds = new Set(),
+  onToggleTaskSelection,
 }) {
   const [activeTaskId, setActiveTaskId] = useState(null);
   const [collapsedColumnIds, setCollapsedColumnIds] = useState(
@@ -96,6 +99,9 @@ export default function ProjectBoard({
             onToggleCollapse={() => toggleColumn(column.id)}
             readOnly={readOnly}
             formatSettings={formatSettings}
+            bulkSelectionEnabled={bulkSelectionEnabled}
+            selectedTaskIds={selectedTaskIds}
+            onToggleTaskSelection={onToggleTaskSelection}
           />
         ))}
       </div>

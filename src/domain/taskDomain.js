@@ -118,6 +118,8 @@ export const normalizeTaskDocument = (id, data = {}) => {
     reminderAt: normalizeReminderAt(data.reminderAt),
     listId: data.listId ?? null,
     projectId: data.projectId ?? null,
+    workType: data.workType === "story" ? "story" : "task",
+    storyId: data.storyId ?? null,
     createdAt: data.createdAt ?? null,
     updatedAt: data.updatedAt ?? null,
     completedAt: data.completedAt ?? null,
@@ -383,6 +385,8 @@ export const taskFormValuesFromTask = (task, lists = []) => {
     reminderAt: toDateTimeLocalValue(task.reminderAt),
     listId: knownListIds.has(task.listId) ? task.listId : "",
     projectId: task.projectId || "",
+    workType: task.workType === "story" ? "story" : "task",
+    storyId: task.storyId || "",
   };
 };
 
@@ -403,4 +407,5 @@ export const buildTaskEditPayload = (values) => ({
     : "",
   listId: values.listId || null,
   projectId: values.projectId || null,
+  storyId: values.storyId || null,
 });

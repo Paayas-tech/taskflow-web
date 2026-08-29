@@ -5,6 +5,7 @@ import ProjectTaskQuickCreate from "./ProjectTaskQuickCreate";
 import TaskEditModal from "./TaskEditModal";
 import TaskForm from "./TaskForm";
 import TaskRow from "./TaskRow";
+import StoryBulkActionBar from "./StoryBulkActionBar";
 import {
   archiveProjectTask,
   createProjectTask,
@@ -21,6 +22,7 @@ const emptyTaskForm = {
   title: "", description: "", notes: "", status: "todo", priority: "medium",
   dueDate: "", endDate: "", startTime: "", endTime: "", reminder: false,
   reminderAt: "", listId: "", projectId: "", assigneeId: "",
+  workType: "task", storyId: "",
 };
 
 const statusForColumn = (column) =>
@@ -34,6 +36,25 @@ const categoryForStatus = (status) =>
     : status === "in-progress" || status === "in_progress"
       ? "in_progress"
       : "todo";
+
+const storiesOnboardingKey = (userId) => `taskflow:stories-onboarding:v1:${userId || "guest"}`;
+
+const hasSeenStoriesOnboarding = (userId) => {
+  try {
+    return typeof window !== "undefined"
+      && window.localStorage?.getItem(storiesOnboardingKey(userId)) === "dismissed";
+  } catch {
+    return false;
+  }
+};
+
+const rememberStoriesOnboarding = (userId) => {
+  try {
+    window.localStorage?.setItem(storiesOnboardingKey(userId), "dismissed");
+  } catch {
+    // The banner can still be dismissed for this visit when storage is unavailable.
+  }
+};
 
 const sortProjectTasks = (tasks, sort) => [...tasks].sort((first, second) => {
   if (sort === "due") {
@@ -62,9 +83,17 @@ export default function ProjectTasksPage({
   const [mutationError, setMutationError] = useState("");
   const [pendingIds, setPendingIds] = useState(new Set());
   const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [storyReturnId, setStoryReturnId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [storyFilter, setStoryFilter] = useState("all");
+  const [filteredSelectedTaskIds, setFilteredSelectedTaskIds] = useState(() => new Set());
+  const [filteredBulkUpdating, setFilteredBulkUpdating] = useState(false);
+  const [filteredBulkMessage, setFilteredBulkMessage] = useState(null);
+  const [showStoriesOnboarding, setShowStoriesOnboarding] = useState(
+    () => !hasSeenStoriesOnboarding(userId)
+  );
   const [sort, setSort] = useState("created");
   const [quickCreateTarget, setQuickCreateTarget] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -117,9 +146,11 @@ export default function ProjectTasksPage({
   useEffect(() => {
     setView("board");
     setSelectedTaskId(null);
+    setStoryReturnId(null);
     setSearchTerm("");
     setStatusFilter("all");
     setAssigneeFilter("all");
+    setStoryFilter("all");
     setQuickCreateTarget(null);
     setCreateValues({ ...emptyTaskForm, projectId });
     void loadWorkspace();
@@ -128,10 +159,31 @@ export default function ProjectTasksPage({
     };
   }, [loadWorkspace, projectId, refreshToken]);
 
-  const activeTasks = useMemo(
-    () => tasks.filter((task) => !isArchived(task)),
+  useEffect(() => {
+    setShowStoriesOnboarding(!hasSeenStoriesOnboarding(userId));
+  }, [userId]);
+
+  const dismissStoriesOnboarding = () => {
+    rememberStoriesOnboarding(userId);
+    setShowStoriesOnboarding(false);
+  };
+
+  const stories = useMemo(
+    () => tasks.filter((task) => !isArchived(task) && task.workType === "story"),
     [tasks]
   );
+  const activeTasks = useMemo(() => {
+    const storyNames = new Map(stories.map((story) => [story.id, story.title]));
+    return tasks
+      .filter((task) => !isArchived(task) && task.workType !== "story")
+      .map((task) => storyNames.has(task.storyId)
+        ? { ...task, storyName: storyNames.get(task.storyId) }
+        : task);
+  }, [stories, tasks]);
+  const boardTasks = useMemo(() => activeTasks.filter((task) => {
+    if (storyFilter === "none") return !task.storyId;
+    return storyFilter === "all" || task.storyId === storyFilter;
+  }), [activeTasks, storyFilter]);
   const filteredTasks = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     const matches = activeTasks.filter((task) => {
@@ -139,22 +191,41 @@ export default function ProjectTasksPage({
       if (statusFilter === "completed" && !isTaskComplete(task)) return false;
       if (assigneeFilter === "unassigned" && task.assigneeId) return false;
       if (assigneeFilter !== "all" && assigneeFilter !== "unassigned" && task.assigneeId !== assigneeFilter) return false;
+      if (storyFilter === "none" && task.storyId) return false;
+      if (storyFilter !== "all" && storyFilter !== "none" && task.storyId !== storyFilter) return false;
       if (!query) return true;
       return [task.title, task.description, task.notes].some((value) =>
         String(value || "").toLowerCase().includes(query)
       );
     });
     return sortProjectTasks(matches, sort);
-  }, [activeTasks, assigneeFilter, searchTerm, sort, statusFilter]);
+  }, [activeTasks, assigneeFilter, searchTerm, sort, statusFilter, storyFilter]);
   const listTasksByColumn = useMemo(
     () => groupProjectTasksByColumn(columns, filteredTasks, { preserveTaskOrder: true }),
     [columns, filteredTasks]
   );
-  const selectedTask = activeTasks.find((task) => task.id === selectedTaskId);
+  const selectedTask = [...activeTasks, ...stories].find((task) => task.id === selectedTaskId);
   const canEditTasks = ["owner", "editor"].includes(project?.viewerRole);
+  const storyFilteredBulkEnabled = canEditTasks && storyFilter !== "all" && storyFilter !== "none";
+  const visibleBulkTasks = view === "board" ? boardTasks : filteredTasks;
+  const allVisibleBulkTasksSelected = visibleBulkTasks.length > 0
+    && visibleBulkTasks.every((task) => filteredSelectedTaskIds.has(task.id));
   const editableProjects = projects.filter((candidate) =>
     ["owner", "editor"].includes(candidate.viewerRole)
   );
+
+  useEffect(() => {
+    setFilteredSelectedTaskIds(new Set());
+    setFilteredBulkMessage(null);
+  }, [projectId, storyFilter, view]);
+
+  useEffect(() => {
+    const visibleIds = new Set(visibleBulkTasks.map((task) => task.id));
+    setFilteredSelectedTaskIds((current) => {
+      const next = new Set([...current].filter((taskId) => visibleIds.has(taskId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [visibleBulkTasks]);
 
   const openCreate = (column = null, schedule = {}) => {
     if (!canEditTasks) return;
@@ -165,6 +236,7 @@ export default function ProjectTasksPage({
     });
     setShowCreate(true);
   };
+  const openStoryCreate = () => openCreate(null, { workType: "story", storyId: "" });
   const startQuickCreate = (column = null) => {
     if (!canEditTasks) return;
     const defaultColumn =
@@ -280,6 +352,19 @@ export default function ProjectTasksPage({
       projectId,
       listId: null,
       status: statusForColumn(column),
+      workType: "task",
+      storyId: storyFilter !== "all" && storyFilter !== "none" ? storyFilter : "",
+    });
+    await loadWorkspace();
+  };
+
+  const handleCreateStoryTask = async (story, title) => {
+    await createProjectTask(userId, projectId, {
+      ...emptyTaskForm,
+      title,
+      projectId,
+      workType: "task",
+      storyId: story.id,
     });
     await loadWorkspace();
   };
@@ -362,7 +447,20 @@ export default function ProjectTasksPage({
   };
   const openEditor = (task, triggerElement) => {
     editTriggerRef.current = triggerElement || null;
+    setStoryReturnId(null);
     setSelectedTaskId(task.id);
+  };
+  const openStoryTask = (task) => {
+    if (selectedTask?.workType === "story") setStoryReturnId(selectedTask.id);
+    setSelectedTaskId(task.id);
+  };
+  const closeSelectedItem = () => {
+    if (storyReturnId) {
+      setSelectedTaskId(storyReturnId);
+      setStoryReturnId(null);
+      return;
+    }
+    setSelectedTaskId(null);
   };
 
   const handleAssigneeChange = async (taskId, assigneeId) => {
@@ -372,6 +470,123 @@ export default function ProjectTasksPage({
     setTasks((current) => current.map((task) =>
       task.id === taskId ? { ...task, assigneeId: assigneeId || null, assigneeName } : task
     ));
+  };
+
+  const handleBulkStoryTaskUpdate = async (taskIds, action, sourceStoryId = null) => {
+    if (!canEditTasks) throw new Error("This project is read-only for your account.");
+    const currentStoryId = sourceStoryId
+      || (selectedTask?.workType === "story" ? selectedTask.id : null);
+    const selectedIds = [...new Set(taskIds)].filter((taskId) =>
+      activeTasks.some((task) => task.id === taskId && task.storyId === currentStoryId)
+    );
+    if (!currentStoryId || selectedIds.length === 0) {
+      return { updated: 0, failed: 0, failedIds: [] };
+    }
+
+    let patch = {};
+    if (action.type === "status") {
+      if (!["todo", "in-progress", "completed"].includes(action.value)) {
+        throw new Error("Choose a valid task status.");
+      }
+      patch = { status: action.value, completed: action.value === "completed" };
+    } else if (action.type === "priority") {
+      if (!["low", "medium", "high"].includes(action.value)) {
+        throw new Error("Choose a valid task priority.");
+      }
+      patch = { priority: action.value };
+    } else if (action.type === "story") {
+      const destinationStoryId = action.value || null;
+      if (destinationStoryId && !stories.some((story) => story.id === destinationStoryId)) {
+        throw new Error("Choose a Story from this project.");
+      }
+      patch = { storyId: destinationStoryId };
+    } else if (action.type !== "assignee") {
+      throw new Error("Choose a valid bulk action.");
+    }
+
+    const assigneeId = action.type === "assignee" ? action.value || null : undefined;
+    if (assigneeId && !members.some((member) => member.userId === assigneeId)) {
+      throw new Error("Choose a member of this project.");
+    }
+    const assigneeName = members.find((member) => member.userId === assigneeId)?.displayName || "";
+    const statusColumn = action.type === "status"
+      ? columns.find((column) => column.category === categoryForStatus(action.value))
+      : null;
+    const previous = tasks;
+
+    setPendingIds((ids) => new Set([...ids, ...selectedIds]));
+    setTasks((current) => current.map((task) => {
+      if (!selectedIds.includes(task.id)) return task;
+      if (action.type === "assignee") return { ...task, assigneeId, assigneeName };
+      return { ...task, ...patch, ...(statusColumn ? { columnId: statusColumn.id } : {}) };
+    }));
+
+    const results = await Promise.allSettled(selectedIds.map((taskId) =>
+      action.type === "assignee"
+        ? setTaskAssignee(userId, projectId, taskId, assigneeId)
+        : updateProjectTask(userId, projectId, taskId, patch)
+    ));
+    const failedIds = selectedIds.filter((_, index) => results[index].status === "rejected");
+    if (failedIds.length > 0) {
+      setTasks(previous);
+    }
+    await loadWorkspace();
+    setPendingIds((ids) => {
+      const next = new Set(ids);
+      selectedIds.forEach((taskId) => next.delete(taskId));
+      return next;
+    });
+    return {
+      updated: selectedIds.length - failedIds.length,
+      failed: failedIds.length,
+      failedIds,
+    };
+  };
+
+  const toggleFilteredTaskSelection = (taskId) => {
+    if (!storyFilteredBulkEnabled) return;
+    setFilteredBulkMessage(null);
+    setFilteredSelectedTaskIds((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
+  const toggleAllVisibleFilteredTasks = () => {
+    if (!storyFilteredBulkEnabled) return;
+    setFilteredBulkMessage(null);
+    setFilteredSelectedTaskIds(allVisibleBulkTasksSelected
+      ? new Set()
+      : new Set(visibleBulkTasks.map((task) => task.id))
+    );
+  };
+
+  const runFilteredBulkUpdate = async (type, value) => {
+    if (!storyFilteredBulkEnabled || filteredBulkUpdating || filteredSelectedTaskIds.size === 0) return;
+    setFilteredBulkUpdating(true);
+    setFilteredBulkMessage(null);
+    try {
+      const result = await handleBulkStoryTaskUpdate(
+        [...filteredSelectedTaskIds],
+        { type, value },
+        storyFilter
+      );
+      const updated = result.updated || 0;
+      const failed = result.failed || 0;
+      setFilteredSelectedTaskIds(new Set(result.failedIds || []));
+      setFilteredBulkMessage({
+        error: failed > 0,
+        text: failed > 0
+          ? `${updated} of ${updated + failed} tasks updated; ${failed} failed due to permissions or another error.`
+          : `${updated} ${updated === 1 ? "task" : "tasks"} updated.`,
+      });
+    } catch (error) {
+      setFilteredBulkMessage({ error: true, text: error.message || "We couldn't update the selected tasks." });
+    } finally {
+      setFilteredBulkUpdating(false);
+    }
   };
 
   if (projectsLoading && !project) {
@@ -391,14 +606,59 @@ export default function ProjectTasksPage({
       <header className="project-task-hero">
         <div className="project-task-identity">
           <span className="project-task-color" style={{ backgroundColor: project.color || "#6657c8" }} />
-          <div><h2 id="project-task-title">{project.name}</h2>{project.description && <p>{project.description}</p>}</div>
+          <div>
+            <h2 id="project-task-title">{project.name}</h2>
+            <p className="project-access">Your access · <span>{project.viewerRole || "member"}</span>{!canEditTasks ? " · Read only" : ""}</p>
+            {project.description && <p>{project.description}</p>}
+          </div>
         </div>
         <div className="project-card-actions">
           <button ref={membersButtonRef} className="ghost-btn compact-btn" type="button" onClick={() => setShowMembers(true)}>Members</button>
         </div>
       </header>
 
-      <p className="project-description">Your access: {project.viewerRole || "member"}{!canEditTasks ? " · Read only" : ""}</p>
+      <section className="project-stories" aria-labelledby="project-stories-title">
+        <header>
+          <div>
+            <p className="card-label">Stories <span className="project-story-count" aria-label={`${stories.length} Stories`}>{stories.length}</span></p>
+            <h3 id="project-stories-title">Project stories</h3>
+            <p className="project-stories-help">Group related tasks into stories.</p>
+          </div>
+          <div className="project-stories-actions">
+            {canEditTasks && <button className="primary-btn compact-btn" type="button" onClick={openStoryCreate}>+ New Story</button>}
+          </div>
+        </header>
+        {showStoriesOnboarding && (
+          <aside className="project-stories-onboarding" aria-label="About Stories">
+            <span className="project-story-icon" aria-hidden="true">▱</span>
+            <p>Stories group related tasks. Create a Story, then add tasks inside it.</p>
+            <button className="ghost-btn compact-btn" type="button" aria-label="Dismiss Stories explanation" onClick={dismissStoriesOnboarding}>Dismiss</button>
+          </aside>
+        )}
+        <div className="project-story-list">
+          {stories.map((story) => {
+            const storyTasks = activeTasks.filter((task) => task.storyId === story.id);
+            const completedCount = storyTasks.filter(isTaskComplete).length;
+            return (
+              <button key={story.id} type="button" title="Open Story and view its tasks" onClick={(event) => openEditor(story, event.currentTarget)}>
+                <span className="project-story-icon" aria-hidden="true">▱</span>
+                <span><strong>{story.title}</strong><small>{completedCount}/{storyTasks.length} tasks completed</small></span>
+                <span aria-hidden="true">→</span>
+              </button>
+            );
+          })}
+          {stories.length === 0 && (
+            <div className="project-story-empty">
+              <span className="project-story-icon" aria-hidden="true">▱</span>
+              <span>
+                <strong>No Stories yet</strong>
+                <small>{canEditTasks ? "Stories help you group related tasks. Create your first Story." : "No Stories in this project yet."}</small>
+              </span>
+              {canEditTasks && <button className="primary-btn compact-btn" type="button" onClick={openStoryCreate}>+ New Story</button>}
+            </div>
+          )}
+        </div>
+      </section>
 
       <div className="project-view-toolbar">
         <div className="project-view-switcher" role="group" aria-label="Project view">
@@ -417,15 +677,41 @@ export default function ProjectTasksPage({
             </button>
           ))}
         </div>
-        {view === "list" && (
           <div className="project-list-controls">
+            <label className="project-story-filter"><span>Story <span className="inline-help-icon" role="img" aria-label="See tasks grouped by Story" title="See tasks grouped by Story.">?</span></span><select aria-label="Filter project tasks by story" value={storyFilter} onChange={(event) => setStoryFilter(event.target.value)}><option value="all">All stories</option><option value="none">Uncategorized</option>{stories.map((story) => <option key={story.id} value={story.id}>{story.title}</option>)}</select></label>
+        {view === "list" && (<>
             <input aria-label="Search project tasks" type="search" placeholder="Search tasks" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
             <select aria-label="Filter project task status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">All statuses</option><option value="active">Active</option><option value="completed">Completed</option></select>
             <select aria-label="Filter project tasks by assignee" value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}><option value="all">All assignees</option><option value="unassigned">Unassigned</option>{members.map((member) => <option key={member.userId} value={member.userId}>{member.displayName || "TaskFlow user"}</option>)}</select>
             <select aria-label="Sort project tasks" value={sort} onChange={(event) => setSort(event.target.value)}><option value="created">Newest</option><option value="due">Due date</option><option value="priority">Priority</option></select>
+        </>)}
           </div>
-        )}
       </div>
+
+      {storyFilteredBulkEnabled && visibleBulkTasks.length > 0 && (
+        <div className="project-filtered-bulk-tools">
+          <label className="story-select-all">
+            <input
+              type="checkbox"
+              checked={allVisibleBulkTasksSelected}
+              aria-checked={filteredSelectedTaskIds.size > 0 && !allVisibleBulkTasksSelected ? "mixed" : allVisibleBulkTasksSelected}
+              onChange={toggleAllVisibleFilteredTasks}
+              disabled={filteredBulkUpdating}
+            />
+            <span>Select all visible</span>
+          </label>
+          <StoryBulkActionBar
+            selectedCount={filteredSelectedTaskIds.size}
+            projectMembers={members}
+            projectStories={stories}
+            currentStoryId={storyFilter}
+            busy={filteredBulkUpdating}
+            onAction={runFilteredBulkUpdate}
+            onClear={() => { setFilteredSelectedTaskIds(new Set()); setFilteredBulkMessage(null); }}
+          />
+        </div>
+      )}
+      {filteredBulkMessage && <p className={filteredBulkMessage.error ? "form-error story-bulk-message project-filtered-bulk-message" : "form-success story-bulk-message project-filtered-bulk-message"} role={filteredBulkMessage.error ? "alert" : "status"}>{filteredBulkMessage.text}</p>}
 
       {mutationError && <div className="inline-error" role="alert"><p>{mutationError}</p><button className="ghost-btn compact-btn" type="button" onClick={() => setMutationError("")}>Dismiss</button></div>}
       {loadError && activeTasks.length > 0 && <div className="inline-error" role="alert"><p>{loadError}</p><button className="ghost-btn compact-btn" type="button" onClick={loadWorkspace}>Try again</button></div>}
@@ -435,7 +721,7 @@ export default function ProjectTasksPage({
       ) : view === "board" ? (
         <ProjectBoard
           columns={columns}
-          tasks={activeTasks}
+          tasks={boardTasks}
           onMoveTasks={handleMoveTasks}
           onEditTask={openEditor}
           onStartQuickCreate={startQuickCreate}
@@ -445,6 +731,9 @@ export default function ProjectTasksPage({
           quickCreateColumnId={quickCreateTarget}
           readOnly={!canEditTasks}
           formatSettings={formatSettings}
+          bulkSelectionEnabled={storyFilteredBulkEnabled}
+          selectedTaskIds={filteredSelectedTaskIds}
+          onToggleTaskSelection={toggleFilteredTaskSelection}
         />
       ) : (
         <div className="tasks-page-list project-task-list">
@@ -466,7 +755,7 @@ export default function ProjectTasksPage({
                   <span aria-label={`${sectionTasks.length} tasks`}>{sectionTasks.length}</span>
                 </header>
                 <div className="project-task-list-section-rows">
-                  {sectionTasks.map((task) => <TaskRow key={task.id} task={task} lists={lists} projects={projects} completionBusy={pendingIds.has(task.id)} selected={selectedTaskId === task.id} onToggleCompletion={canEditTasks ? handleCompletion : undefined} onEdit={openEditor} onArchive={canEditTasks ? () => handleArchive(task.id) : undefined} formatSettings={formatSettings} />)}
+                  {sectionTasks.map((task) => <TaskRow key={task.id} task={task} lists={lists} projects={projects} completionBusy={pendingIds.has(task.id)} selected={selectedTaskId === task.id} onToggleCompletion={canEditTasks ? handleCompletion : undefined} onEdit={openEditor} onArchive={canEditTasks ? () => handleArchive(task.id) : undefined} formatSettings={formatSettings} bulkSelectionEnabled={storyFilteredBulkEnabled} bulkSelected={filteredSelectedTaskIds.has(task.id)} onToggleBulkSelection={toggleFilteredTaskSelection} />)}
                   {sectionTasks.length === 0 && <p className="project-task-list-section-empty">No tasks</p>}
                 </div>
               </section>
@@ -491,15 +780,15 @@ export default function ProjectTasksPage({
       {showCreate && (
         <div className="task-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeCreate()}>
           <section ref={createDialogRef} className="task-modal" role="dialog" aria-modal="true" aria-labelledby="project-create-task-title" aria-busy={creating}>
-            <div className="task-modal-header"><div><p className="card-label">Project task</p><h2 id="project-create-task-title">Create Task</h2><p>This task will be added to {project.name}.</p></div><button className="ghost-btn compact-btn" type="button" onClick={closeCreate} disabled={creating}>Close</button></div>
-            <TaskForm values={createValues} onChange={handleCreateChange} onSubmit={handleCreate} onCancel={closeCreate} submitLabel="Create Task" busyLabel="Creating..." busy={creating} error={createError} lists={lists} projects={editableProjects} projectMembers={members} projectsLoading={projectsLoading} projectsError={projectsError} onRetryProjects={onRetryProjects} browserNotificationsEnabled={browserNotificationsEnabled} />
+            <div className="task-modal-header"><div><p className="card-label">{createValues.workType === "story" ? "Project story" : "Project task"}</p><h2 id="project-create-task-title">Create {createValues.workType === "story" ? "Story" : "Task"}</h2><p>This {createValues.workType === "story" ? "Story" : "task"} will be added to {project.name}.</p></div><button className="ghost-btn compact-btn" type="button" onClick={closeCreate} disabled={creating}>Close</button></div>
+            <TaskForm values={createValues} onChange={handleCreateChange} onSubmit={handleCreate} onCancel={closeCreate} submitLabel={createValues.workType === "story" ? "Create Story" : "Create Task"} busyLabel="Creating..." busy={creating} error={createError} lists={lists} projects={editableProjects} projectMembers={members} projectStories={stories} projectsLoading={projectsLoading} projectsError={projectsError} onRetryProjects={onRetryProjects} browserNotificationsEnabled={browserNotificationsEnabled} />
           </section>
         </div>
       )}
 
       </div>
 
-      {selectedTask && <TaskEditModal key={selectedTask.id} task={selectedTask} lists={lists} projects={editableProjects} projectsLoading={projectsLoading} projectsError={projectsError} onRetryProjects={onRetryProjects} browserNotificationsEnabled={browserNotificationsEnabled} onUpdateTask={canEditTasks ? handleUpdate : undefined} onDeleteTask={canEditTasks ? handleDelete : undefined} onArchiveTask={canEditTasks ? handleArchive : undefined} onClose={() => setSelectedTaskId(null)} returnFocusElement={editTriggerRef.current} userId={userId} projectId={projectId} projectMembers={members} canAssign={canEditTasks} onAssigneeChange={canEditTasks ? handleAssigneeChange : undefined} readOnly={!canEditTasks} presentation="panel" />}
+      {selectedTask && <TaskEditModal key={selectedTask.id} task={selectedTask} lists={lists} projects={editableProjects} projectsLoading={projectsLoading} projectsError={projectsError} onRetryProjects={onRetryProjects} browserNotificationsEnabled={browserNotificationsEnabled} onUpdateTask={canEditTasks ? handleUpdate : undefined} onDeleteTask={canEditTasks ? handleDelete : undefined} onArchiveTask={canEditTasks ? handleArchive : undefined} onClose={closeSelectedItem} returnFocusElement={editTriggerRef.current} userId={userId} projectId={projectId} projectMembers={members} projectStories={stories} canAssign={canEditTasks} onAssigneeChange={canEditTasks ? handleAssigneeChange : undefined} readOnly={!canEditTasks} presentation="panel" relatedTasks={selectedTask.workType === "story" ? activeTasks.filter((task) => task.storyId === selectedTask.id) : []} onOpenRelatedTask={openStoryTask} onCreateRelatedTask={canEditTasks ? handleCreateStoryTask : undefined} onBulkUpdateRelatedTasks={canEditTasks && selectedTask.workType === "story" ? (taskIds, action) => handleBulkStoryTaskUpdate(taskIds, action, selectedTask.id) : undefined} onBackToStory={storyReturnId ? closeSelectedItem : undefined} />}
       {showMembers && <ProjectMembersModal userId={userId} project={project} onClose={() => setShowMembers(false)} returnFocusElement={membersButtonRef.current} />}
     </section>
   );

@@ -18,6 +18,7 @@ describe("Supabase auth application service", () => {
       uid: "user-a",
       email: "user@example.com",
       displayName: "TaskFlow User",
+      onboardingRequired: false,
       raw: source,
     });
   });
@@ -28,7 +29,22 @@ describe("Supabase auth application service", () => {
       uid: "user-b",
       email: "",
       displayName: "",
+      onboardingRequired: false,
       raw: { id: "user-b" },
     });
+  });
+
+  it("only requires onboarding when signup metadata explicitly leaves it incomplete", () => {
+    expect(
+      normalizeAuthUser({
+        id: "new-user",
+        user_metadata: { onboarding_completed: false },
+      }).onboardingRequired
+    ).toBe(true);
+
+    expect(
+      normalizeAuthUser({ id: "existing-user", user_metadata: {} })
+        .onboardingRequired
+    ).toBe(false);
   });
 });

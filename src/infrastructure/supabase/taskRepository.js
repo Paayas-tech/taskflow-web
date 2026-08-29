@@ -2,11 +2,15 @@ import { requireSupabase } from "./client.js";
 
 const taskSelect = `
   id, project_id, created_by, title, description, notes, priority, status,
+  work_type, story_id,
   column_id, position, version,
   due_date, start_date, start_time, end_date, end_time, reminder_enabled,
   reminder_at, completed_at, archived_at, created_at, updated_at,
   task_list_placements(list_id)
 `;
+const legacyTaskSelect = taskSelect.replace("  work_type, story_id,\n", "");
+const missingStorySchema = (error) =>
+  error?.code === "42703" && /work_type|story_id/i.test(error.message || "");
 
 const throwIfError = (error) => {
   if (error) throw error;
@@ -34,6 +38,8 @@ export const taskRowToDocument = (row = {}) => ({
   // placements when both relationships exist.
   listId: row.project_id ? null : row.task_list_placements?.[0]?.list_id || null,
   projectId: row.project_id || null,
+  workType: row.work_type === "story" ? "story" : "task",
+  storyId: row.story_id || null,
   columnId: row.column_id || null,
   position: Number.isFinite(row.position) ? row.position : null,
   version: Number.isFinite(row.version) ? row.version : 1,
@@ -71,24 +77,21 @@ export const createTaskRepository = (client = null) => {
 
   return {
     async getPersonalTasks(userId) {
-      const { data, error } = await database()
-        .from("tasks")
-        .select(taskSelect)
-        .eq("created_by", userId)
-        .is("project_id", null)
+      const request = (selection) => database().from("tasks").select(selection)
+        .eq("created_by", userId).is("project_id", null)
         .order("created_at", { ascending: false });
+      let { data, error } = await request(taskSelect);
+      if (missingStorySchema(error)) ({ data, error } = await request(legacyTaskSelect));
       throwIfError(error);
       return data || [];
     },
 
     async getPersonalTask(userId, taskId) {
-      const { data, error } = await database()
-        .from("tasks")
-        .select(taskSelect)
-        .eq("id", taskId)
-        .eq("created_by", userId)
-        .is("project_id", null)
+      const request = (selection) => database().from("tasks").select(selection)
+        .eq("id", taskId).eq("created_by", userId).is("project_id", null)
         .maybeSingle();
+      let { data, error } = await request(taskSelect);
+      if (missingStorySchema(error)) ({ data, error } = await request(legacyTaskSelect));
       throwIfError(error);
       return data || null;
     },

@@ -73,6 +73,8 @@ describe("legacy task normalization", () => {
       reminderAt: "",
       listId: null,
       projectId: null,
+      workType: "task",
+      storyId: null,
       createdAt: null,
       updatedAt: null,
       completedAt: null,

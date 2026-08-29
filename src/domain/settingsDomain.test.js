@@ -16,7 +16,7 @@ describe("settings defaults and normalization", () => {
       normalizeSettings({}, { displayName: "Paayas", email: "user@example.com" })
     ).toEqual({
       reminder: { ...DEFAULT_SETTINGS.reminder },
-      theme: { mode: "system" },
+      theme: { mode: "light" },
       background: { ...DEFAULT_SETTINGS.background },
       appearance: { ...DEFAULT_SETTINGS.appearance },
       calendarConnections: {
@@ -117,8 +117,14 @@ describe("settings defaults and normalization", () => {
       )
     ).toMatchObject({
       reminder: { defaultTime: 15, enableSound: false },
-      theme: { mode: "system" },
+      theme: { mode: "light" },
       profile: { displayName: "Local name", email: "auth@example.com" },
+    });
+  });
+
+  it("migrates the legacy automatic theme to light", () => {
+    expect(normalizeSettings({ theme: { mode: "system" } }).theme).toEqual({
+      mode: "light",
     });
   });
 
@@ -149,7 +155,7 @@ describe("settings validation and theme resolution", () => {
     ).toMatch(/1 to 1440/i);
     expect(
       getSettingsValidationError({ ...settings, theme: { mode: "sepia" } })
-    ).toMatch(/light, dark, or system/i);
+    ).toMatch(/light or dark/i);
   });
 
   it("resolves system theme without changing the stored preference", () => {

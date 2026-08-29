@@ -57,6 +57,9 @@ export default function TaskRow({
   onDeletePermanently,
   formatSettings = {},
   workspace = false,
+  bulkSelectionEnabled = false,
+  bulkSelected = false,
+  onToggleBulkSelection,
 }) {
   const [localActionBusy, setLocalActionBusy] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
@@ -91,7 +94,7 @@ export default function TaskRow({
     <article
       className={`tasks-page-row ${completed ? "task-row-completed" : ""} ${
         archived ? "task-row-archived" : ""
-      } ${selected ? "is-selected" : ""} ${
+      } ${selected ? "is-selected" : ""} ${bulkSelectionEnabled ? "has-bulk-selection" : ""} ${bulkSelected ? "is-bulk-selected" : ""} ${
         reminderDue ? "task-row-reminder-due" : ""
       }`}
       aria-busy={completionBusy || lifecycleBusy}
@@ -107,6 +110,16 @@ export default function TaskRow({
         }
       }}
     >
+      {bulkSelectionEnabled && (
+        <input
+          className="task-row-bulk-checkbox"
+          type="checkbox"
+          aria-label={`Select ${task.title}`}
+          checked={bulkSelected}
+          onChange={() => onToggleBulkSelection?.(task.id)}
+          disabled={lifecycleBusy}
+        />
+      )}
       {archived ? (
         <span className="archive-status-icon" aria-hidden="true">A</span>
       ) : (
@@ -171,6 +184,11 @@ export default function TaskRow({
                 aria-hidden="true"
               />
               {taskProject.name}
+            </span>
+          )}
+          {task.storyName && (
+            <span className="task-story-badge" title={`Story: ${task.storyName}`}>
+              <span aria-hidden="true">▱</span> {task.storyName}
             </span>
           )}
           {task.assigneeId && (

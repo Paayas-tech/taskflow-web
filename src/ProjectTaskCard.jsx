@@ -18,6 +18,9 @@ export default function ProjectTaskCard({
   onEdit,
   readOnly = false,
   formatSettings = {},
+  bulkSelectionEnabled = false,
+  bulkSelected = false,
+  onToggleBulkSelection,
 }) {
   const {
     attributes,
@@ -37,9 +40,18 @@ export default function ProjectTaskCard({
   return (
     <article
       ref={setNodeRef}
-      className={`project-task-card${isDragging ? " is-dragging" : ""}${readOnly ? " is-read-only" : ""}`}
+      className={`project-task-card${isDragging ? " is-dragging" : ""}${readOnly ? " is-read-only" : ""}${bulkSelectionEnabled ? " has-bulk-selection" : ""}${bulkSelected ? " is-bulk-selected" : ""}`}
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
+      {bulkSelectionEnabled && (
+        <input
+          className="project-task-bulk-checkbox"
+          type="checkbox"
+          aria-label={`Select ${task.title}`}
+          checked={bulkSelected}
+          onChange={() => onToggleBulkSelection?.(task.id)}
+        />
+      )}
       {!readOnly && (
         <button
           className="project-task-drag-handle"
@@ -60,6 +72,11 @@ export default function ProjectTaskCard({
         <strong>{task.title}</strong>
         {task.description && <span>{task.description}</span>}
         <span className="project-task-card-meta">
+          {task.storyName && (
+            <span className="task-story-badge" title={`Story: ${task.storyName}`}>
+              <span aria-hidden="true">▱</span> {task.storyName}
+            </span>
+          )}
           <span className={`task-priority priority-${task.priority}`}>
             {priorityLabel(task.priority)}
           </span>

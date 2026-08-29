@@ -122,6 +122,14 @@ function findElement(root, predicate) {
   return match;
 }
 
+function findElements(root, predicate) {
+  const matches = [];
+  walk(root, (node) => {
+    if (predicate(node)) matches.push(node);
+  });
+  return matches;
+}
+
 function textContent(node) {
   if (Array.isArray(node)) return node.map(textContent).join("");
   if (typeof node === "string" || typeof node === "number") return String(node);
@@ -376,6 +384,175 @@ describe("TaskEditModal lifecycle integration", () => {
 
     expect(textContent(runner.output)).toContain("Task history content");
     expect(textContent(runner.output)).not.toContain("Task comments content");
+  });
+
+  it("opens Stories as task-focused pages with summary details and linked task actions", () => {
+    const relatedTask = { id: "task-2", title: "Build task board", status: "completed", completed: true };
+    const remainingTask = { id: "task-3", title: "Build task list", status: "todo", completed: false };
+    const props = baseProps({
+      userId: "user-1",
+      projectId: "project-1",
+      task: {
+        ...baseProps().task,
+        id: "story-1",
+        title: "Projects section",
+        description: "Deliver the projects workspace.",
+        workType: "story",
+        dueDate: "2026-09-05",
+        assigneeId: "user-2",
+        assigneeName: "Paayas",
+      },
+      relatedTasks: [relatedTask, remainingTask],
+      onOpenRelatedTask: vi.fn(),
+      onCreateRelatedTask: vi.fn().mockResolvedValue(undefined),
+    });
+    const runner = createRunner(props);
+
+    expect(textContent(runner.output)).toContain("Projects section");
+    expect(textContent(runner.output)).toContain("Deliver the projects workspace.");
+    expect(textContent(runner.output)).toContain("2026-09-05");
+    expect(textContent(runner.output)).toContain("Paayas");
+    expect(textContent(runner.output)).toContain("1/2 tasks completed");
+    expect(textContent(runner.output)).toContain("+ New Task");
+
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node).includes("Build task board")
+    ).props.onClick();
+    expect(props.onOpenRelatedTask).toHaveBeenCalledWith(relatedTask);
+  });
+
+  it("guides task creation when a Story has no tasks", () => {
+    const runner = createRunner(baseProps({
+      userId: "user-1",
+      projectId: "project-1",
+      task: {
+        ...baseProps().task,
+        id: "story-empty",
+        title: "Empty Story",
+        workType: "story",
+      },
+      relatedTasks: [],
+      onCreateRelatedTask: vi.fn().mockResolvedValue(undefined),
+    }));
+
+    expect(textContent(runner.output)).toContain("No tasks in this Story yet.");
+    expect(textContent(runner.output)).toContain("Create your first task to get started.");
+    expect(textContent(runner.output)).toContain("This task will be linked to this Story.");
+    expect(findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "+ New Task"
+    )).toBeDefined();
+    expect(findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "New task title"
+    )).toBeUndefined();
+
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "+ New Task"
+    ).props.onClick();
+    runner.render();
+    expect(findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "New task title"
+    )).toBeDefined();
+  });
+
+  it("selects Story tasks and applies bulk actions with result feedback", async () => {
+    const onBulkUpdateRelatedTasks = vi.fn().mockResolvedValue({ updated: 2, failed: 0, failedIds: [] });
+    const relatedTasks = [
+      { id: "task-2", title: "Build task board", status: "todo" },
+      { id: "task-3", title: "Build task list", status: "in-progress" },
+    ];
+    const props = baseProps({
+      userId: "user-1",
+      projectId: "project-1",
+      task: { ...baseProps().task, id: "story-1", title: "Projects", workType: "story" },
+      relatedTasks,
+      projectMembers: [{ userId: "member-1", displayName: "Priya Shah" }],
+      projectStories: [
+        { id: "story-1", title: "Projects" },
+        { id: "story-2", title: "Launch" },
+      ],
+      onBulkUpdateRelatedTasks,
+    });
+    const runner = createRunner(props);
+
+    const selectAll = findElement(runner.output, (node) => node.props?.["aria-checked"] !== undefined);
+    selectAll.props.onChange();
+    runner.render();
+    expect(textContent(runner.output)).toContain("2 selected");
+
+    findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Change selected task status"
+    ).props.onChange({ target: { value: "completed" } });
+    await Promise.resolve();
+    await Promise.resolve();
+    runner.render();
+
+    expect(onBulkUpdateRelatedTasks).toHaveBeenCalledWith(
+      ["task-2", "task-3"],
+      { type: "status", value: "completed" }
+    );
+    expect(textContent(runner.output)).toContain("2 tasks updated.");
+    expect(textContent(runner.output)).not.toContain("2 selected");
+  });
+
+  it("keeps failed Story tasks selected after a partial bulk update", async () => {
+    const onBulkUpdateRelatedTasks = vi.fn().mockResolvedValue({
+      updated: 1,
+      failed: 1,
+      failedIds: ["task-3"],
+    });
+    const runner = createRunner(baseProps({
+      userId: "user-1",
+      projectId: "project-1",
+      task: { ...baseProps().task, id: "story-1", workType: "story" },
+      relatedTasks: [
+        { id: "task-2", title: "Board", status: "todo" },
+        { id: "task-3", title: "List", status: "todo" },
+      ],
+      onBulkUpdateRelatedTasks,
+    }));
+
+    findElement(runner.output, (node) => node.props?.["aria-checked"] !== undefined).props.onChange();
+    runner.render();
+    findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Change selected task priority"
+    ).props.onChange({ target: { value: "high" } });
+    await Promise.resolve();
+    await Promise.resolve();
+    runner.render();
+
+    expect(textContent(runner.output)).toContain("1 of 2 tasks updated; 1 failed");
+    expect(textContent(runner.output)).toContain("1 selected");
+    expect(findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Select List"
+    ).props.checked).toBe(true);
+  });
+
+  it("does not expose Story bulk controls to viewers", () => {
+    const runner = createRunner(baseProps({
+      userId: "viewer-1",
+      projectId: "project-1",
+      task: { ...baseProps().task, id: "story-1", workType: "story" },
+      relatedTasks: [{ id: "task-2", title: "Board", status: "todo" }],
+      readOnly: true,
+      onBulkUpdateRelatedTasks: vi.fn(),
+    }));
+
+    expect(findElements(
+      runner.output,
+      (node) => node.type === "input" && node.props?.type === "checkbox"
+    )).toHaveLength(0);
+    expect(findElement(
+      runner.output,
+      (node) => node.props?.role === "toolbar" && node.props?.["aria-label"] === "Bulk task actions"
+    )).toBeUndefined();
   });
 
   it("preserves Escape, backdrop, content, explicit close, and cleanup focus behavior", () => {

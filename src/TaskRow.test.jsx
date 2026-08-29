@@ -15,6 +15,17 @@ const textContent = (node) => {
   return textContent(node.props?.children);
 };
 
+const find = (node, predicate) => {
+  if (!node || typeof node !== "object") return undefined;
+  if (predicate(node)) return node;
+  const children = Array.isArray(node.props?.children) ? node.props.children : [node.props?.children];
+  for (const child of children) {
+    const match = find(child, predicate);
+    if (match) return match;
+  }
+  return undefined;
+};
+
 const renderTask = (overrides = {}) =>
   TaskRow({
     task: {
@@ -57,5 +68,26 @@ describe("TaskRow assignee identity", () => {
   it("shows a formatted due date and omits the undated placeholder", () => {
     expect(textContent(renderTask({ dueDate: "2099-01-02" }))).toContain("02/01/2099");
     expect(textContent(renderTask())).not.toContain("No due date");
+  });
+
+  it("shows an optional bulk checkbox for a Story-filtered List row", () => {
+    const onToggleBulkSelection = vi.fn();
+    const output = TaskRow({
+      task: {
+        id: "task-1", title: "Review release", status: "todo", priority: "medium",
+        completed: false, dueDate: "", reminder: false, listId: null, projectId: "project-1",
+      },
+      lists: [],
+      projects: [],
+      bulkSelectionEnabled: true,
+      bulkSelected: true,
+      onToggleBulkSelection,
+    });
+    const checkbox = find(output, (node) => node.props?.["aria-label"] === "Select Review release");
+
+    expect(checkbox.props.checked).toBe(true);
+    expect(output.props.className).toContain("is-bulk-selected");
+    checkbox.props.onChange();
+    expect(onToggleBulkSelection).toHaveBeenCalledWith("task-1");
   });
 });
