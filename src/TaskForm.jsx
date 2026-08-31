@@ -254,7 +254,7 @@ export default function TaskForm({
                 onChange={onChange}
                 disabled={busy}
               >
-                <option value="">No story</option>
+                <option value="">No Story</option>
                 {projectStories.map((story) => (
                   <option key={story.id} value={story.id}>{story.title}</option>
                 ))}

@@ -71,7 +71,6 @@ describe("focused settings sections", () => {
   it("renders account navigation and forwards each account action", () => {
     const callbacks = {
       onOpenProfile: vi.fn(),
-      onOpenIntegrations: vi.fn(),
       onOpenArchivedTasks: vi.fn(),
       onOpenImportData: vi.fn(),
     };
@@ -82,7 +81,6 @@ describe("focused settings sections", () => {
     expect(textContent(findElement(output, (node) => node.type === "h2"))).toBe("account");
     expect(textContent(output)).toContain("TaskFlow User");
     button(output, "My Profile").props.onClick();
-    button(output, "Integrations").props.onClick();
     button(output, "Archived Tasks").props.onClick();
     button(output, "Import Data").props.onClick();
     Object.values(callbacks).forEach((callback) => expect(callback).toHaveBeenCalledOnce());
@@ -125,6 +123,7 @@ describe("focused settings sections", () => {
         defaultViewLabel: "Dashboard",
         defaultListLabel: "Inbox",
         timeSettingsLabel: "12 Hour · Monday",
+        languageLabel: "Français",
         onOpenMyDay: vi.fn(),
         onOpenCalendars: vi.fn(),
         onOpenTheme,
@@ -153,26 +152,22 @@ describe("focused settings sections", () => {
   it("renders TaskFlow information navigation without changing copy", () => {
     const onOpenWhatsNew = vi.fn();
     const onOpenShortcuts = vi.fn();
-    const onOpenSupport = vi.fn();
     const onOpenAbout = vi.fn();
     const output = resolveNode(
       TaskflowSettingsSection({
         onOpenWhatsNew,
         onOpenShortcuts,
-        onOpenSupport,
         onOpenAbout,
       })
     );
 
-    expect(textContent(output)).toContain("SupportNot available");
+    expect(textContent(output)).not.toContain("Support");
     expect(textContent(output)).toContain("About0.0.0");
     button(output, "What's New?").props.onClick();
     button(output, "Keyboard Shortcuts").props.onClick();
-    button(output, "Support").props.onClick();
     button(output, "About").props.onClick();
     expect(onOpenWhatsNew).toHaveBeenCalledOnce();
     expect(onOpenShortcuts).toHaveBeenCalledOnce();
-    expect(onOpenSupport).toHaveBeenCalledOnce();
     expect(onOpenAbout).toHaveBeenCalledOnce();
   });
 
@@ -201,11 +196,12 @@ describe("focused settings sections", () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
-  it("preserves calendar connect, disconnect, dialog, and busy contracts", () => {
+  it("preserves unavailable-provider setup, disconnect, dialog, and busy contracts", () => {
     const onConnect = vi.fn();
     const onDisconnect = vi.fn();
+    const onConnectGoogle = vi.fn();
     const onCloseSetup = vi.fn();
-    const provider = CALENDAR_PROVIDERS[0];
+    const provider = CALENDAR_PROVIDERS[1];
     const settings = {
       ...DEFAULT_SETTINGS,
       calendarConnections: {
@@ -228,6 +224,7 @@ describe("focused settings sections", () => {
         onBack: vi.fn(),
         onConnect,
         onDisconnect,
+        onConnectGoogle,
         onCloseSetup,
       })
     );
@@ -253,11 +250,56 @@ describe("focused settings sections", () => {
         onBack: vi.fn(),
         onConnect,
         onDisconnect,
+        onConnectGoogle,
         onCloseSetup,
       })
     );
-    button(disconnectedOutput, "Connect").props.onClick();
-    expect(onConnect).toHaveBeenCalledWith(CALENDAR_PROVIDERS[0].id);
+    button(disconnectedOutput, "Connect Google").props.onClick();
+    expect(onConnectGoogle).toHaveBeenCalledOnce();
+    button(disconnectedOutput, "Setup required").props.onClick();
+    expect(onConnect).toHaveBeenCalledWith(provider.id);
+  });
+
+  it("shows the connected Google account and exposes sync and confirmed disconnect actions", () => {
+    const onSyncGoogle = vi.fn();
+    const onRequestGoogleDisconnect = vi.fn();
+    const onDisconnectGoogle = vi.fn();
+    const output = resolveNode(CalendarConnectionSection({
+      settings: DEFAULT_SETTINGS,
+      googleConnection: {
+        calendar_account_email: "calendar@example.com",
+        last_synced_at: "2026-08-31T12:00:00.000Z",
+      },
+      googleSyncSummary: { calendarCount: 2, eventCount: 7 },
+      selectedProvider: null,
+      setup: null,
+      onSyncGoogle,
+      onRequestGoogleDisconnect,
+      onDisconnectGoogle,
+      onConnect: vi.fn(),
+      onDisconnect: vi.fn(),
+    }));
+    expect(textContent(output)).toContain("calendar@example.com");
+    expect(textContent(output)).toContain("2 calendars · 7 events");
+    button(output, "Sync now").props.onClick();
+    button(output, "Disconnect").props.onClick();
+    expect(onSyncGoogle).toHaveBeenCalledOnce();
+    expect(onRequestGoogleDisconnect).toHaveBeenCalledOnce();
+
+    const confirmation = resolveNode(CalendarConnectionSection({
+      settings: DEFAULT_SETTINGS,
+      googleConnection: { calendar_account_email: "calendar@example.com" },
+      confirmingGoogleDisconnect: true,
+      selectedProvider: null,
+      setup: null,
+      onDisconnectGoogle,
+      onConnect: vi.fn(),
+      onDisconnect: vi.fn(),
+    }));
+    expect(findElement(confirmation, (node) => node.props?.role === "alertdialog")).toBeDefined();
+    const disconnectButtons = findElements(confirmation, (node) => node.type === "button" && textContent(node) === "Disconnect");
+    disconnectButtons.at(-1).props.onClick();
+    expect(onDisconnectGoogle).toHaveBeenCalledOnce();
   });
 
   it("preserves sign-out pending semantics, error ownership, and action", () => {

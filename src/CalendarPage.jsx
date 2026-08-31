@@ -25,6 +25,7 @@ import {
   shiftCalendarMonth,
   upcomingCalendarTasks,
 } from "./domain/taskDomain";
+import { normalizeGoogleCalendarEvents } from "./domain/googleCalendarDomain";
 
 const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const visibleEventLimit = 3;
@@ -102,6 +103,7 @@ export default function CalendarPage({
   weekStartsOn = 0,
   onOpenTask,
   embedded = false,
+  externalEvents = [],
 }) {
   const now = new Date();
   const todayKey = dateOnlyKey(now);
@@ -127,12 +129,20 @@ export default function CalendarPage({
     [effectiveWeekStartsOn]
   );
   const weeks = useMemo(() => chunkWeeks(monthGrid), [monthGrid]);
+  const externalCalendarItems = useMemo(
+    () => normalizeGoogleCalendarEvents(externalEvents),
+    [externalEvents]
+  );
+  const calendarItems = useMemo(
+    () => [...tasks, ...externalCalendarItems],
+    [externalCalendarItems, tasks]
+  );
   const normalizedTasks = useMemo(
     () =>
-      tasks
+      calendarItems
         .map((task) => ({ ...task, ...normalizeTaskSchedule(task) }))
         .filter((task) => isValidCalendarDate(task.dueDate)),
-    [tasks]
+    [calendarItems]
   );
   const agendaByDate = useMemo(
     () =>
@@ -257,6 +267,10 @@ export default function CalendarPage({
   };
 
   const openEditor = (task, triggerElement) => {
+    if (task.source === "google") {
+      if (task.htmlLink) window.open(task.htmlLink, "_blank", "noopener,noreferrer");
+      return;
+    }
     if (!onUpdateTask) return;
     if (onOpenTask) {
       onOpenTask(task, triggerElement);
@@ -272,6 +286,7 @@ export default function CalendarPage({
   };
 
   const handleCompletionChange = async (task) => {
+    if (task.source === "google") return;
     if (!onQuickUpdateTask) return;
     const completed = !isTaskComplete(task);
     setMutationError("");
@@ -401,10 +416,10 @@ export default function CalendarPage({
                   const listName = lists.find((list) => list.id === task.listId)?.name;
                   return (
                     <article className="calendar-compact-task" key={task.id}>
-                      <button className={"calendar-compact-check" + (isTaskComplete(task) ? " is-complete" : "")} type="button" onClick={() => handleCompletionChange(task)} disabled={quickTaskPendingIds.has(task.id)} aria-label={(isTaskComplete(task) ? "Reopen " : "Complete ") + task.title}>{isTaskComplete(task) ? "✓" : ""}</button>
+                      {task.source === "google" ? <span className="calendar-compact-source" aria-label="Google Calendar event">G</span> : <button className={"calendar-compact-check" + (isTaskComplete(task) ? " is-complete" : "")} type="button" onClick={() => handleCompletionChange(task)} disabled={quickTaskPendingIds.has(task.id)} aria-label={(isTaskComplete(task) ? "Reopen " : "Complete ") + task.title}>{isTaskComplete(task) ? "✓" : ""}</button>}
                       <button className="calendar-compact-task-title" type="button" onClick={(event) => openEditor(task, event.currentTarget)}>{task.title}</button>
-                      <span className={"priority priority-" + (task.priority || "medium")}>{task.priority || "medium"}</span>
-                      {(projectName || listName) && <small>{projectName || listName}</small>}
+                      {task.source === "google" ? <span className="calendar-google-label">Google</span> : <span className={"priority priority-" + (task.priority || "medium")}>{task.priority || "medium"}</span>}
+                      {(task.calendarName || projectName || listName) && <small>{task.calendarName || projectName || listName}</small>}
                     </article>
                   );
                 })}

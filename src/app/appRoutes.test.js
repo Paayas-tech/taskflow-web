@@ -12,6 +12,14 @@ import {
 
 const staticRoutes = [
   ["/", "dashboard"],
+  ["/for-you", "for-you"],
+  ["/recent", "recent"],
+  ["/starred", "starred"],
+  ["/planning/timeline", "planning-timeline"],
+  ["/planning/board", "planning-board"],
+  ["/planning/lists", "planning-lists"],
+  ["/planning/goals", "planning-goals"],
+  ["/planning/issues", "planning-issues"],
   ["/inbox", "inbox"],
   ["/tasks", "tasks"],
   ["/calendar", "tasks"],
@@ -95,6 +103,14 @@ describe("TaskFlow route presentation", () => {
 
   it("preserves the sidebar route metadata and disabled reminder item", () => {
     expect(navigationItems).toEqual([
+      { label: "For you", path: "/for-you", enabled: true, icon: "for-you", group: "workspace" },
+      { label: "Recent", path: "/recent", enabled: true, icon: "recent", group: "workspace" },
+      { label: "Starred", path: "/starred", enabled: true, icon: "starred", group: "workspace" },
+      { label: "Timeline", path: "/planning/timeline", enabled: true, icon: "timeline", group: "planning" },
+      { label: "Board", path: "/planning/board", enabled: true, icon: "board", group: "planning" },
+      { label: "Lists", path: "/planning/lists", enabled: true, icon: "lists", group: "planning" },
+      { label: "Goals", path: "/planning/goals", enabled: true, icon: "goals", group: "planning" },
+      { label: "Issues", path: "/planning/issues", enabled: true, icon: "issues", group: "planning" },
       { label: "Dashboard", path: "/", enabled: true, icon: "dashboard" },
       { label: "Inbox", path: "/inbox", enabled: true, icon: "inbox" },
       { label: "Tasks", path: "/tasks", enabled: true, icon: "tasks" },

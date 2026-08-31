@@ -73,6 +73,11 @@ const projectService = vi.hoisted(() => ({
   updateProjectTask: vi.fn(),
 }));
 
+const attachmentService = vi.hoisted(() => ({
+  getTaskCounts: vi.fn().mockResolvedValue({}),
+  removeAll: vi.fn().mockResolvedValue(undefined),
+}));
+
 const childCalls = vi.hoisted(() => ({ boards: [], rows: [], forms: [], quickCreates: [], taskEditors: [] }));
 
 vi.mock("react", () => ({
@@ -83,6 +88,8 @@ vi.mock("react", () => ({
   useState: hookRuntime.useState,
 }));
 vi.mock("./application/projectService", () => projectService);
+vi.mock("./application/attachmentService", () => ({ attachmentService }));
+vi.mock("./AttachmentSection", () => ({ default: () => <section data-testid="attachments" /> }));
 vi.mock("./ProjectBoard", () => ({
   default: (props) => {
     childCalls.boards.push(props);
@@ -263,6 +270,7 @@ function baseProps(overrides = {}) {
     formatSettings: {},
     weekStartsOn: 0,
     refreshToken: 0,
+    showEmbeddedTaskViews: true,
     ...overrides,
   };
 }
@@ -328,6 +336,8 @@ beforeEach(() => {
   projectService.deleteProjectTask.mockReset().mockResolvedValue(undefined);
   projectService.setTaskAssignee.mockReset().mockResolvedValue(undefined);
   projectService.updateProjectTask.mockReset().mockResolvedValue(undefined);
+  attachmentService.getTaskCounts.mockReset().mockResolvedValue({});
+  attachmentService.removeAll.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -338,33 +348,29 @@ afterEach(() => {
 });
 
 describe("ProjectTasksPage workspace coordination", () => {
-  it("shows the Stories explanation once and remembers dismissal", async () => {
+  it("does not duplicate Board and List views on the Stories project page by default", async () => {
+    const props = baseProps({ showEmbeddedTaskViews: false });
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    expect(findElement(runner.output, (node) => node.props?.["data-testid"] === "project-board")).toBeUndefined();
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Project view")).toBeUndefined();
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Search project tasks")).toBeUndefined();
+  });
+
+  it("keeps Stories guidance compact without an instructional banner", async () => {
     const props = baseProps();
     const runner = createRunner(props);
     await flushWorkspace(runner, props);
 
-    expect(textContent(runner.output)).toContain(
-      "Stories group related tasks. Create a Story, then add tasks inside it."
-    );
-    findElement(
-      runner.output,
-      (node) => node.props?.["aria-label"] === "Dismiss Stories explanation"
-    ).props.onClick();
-    runner.render(props);
-
     expect(textContent(runner.output)).not.toContain(
       "Stories group related tasks. Create a Story, then add tasks inside it."
     );
-    expect(window.localStorage.setItem).toHaveBeenCalledWith(
-      "taskflow:stories-onboarding:v1:user-a",
-      "dismissed"
-    );
-
-    const revisit = createRunner(props);
-    await flushWorkspace(revisit, props);
-    expect(textContent(revisit.output)).not.toContain(
-      "Stories group related tasks. Create a Story, then add tasks inside it."
-    );
+    expect(findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Dismiss Stories explanation"
+    )).toBeUndefined();
+    expect(textContent(runner.output)).toContain("Group related tasks into stories.");
   });
 
   it("shows clear Story and filter guidance when a project has no Stories", async () => {
@@ -375,16 +381,12 @@ describe("ProjectTasksPage workspace coordination", () => {
 
     expect(textContent(runner.output)).toContain("No Stories yet");
     expect(textContent(runner.output)).toContain(
-      "Stories help you group related tasks. Create your first Story."
+      "Create a Story to organize related tasks."
     );
-    expect(findElement(
-      runner.output,
-      (node) => node.props?.title === "See tasks grouped by Story."
-    )).toBeDefined();
     expect(findElements(
       runner.output,
       (node) => node.type === "button" && textContent(node) === "+ New Story"
-    ).length).toBeGreaterThan(0);
+    )).toHaveLength(1);
   });
 
   it("opens the Story creation form for project editors", async () => {
@@ -398,7 +400,7 @@ describe("ProjectTasksPage workspace coordination", () => {
     expect(textContent(runner.output)).toContain(
       "Group related tasks into stories."
     );
-    expect(textContent(runner.output)).toContain("Uncategorized");
+    expect(textContent(runner.output)).toContain("No Story");
 
     const createStory = findElement(
       runner.output,
@@ -479,9 +481,8 @@ describe("ProjectTasksPage workspace coordination", () => {
     childCalls.taskEditors.at(-1).onOpenRelatedTask(linkedTask);
     runner.render(props);
     expect(childCalls.taskEditors.at(-1).task.id).toBe(linkedTask.id);
-    expect(childCalls.taskEditors.at(-1).onBackToStory).toEqual(expect.any(Function));
 
-    childCalls.taskEditors.at(-1).onBackToStory();
+    childCalls.taskEditors.at(-1).onClose();
     runner.render(props);
     expect(childCalls.taskEditors.at(-1).task.id).toBe(story.id);
   });
@@ -630,6 +631,117 @@ describe("ProjectTasksPage workspace coordination", () => {
     );
   });
 
+  it("moves linked tasks to No Story before archiving a Story", async () => {
+    const story = { ...tasks[0], id: "story-archive", title: "Archive me", workType: "story" };
+    const firstTask = { ...tasks[0], id: "linked-a", storyId: story.id, workType: "task" };
+    const secondTask = { ...tasks[1], id: "linked-b", storyId: story.id, workType: "task" };
+    projectService.getProjectTasks.mockResolvedValue([story, firstTask, secondTask]);
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && node.props?.title === "Open Story and view its tasks"
+    ).props.onClick({ currentTarget: { focus: vi.fn() } });
+    runner.render(props);
+
+    await childCalls.taskEditors.at(-1).onArchiveTask(story.id, {
+      moveLinkedTasksToUncategorized: true,
+    });
+
+    expect(projectService.updateProjectTask).toHaveBeenCalledWith(
+      "user-a", "project-a", firstTask.id, { storyId: null }
+    );
+    expect(projectService.updateProjectTask).toHaveBeenCalledWith(
+      "user-a", "project-a", secondTask.id, { storyId: null }
+    );
+    expect(projectService.archiveProjectTask).toHaveBeenCalledWith(
+      "user-a", "project-a", story.id
+    );
+    expect(projectService.archiveProjectTask.mock.invocationCallOrder[0]).toBeGreaterThan(
+      Math.max(...projectService.updateProjectTask.mock.invocationCallOrder)
+    );
+  });
+
+  it("archives a Story with no linked tasks without detaching tasks", async () => {
+    const story = { ...tasks[0], id: "story-empty", workType: "story" };
+    projectService.getProjectTasks.mockResolvedValue([story]);
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && node.props?.title === "Open Story and view its tasks"
+    ).props.onClick({ currentTarget: { focus: vi.fn() } });
+    runner.render(props);
+
+    await childCalls.taskEditors.at(-1).onArchiveTask(story.id);
+
+    expect(projectService.updateProjectTask).not.toHaveBeenCalled();
+    expect(projectService.archiveProjectTask).toHaveBeenCalledWith(
+      "user-a", "project-a", story.id
+    );
+  });
+
+  it("shows archived Story links under No Story and allows restoring the Story", async () => {
+    const archivedStory = {
+      ...tasks[0], id: "story-old", title: "Archived Story", workType: "story",
+      archivedAt: "2026-08-30T10:00:00.000Z",
+    };
+    const legacyLinked = { ...tasks[0], id: "legacy-linked", storyId: archivedStory.id, workType: "task" };
+    const neverCategorized = { ...tasks[1], id: "never-categorized", storyId: null, workType: "task" };
+    projectService.getProjectTasks.mockResolvedValue([archivedStory, legacyLinked, neverCategorized]);
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Filter project tasks by story"
+    ).props.onChange({ target: { value: "none" } });
+    runner.render(props);
+    expect(latestBoard().tasks.map((task) => task.id)).toEqual([
+      legacyLinked.id, neverCategorized.id,
+    ]);
+
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "Restore"
+    ).props.onClick();
+    await flushWorkspace(runner, props);
+    expect(projectService.updateProjectTask).toHaveBeenCalledWith(
+      "user-a", "project-a", archivedStory.id, { archivedAt: null }
+    );
+  });
+
+  it("reflects FK set-null behavior after deleting a Story", async () => {
+    const story = { ...tasks[0], id: "story-delete", workType: "story" };
+    const linkedTask = { ...tasks[1], id: "linked-delete", storyId: story.id, workType: "task" };
+    projectService.getProjectTasks.mockResolvedValue([story, linkedTask]);
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && node.props?.title === "Open Story and view its tasks"
+    ).props.onClick({ currentTarget: { focus: vi.fn() } });
+    runner.render(props);
+    projectService.getProjectTasks.mockResolvedValue([{ ...linkedTask, storyId: null }]);
+
+    await childCalls.taskEditors.at(-1).onDeleteTask(story.id);
+    runner.render(props);
+    findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Filter project tasks by story"
+    ).props.onChange({ target: { value: "none" } });
+    runner.render(props);
+
+    expect(projectService.deleteProjectTask).toHaveBeenCalledWith(
+      "user-a", "project-a", story.id
+    );
+    expect(latestBoard().tasks.map((task) => task.id)).toEqual([linkedTask.id]);
+  });
+
   it("shows the project workspace immediately while its tasks load", () => {
     projectService.getProjectTasks.mockReturnValue(new Promise(() => {}));
     projectService.getProjectColumns.mockReturnValue(new Promise(() => {}));
@@ -670,7 +782,10 @@ describe("ProjectTasksPage workspace coordination", () => {
     ).toBeUndefined();
   });
 
-  it("groups the List view by the existing project columns without duplicating tasks", async () => {
+  it("groups the unfiltered List view by Story without duplicating tasks", async () => {
+    const story = { ...tasks[0], id: "story-list", title: "Projects Section", workType: "story" };
+    const linkedTask = { ...tasks[0], storyId: story.id, workType: "task" };
+    projectService.getProjectTasks.mockResolvedValue([story, linkedTask, tasks[1]]);
     const props = baseProps();
     const runner = createRunner(props);
     await flushWorkspace(runner, props);
@@ -685,10 +800,9 @@ describe("ProjectTasksPage workspace coordination", () => {
       runner.output,
       (node) => node.props?.className === "project-task-list-section"
     );
-    expect(sections).toHaveLength(3);
-    expect(textContent(sections[0])).toContain("To do1Plan launch");
-    expect(textContent(sections[1])).toContain("Doing1Ship launch");
-    expect(textContent(sections[2])).toContain("Done0No tasks");
+    expect(sections).toHaveLength(2);
+    expect(textContent(sections[0])).toContain("Projects Section1Plan launch");
+    expect(textContent(sections[1])).toContain("No Story1Ship launch");
     expect(childCalls.rows.map(({ task }) => task.id)).toEqual(["task-a", "task-b"]);
   });
 
@@ -701,6 +815,11 @@ describe("ProjectTasksPage workspace coordination", () => {
       runner.output,
       (node) => node.type === "button" && textContent(node) === "List"
     ).props.onClick();
+    runner.render(props);
+    findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Filter project tasks by story"
+    ).props.onChange({ target: { value: "none" } });
     runner.render(props);
     const taskRow = childCalls.rows.find(({ task }) => task.id === "task-a");
 

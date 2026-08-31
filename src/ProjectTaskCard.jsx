@@ -88,6 +88,11 @@ export default function ProjectTaskCard({
               {dueDateMeta.label}
             </time>
           )}
+          {task.attachmentCount > 0 && (
+            <span className="task-attachment-count" aria-label={`${task.attachmentCount} ${task.attachmentCount === 1 ? "attachment" : "attachments"}`} title={`${task.attachmentCount} ${task.attachmentCount === 1 ? "attachment" : "attachments"}`}>
+              <span aria-hidden="true">⌕</span> {task.attachmentCount}
+            </span>
+          )}
         </span>
         <span
           className={`project-task-assignee${task.assigneeId ? "" : " is-unassigned"}`}

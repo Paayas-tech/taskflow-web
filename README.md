@@ -26,9 +26,62 @@ Never expose a Supabase service-role or secret key through a `VITE_` variable.
 All authorization is enforced by PostgreSQL Row Level Security.
 
 Calendar provider connections can optionally be configured at deployment time
-with public Google or Microsoft client IDs and secure OAuth/CalDAV backend URLs.
-Provider client secrets, tokens, and app-specific passwords must remain in the
-server-side integration backend.
+through Supabase Edge Functions. Provider client secrets, encryption keys,
+tokens, and app-specific passwords must never be added to browser environment
+variables.
+
+### Google Calendar integration
+
+Google Calendar is the first supported provider. Enable the Google Calendar API
+in Google Cloud, configure the OAuth consent screen, and create an OAuth 2.0 Web
+application. Add this exact authorized redirect URI:
+
+```text
+https://<project-ref>.supabase.co/functions/v1/google-calendar-oauth-callback
+```
+
+For the currently linked TaskFlow project, the production callback is:
+
+```text
+https://ousvpcgheqtwrnhfhkve.supabase.co/functions/v1/google-calendar-oauth-callback
+```
+
+Generate a base64url-encoded 32-byte encryption key and set these Supabase Edge
+Function secrets (never prefix them with `VITE_`):
+
+```text
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
+GOOGLE_REDIRECT_URI
+GOOGLE_TOKEN_ENCRYPTION_KEY
+TASKFLOW_APP_URL
+```
+
+`GOOGLE_REDIRECT_URI` must exactly match the Google Cloud redirect URI above.
+`TASKFLOW_APP_URL` is the deployed TaskFlow origin, for example
+`https://taskflow.example.com`. Apply migration 014, then deploy:
+
+```bash
+npx supabase secrets set GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... GOOGLE_REDIRECT_URI=... GOOGLE_TOKEN_ENCRYPTION_KEY=... TASKFLOW_APP_URL=...
+npx supabase functions deploy google-calendar-oauth-start
+npx supabase functions deploy google-calendar-oauth-callback --no-verify-jwt
+npx supabase functions deploy google-calendar-sync
+npx supabase functions deploy google-calendar-disconnect
+```
+
+For local Supabase development, add
+`http://127.0.0.1:54321/functions/v1/google-calendar-oauth-callback` as a
+separate authorized redirect URI and set `TASKFLOW_APP_URL` to
+`http://localhost:5173`. Keep local function secrets in an ignored Supabase env
+file; never put the client secret or encryption key in a `VITE_` variable.
+
+While the Google OAuth consent screen remains in Testing status, add each person
+who will connect a calendar as a test user. TaskFlow requests `openid`, `email`,
+and `https://www.googleapis.com/auth/calendar.readonly` only.
+
+Only connection metadata is readable by the signed-in browser. OAuth state,
+encrypted access tokens, and encrypted refresh tokens remain in the private
+schema and are available only through service-role-only database functions.
 
 ## Local development
 
