@@ -60,6 +60,7 @@ function renderPanel(overrides = {}) {
       },
       onBack: vi.fn(),
       onDefaultTimeChange: vi.fn(),
+      onDefaultTimeCommit: vi.fn(),
       onInAppRemindersChange: vi.fn(),
       onSoundChange: vi.fn(),
       ...overrides,
@@ -68,7 +69,7 @@ function renderPanel(overrides = {}) {
 }
 
 describe("ProjectRemindersPanel", () => {
-  it("preserves the detail heading, description, and back action", () => {
+  it("shows a clear auto-save description and preserves the back action", () => {
     const onBack = vi.fn();
     const output = renderPanel({ onBack });
     const section = findElement(output, (node) => node.type === "section");
@@ -79,7 +80,7 @@ describe("ProjectRemindersPanel", () => {
       "Project Reminders"
     );
     expect(textContent(output)).toContain(
-      "TaskFlow currently supports a shared reminder default, not project-specific policies."
+      "Choose how TaskFlow reminds you about upcoming work. Changes save automatically."
     );
     expect(backButton.props["aria-label"]).toBe("Back from Project Reminders");
     expect(textContent(backButton)).toBe("←");
@@ -87,15 +88,19 @@ describe("ProjectRemindersPanel", () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
-  it("preserves the numeric reminder field and emits a numeric draft value", () => {
+  it("updates the reminder draft immediately and saves it on blur", () => {
     const onDefaultTimeChange = vi.fn();
-    const output = renderPanel({ onDefaultTimeChange });
+    const onDefaultTimeCommit = vi.fn();
+    const output = renderPanel({ onDefaultTimeChange, onDefaultTimeCommit });
     const input = findElement(output, (node) => node.props?.type === "number");
 
-    expect(textContent(output)).toContain("Default reminder (minutes before)");
+    expect(textContent(output)).toContain("Remind me");
     expect(input.props).toMatchObject({ min: "1", max: "1440", value: 30 });
     input.props.onChange({ target: { value: "45" } });
     expect(onDefaultTimeChange).toHaveBeenCalledWith(45);
+    expect(onDefaultTimeCommit).not.toHaveBeenCalled();
+    input.props.onBlur({ target: { value: "45" } });
+    expect(onDefaultTimeCommit).toHaveBeenCalledWith(45);
   });
 
   it("preserves both immediate toggle values, copy, and callbacks", () => {
@@ -105,10 +110,10 @@ describe("ProjectRemindersPanel", () => {
     const toggles = findElements(output, (node) => node.props?.type === "checkbox");
 
     expect(textContent(output)).toContain(
-      "In-app remindersShow TaskFlow reminders while the app is open."
+      "In-app remindersShow reminders while TaskFlow is open."
     );
     expect(textContent(output)).toContain(
-      "Reminder soundPlay a subtle sound for delivered reminders."
+      "Reminder soundPlay a subtle sound when a reminder arrives."
     );
     expect(toggles.map((toggle) => toggle.props.checked)).toEqual([true, false]);
 

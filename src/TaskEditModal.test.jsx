@@ -323,7 +323,8 @@ describe("TaskEditModal lifecycle integration", () => {
   });
 
   it("renders as a non-modal contextual panel when requested", () => {
-    const runner = createRunner(baseProps({ presentation: "panel" }));
+    const props = baseProps({ presentation: "panel" });
+    const runner = createRunner(props);
     const panel = findElement(runner.output, (node) => node.props?.role === "complementary");
     const backdrop = findElement(
       runner.output,
@@ -339,6 +340,7 @@ describe("TaskEditModal lifecycle integration", () => {
     expect(backdrop.props.className).toContain("task-panel-backdrop");
     expect(textContent(title)).toBe("Original task");
     expect(document.body.style.overflow).toBe("");
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Back to project")).toBeUndefined();
   });
 
   it("keeps panel lifecycle actions compact and accessibly labelled", () => {
@@ -417,7 +419,7 @@ describe("TaskEditModal lifecycle integration", () => {
     expect(textContent(runner.output)).toContain("2Total tasks1Completed1Remaining");
     expect(textContent(runner.output)).toContain("Paayas1");
     expect(textContent(runner.output)).toContain("Unassigned1");
-    expect(textContent(runner.output)).toContain("+ New Task");
+    expect(textContent(runner.output)).toContain("+ Add task");
 
     findElement(
       runner.output,
@@ -441,11 +443,10 @@ describe("TaskEditModal lifecycle integration", () => {
     }));
 
     expect(textContent(runner.output)).toContain("No tasks in this Story yet.");
-    expect(textContent(runner.output)).toContain("Create your first task to get started.");
-    expect(textContent(runner.output)).toContain("This task will be linked to this Story.");
+    expect(textContent(runner.output)).toContain("Add a task to start organizing your work.");
     expect(findElement(
       runner.output,
-      (node) => node.type === "button" && textContent(node) === "+ New Task"
+      (node) => node.type === "button" && textContent(node) === "+ Add task"
     )).toBeDefined();
     expect(findElement(
       runner.output,
@@ -454,7 +455,7 @@ describe("TaskEditModal lifecycle integration", () => {
 
     findElement(
       runner.output,
-      (node) => node.type === "button" && textContent(node) === "+ New Task"
+      (node) => node.type === "button" && textContent(node) === "+ Add task"
     ).props.onClick();
     runner.render();
     expect(findElement(
@@ -647,6 +648,54 @@ describe("TaskEditModal lifecycle integration", () => {
     await archive.props.onClick();
     expect(props.onArchiveTask).toHaveBeenCalledWith("task-1");
     expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires linked Story tasks to be moved to No Story before archiving", async () => {
+    const props = baseProps({
+      userId: "user-1",
+      projectId: "project-1",
+      task: { ...baseProps().task, id: "story-1", title: "Launch Story", workType: "story" },
+      relatedTasks: [
+        { ...baseProps().task, id: "linked-1", storyId: "story-1" },
+        { ...baseProps().task, id: "linked-2", storyId: "story-1" },
+      ],
+    });
+    const runner = createRunner(props);
+
+    findElement(runner.output, (node) => node.type === "button" && textContent(node) === "Details").props.onClick();
+    runner.render();
+    findElement(runner.output, (node) => textContent(node) === "Archive").props.onClick();
+    runner.render();
+
+    expect(props.onArchiveTask).not.toHaveBeenCalled();
+    expect(textContent(runner.output)).toContain("has 2 linked tasks");
+    const confirm = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "Move tasks to No Story"
+    );
+    await confirm.props.onClick();
+
+    expect(props.onArchiveTask).toHaveBeenCalledWith("story-1", {
+      moveLinkedTasksToUncategorized: true,
+    });
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("archives an empty Story without showing the move warning", async () => {
+    const props = baseProps({
+      userId: "user-1",
+      projectId: "project-1",
+      task: { ...baseProps().task, id: "story-empty", workType: "story" },
+      relatedTasks: [],
+    });
+    const runner = createRunner(props);
+
+    findElement(runner.output, (node) => node.type === "button" && textContent(node) === "Details").props.onClick();
+    runner.render();
+    await findElement(runner.output, (node) => textContent(node) === "Archive").props.onClick();
+
+    expect(props.onArchiveTask).toHaveBeenCalledWith("story-empty");
+    expect(findElement(runner.output, (node) => node.props?.role === "alertdialog")).toBeUndefined();
   });
 
   it("keeps the nested delete alert dialog as the active focus boundary", () => {

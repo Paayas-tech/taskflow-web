@@ -41,6 +41,16 @@ const hookRuntime = vi.hoisted(() => {
       activeRunner.slots[index] = { callback, dependencies };
       return callback;
     },
+    useMemo(factory, dependencies) {
+      const index = activeRunner.cursor++;
+      const previous = activeRunner.slots[index];
+      if (previous && same(previous.dependencies, dependencies)) {
+        return previous.value;
+      }
+      const value = factory();
+      activeRunner.slots[index] = { value, dependencies };
+      return value;
+    },
     useEffect(effect, dependencies) {
       const index = activeRunner.cursor++;
       const previous = activeRunner.slots[index];
@@ -79,6 +89,7 @@ vi.mock("react", () => ({
   default: {},
   useCallback: hookRuntime.useCallback,
   useEffect: hookRuntime.useEffect,
+  useMemo: hookRuntime.useMemo,
   useRef: hookRuntime.useRef,
   useState: hookRuntime.useState,
 }));
@@ -87,16 +98,7 @@ vi.mock("./ArchivedTasksPage", () => ({ default: () => null }));
 vi.mock("./CalendarPage", () => ({ default: () => null }));
 vi.mock("./ConfigurationErrorScreen", () => ({ default: () => null }));
 vi.mock("./Dashboard", () => ({
-  default: ({ isActive, onCreateTask, createTaskTriggerRef }) => isActive ? ({
-    type: "button",
-    key: null,
-    props: {
-      ref: createTaskTriggerRef,
-      type: "button",
-      onClick: onCreateTask,
-      children: "+ New Task",
-    },
-  }) : null,
+  default: () => null,
 }));
 vi.mock("./Login", () => ({ default: () => null }));
 vi.mock("./InboxPage", () => ({ default: () => null }));
@@ -115,10 +117,25 @@ vi.mock("./ProjectTasksPage", () => ({
 }));
 vi.mock("./Recover", () => ({ default: () => null }));
 vi.mock("./SettingsPage", () => ({ default: () => null }));
+vi.mock("./application/googleCalendarIntegrationService", () => ({
+  googleCalendarIntegrationService: {
+    getConnection: vi.fn().mockResolvedValue(null),
+    sync: vi.fn().mockResolvedValue({ events: [] }),
+  },
+}));
 vi.mock("./TasksPage", () => ({
   default: (props) => {
     componentCaptures.tasksPageProps = props;
-    return null;
+    return {
+      type: "button",
+      key: null,
+      props: {
+        ref: props.createTaskTriggerRef,
+        type: "button",
+        onClick: () => props.onCreateScheduledTask({}),
+        children: "+ Add task",
+      },
+    };
   },
 }));
 
@@ -395,7 +412,7 @@ function keyEvent(key, shiftKey = false) {
 function openTaskDialog(runner) {
   const trigger = findElement(
     runner.output,
-    (node) => node.type === "button" && textContent(node) === "+ New Task"
+    (node) => node.type === "button" && textContent(node) === "+ Add task"
   );
   trigger.props.onClick();
   runner.render();
@@ -436,6 +453,60 @@ afterEach(() => {
 });
 
 describe("App create-task modal lifecycle integration", () => {
+  it("provides the shared global navigation controls and reuses existing flows", async () => {
+    projectService.getProjects.mockResolvedValue([
+      { id: "project-a", name: "Launch", description: "Release workspace", viewerRole: "owner" },
+    ]);
+    const runner = createRunner();
+    await Promise.resolve();
+    await Promise.resolve();
+    runner.render();
+
+    const shell = findElement(runner.output, (node) => node.props?.className === "app-shell");
+    const sidebarToggle = findElement(
+      runner.output,
+      (node) => node.props?.["aria-label"] === "Collapse sidebar"
+    );
+    expect(textContent(runner.output)).toContain("TaskFlow");
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Search TaskFlow")).toBeDefined();
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Help")).toBeDefined();
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Settings")).toBeUndefined();
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Account menu")).toBeDefined();
+
+    sidebarToggle.props.onClick();
+    runner.render();
+    expect(shell.props.className).toBe("app-shell");
+    expect(findElement(runner.output, (node) => node.props?.className === "app-shell sidebar-collapsed")).toBeDefined();
+
+    findElement(runner.output, (node) => node.type === "button" && textContent(node) === "+ Create").props.onClick();
+    runner.render();
+    expect(textContent(runner.output)).toContain("Create a personal task");
+    expect(textContent(runner.output)).toContain("Create a collaborative workspace");
+    expect(textContent(runner.output)).not.toContain("+ New Task");
+
+    const search = findElement(runner.output, (node) => node.props?.["aria-label"] === "Search TaskFlow");
+    search.props.onChange({ target: { value: "Launch" } });
+    runner.render();
+    expect(textContent(runner.output)).toContain("Release workspace");
+
+    findElement(runner.output, (node) => node.props?.["aria-label"] === "Account menu").props.onClick();
+    runner.render();
+    expect(textContent(runner.output)).toContain("test-user");
+    expect(textContent(runner.output)).toContain("Settings");
+    expect(textContent(runner.output)).not.toContain("Log out");
+
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "Settings"
+    ).props.onClick();
+    runner.render();
+    expect(findElement(
+      runner.output,
+      (node) => node.props?.role === "dialog" && node.props?.["aria-label"] === "TaskFlow settings"
+    )).toBeDefined();
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Close settings")).toBeDefined();
+  });
+
   it("exposes inline personal-task creation without opening the full task form", async () => {
     window.location.pathname = "/tasks";
     const runner = createRunner();

@@ -5,6 +5,7 @@ import TaskAssigneeSelector from "./TaskAssigneeSelector";
 import TaskComments from "./TaskComments";
 import StoryBulkActionBar from "./StoryBulkActionBar";
 import StoryOverviewPanel from "./StoryOverviewPanel";
+import AttachmentSection from "./AttachmentSection";
 import { useModalLifecycle } from "./components/modal/useModalLifecycle";
 import {
   buildTaskEditPayload,
@@ -37,10 +38,11 @@ export default function TaskEditModal({
   readOnly = false,
   presentation = "modal",
   relatedTasks = [],
+  archiveLinkedTaskCount = relatedTasks.length,
   onOpenRelatedTask,
   onCreateRelatedTask,
   onBulkUpdateRelatedTasks,
-  onBackToStory,
+  onAttachmentCountChange,
 }) {
   const [values, setValues] = useState(() =>
     taskFormValuesFromTask(task, lists)
@@ -48,6 +50,7 @@ export default function TaskEditModal({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingStoryArchive, setConfirmingStoryArchive] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [lifecycleAction, setLifecycleAction] = useState("");
@@ -78,6 +81,8 @@ export default function TaskEditModal({
   const descriptionId = `${dialogId}-description`;
   const deleteTitleId = `${dialogId}-delete-title`;
   const deleteDescriptionId = `${dialogId}-delete-description`;
+  const archiveTitleId = `${dialogId}-archive-title`;
+  const archiveDescriptionId = `${dialogId}-archive-description`;
   const archived = isArchived(task);
   const isPanel = presentation === "panel";
   const busy = saving || deleting || assigneeBusy || Boolean(lifecycleAction);
@@ -188,12 +193,17 @@ export default function TaskEditModal({
   }, [isPanel, returnFocusElement]);
 
   useEffect(() => {
-    if (!confirmingDelete) return undefined;
+    if (!confirmingDelete && !confirmingStoryArchive) return undefined;
     const handleKeyDown = (event) => {
       if (event.key === "Escape" && !busyRef.current) {
-        setDeleteError("");
-        setConfirmingDelete(false);
-        window.requestAnimationFrame(() => deleteButtonRef.current?.focus());
+        if (confirmingDelete) {
+          setDeleteError("");
+          setConfirmingDelete(false);
+          window.requestAnimationFrame(() => deleteButtonRef.current?.focus());
+        } else {
+          setLifecycleError("");
+          setConfirmingStoryArchive(false);
+        }
         return;
       }
 
@@ -232,15 +242,15 @@ export default function TaskEditModal({
       window.cancelAnimationFrame(focusFrame);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [confirmingDelete]);
+  }, [confirmingDelete, confirmingStoryArchive]);
 
   const { onBackdropMouseDown } = useModalLifecycle({
     isOpen: !isPanel,
     modalRef: dialogRef,
     onClose,
     isDismissDisabled: busy,
-    allowEscape: !confirmingDelete,
-    trapFocus: !confirmingDelete,
+    allowEscape: !confirmingDelete && !confirmingStoryArchive,
+    trapFocus: !confirmingDelete && !confirmingStoryArchive,
     restoreFocus: false,
   });
 
@@ -291,7 +301,7 @@ export default function TaskEditModal({
     setConfirmingDelete(true);
   };
 
-  const handleLifecycleAction = async () => {
+  const performLifecycleAction = async (options) => {
     if (lifecycleSubmissionRef.current || busy) return;
 
     const action = archived ? onRestoreTask : onArchiveTask;
@@ -302,7 +312,11 @@ export default function TaskEditModal({
     setLifecycleError("");
 
     try {
-      await action(task.id);
+      if (options === undefined) {
+        await action(task.id);
+      } else {
+        await action(task.id, options);
+      }
       onClose();
     } catch (error) {
       console.error(`Error ${archived ? "restoring" : "archiving"} task:`, error);
@@ -313,6 +327,26 @@ export default function TaskEditModal({
       lifecycleSubmissionRef.current = false;
       setLifecycleAction("");
     }
+  };
+
+  const handleLifecycleAction = () => {
+    if (!archived && isStory && archiveLinkedTaskCount > 0) {
+      setLifecycleError("");
+      setConfirmingStoryArchive(true);
+      return;
+    }
+
+    return performLifecycleAction();
+  };
+
+  const cancelStoryArchive = () => {
+    if (lifecycleAction) return;
+    setLifecycleError("");
+    setConfirmingStoryArchive(false);
+  };
+
+  const confirmStoryArchive = () => {
+    return performLifecycleAction({ moveLinkedTasksToUncategorized: true });
   };
 
   const cancelDelete = () => {
@@ -393,11 +427,6 @@ export default function TaskEditModal({
             </div>
 
             <div className="edit-task-modal-actions">
-              {onBackToStory && (
-                <button className="ghost-btn compact-btn story-return-button" type="button" onClick={onBackToStory} disabled={busy}>
-                  ← Story
-                </button>
-              )}
               {isPanel && activePage === "details" && !readOnly && (
                 <label className="task-panel-complete">
                   <input
@@ -441,8 +470,8 @@ export default function TaskEditModal({
                   type="button"
                   onClick={requestDelete}
                   disabled={busy}
-                  aria-label={archived ? "Delete task permanently" : "Delete task"}
-                  title={archived ? "Delete permanently" : "Delete"}
+                  aria-label={isStory ? "Delete Story" : archived ? "Delete task permanently" : "Delete task"}
+                  title={isStory ? "Delete Story" : archived ? "Delete permanently" : "Delete"}
                 >
                   {isPanel ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" /></svg> : archived ? "Delete permanently" : "Delete"}
                 </button>
@@ -538,6 +567,20 @@ export default function TaskEditModal({
             />
           ))}
 
+          {userId && projectId && activePage === "details" && (
+            <AttachmentSection
+              projectId={projectId}
+              entityType={isStory ? "story" : "task"}
+              entityId={task.id}
+              userId={userId}
+              uploaderName={projectMembers.find((member) => member.userId === userId)?.displayName || "TaskFlow user"}
+              canManage={!readOnly}
+              compact
+              allowDrop={!isStory}
+              onCountChange={onAttachmentCountChange}
+            />
+          )}
+
           {userId && projectId && activePage === "comments" && (
             <div className="task-modal-page task-modal-comments-page">
               <TaskComments
@@ -585,7 +628,7 @@ export default function TaskEditModal({
                 {relatedTasks.length > 0 && !readOnly && onCreateRelatedTask && (
                   <div className="story-task-action">
                     <small>This task will be linked to this Story.</small>
-                    <button className="primary-btn compact-btn" type="button" onClick={() => setShowRelatedTaskCreate(true)}>+ New Task</button>
+                    <button className="primary-btn compact-btn" type="button" onClick={() => setShowRelatedTaskCreate(true)}>+ Add task</button>
                   </div>
                 )}
               </div>
@@ -639,11 +682,10 @@ export default function TaskEditModal({
                 {relatedTasks.length === 0 && (
                   <div className="story-task-empty">
                     <strong>No tasks in this Story yet.</strong>
-                    <p>Create your first task to get started.</p>
+                    <p>Add a task to start organizing your work.</p>
                     {!readOnly && onCreateRelatedTask && (
                       <div className="story-task-action story-task-empty-action">
-                        <small>This task will be linked to this Story.</small>
-                        <button className="primary-btn compact-btn" type="button" onClick={() => setShowRelatedTaskCreate(true)}>+ New Task</button>
+                        <button className="primary-btn compact-btn" type="button" onClick={() => setShowRelatedTaskCreate(true)}>+ Add task</button>
                       </div>
                     )}
                   </div>
@@ -694,11 +736,16 @@ export default function TaskEditModal({
           >
             <p className="card-label">Permanent action</p>
             <h3 id={deleteTitleId}>
-              {archived ? "Delete this archived task permanently?" : "Delete this task?"}
+              {isStory
+                ? "Delete this Story?"
+                : archived
+                  ? "Delete this archived task permanently?"
+                  : "Delete this task?"}
             </h3>
             <p id={deleteDescriptionId}>
-              “{task.title}” will be permanently removed from TaskFlow. This
-              cannot be undone.
+              {isStory
+                ? `“${task.title}” will be permanently removed. Its tasks will remain in this project under No Story.`
+                : `“${task.title}” will be permanently removed from TaskFlow. This cannot be undone.`}
             </p>
             {deleteError && (
               <p className="form-error" role="alert">
@@ -722,9 +769,42 @@ export default function TaskEditModal({
               >
                 {deleting
                   ? "Deleting..."
-                  : archived
+                  : isStory
+                    ? "Delete Story"
+                    : archived
                     ? "Delete permanently"
                     : "Delete task"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {confirmingStoryArchive && (
+        <div className="confirmation-backdrop">
+          <section
+            ref={confirmationDialogRef}
+            className="confirmation-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby={archiveTitleId}
+            aria-describedby={archiveDescriptionId}
+            aria-busy={lifecycleAction === "archive"}
+            tabIndex={-1}
+          >
+            <p className="card-label">Archive Story</p>
+            <h3 id={archiveTitleId}>Move linked tasks before archiving?</h3>
+            <p id={archiveDescriptionId}>
+              “{task.title}” has {archiveLinkedTaskCount} linked {archiveLinkedTaskCount === 1 ? "task" : "tasks"}.
+              To keep them visible, they must be moved to No Story before this Story is archived.
+            </p>
+            {lifecycleError && <p className="form-error" role="alert">{lifecycleError}</p>}
+            <div className="confirmation-actions">
+              <button className="ghost-btn" type="button" onClick={cancelStoryArchive} disabled={Boolean(lifecycleAction)}>
+                Cancel
+              </button>
+              <button className="primary-btn" type="button" onClick={confirmStoryArchive} disabled={Boolean(lifecycleAction)}>
+                {lifecycleAction === "archive" ? "Moving tasks..." : "Move tasks to No Story"}
               </button>
             </div>
           </section>

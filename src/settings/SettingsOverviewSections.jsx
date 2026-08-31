@@ -3,14 +3,12 @@ import { SettingsGroup, SettingsRow, ToggleRow } from "./SettingsControls";
 export function AccountSettingsSection({
   displayName,
   onOpenProfile,
-  onOpenIntegrations,
   onOpenArchivedTasks,
   onOpenImportData,
 }) {
   return (
     <SettingsGroup title="account">
       <SettingsRow label="My Profile" value={displayName || "Account details"} onClick={onOpenProfile} />
-      <SettingsRow label="Integrations" value="Not connected" onClick={onOpenIntegrations} />
       <SettingsRow label="Archived Tasks" onClick={onOpenArchivedTasks} />
       <SettingsRow label="Import Data" value="Not available" onClick={onOpenImportData} />
     </SettingsGroup>
@@ -42,6 +40,7 @@ export function PreferencesSettingsSection({
   defaultViewLabel,
   defaultListLabel,
   timeSettingsLabel,
+  languageLabel,
   onOpenMyDay,
   onOpenCalendars,
   onOpenTheme,
@@ -71,7 +70,7 @@ export function PreferencesSettingsSection({
       <SettingsRow label="Default View" value={defaultViewLabel} onClick={onOpenDefaultView} />
       <SettingsRow label="Default List" value={defaultListLabel} onClick={onOpenDefaultList} />
       <SettingsRow label="Time Settings" value={timeSettingsLabel} onClick={onOpenTimeSettings} />
-      <SettingsRow label="Language" value="English" onClick={onOpenLanguage} />
+      <SettingsRow label="Language" value={languageLabel} onClick={onOpenLanguage} />
     </SettingsGroup>
   );
 }
@@ -79,14 +78,12 @@ export function PreferencesSettingsSection({
 export function TaskflowSettingsSection({
   onOpenWhatsNew,
   onOpenShortcuts,
-  onOpenSupport,
   onOpenAbout,
 }) {
   return (
     <SettingsGroup title="taskflow">
       <SettingsRow label="What's New?" onClick={onOpenWhatsNew} />
       <SettingsRow label="Keyboard Shortcuts" onClick={onOpenShortcuts} />
-      <SettingsRow label="Support" value="Not available" onClick={onOpenSupport} />
       <SettingsRow label="About" value="0.0.0" onClick={onOpenAbout} />
     </SettingsGroup>
   );

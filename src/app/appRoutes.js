@@ -1,4 +1,12 @@
 export const navigationItems = [
+  { label: "For you", path: "/for-you", enabled: true, icon: "for-you", group: "workspace" },
+  { label: "Recent", path: "/recent", enabled: true, icon: "recent", group: "workspace" },
+  { label: "Starred", path: "/starred", enabled: true, icon: "starred", group: "workspace" },
+  { label: "Timeline", path: "/planning/timeline", enabled: true, icon: "timeline", group: "planning" },
+  { label: "Board", path: "/planning/board", enabled: true, icon: "board", group: "planning" },
+  { label: "Lists", path: "/planning/lists", enabled: true, icon: "lists", group: "planning" },
+  { label: "Goals", path: "/planning/goals", enabled: true, icon: "goals", group: "planning" },
+  { label: "Issues", path: "/planning/issues", enabled: true, icon: "issues", group: "planning" },
   { label: "Dashboard", path: "/", enabled: true, icon: "dashboard" },
   { label: "Inbox", path: "/inbox", enabled: true, icon: "inbox" },
   { label: "Tasks", path: "/tasks", enabled: true, icon: "tasks" },
@@ -9,6 +17,14 @@ export const navigationItems = [
 
 export const routeViews = {
   "/": "dashboard",
+  "/for-you": "for-you",
+  "/recent": "recent",
+  "/starred": "starred",
+  "/planning/timeline": "planning-timeline",
+  "/planning/board": "planning-board",
+  "/planning/lists": "planning-lists",
+  "/planning/goals": "planning-goals",
+  "/planning/issues": "planning-issues",
   "/inbox": "inbox",
   "/tasks": "tasks",
   "/calendar": "tasks",
@@ -39,6 +55,7 @@ export const normalizePath = (pathname) => {
   const withoutTrailingSlash =
     pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
   if (withoutTrailingSlash === "/today") return "/";
+  if (withoutTrailingSlash === "/plans") return "/planning/timeline";
   if (routeViews[withoutTrailingSlash]) return withoutTrailingSlash;
 
   const projectId = projectIdFromPath(withoutTrailingSlash);
@@ -65,6 +82,14 @@ export const pageMetadata = ({
   title:
     currentView === "tasks"
       ? "Tasks"
+      : currentView === "for-you"
+        ? "For you"
+        : currentView === "recent"
+          ? "Recent"
+          : currentView === "starred"
+            ? "Starred"
+            : currentView?.startsWith("planning-")
+                ? currentView.replace("planning-", "").replace(/^./, (value) => value.toUpperCase())
       : currentView === "inbox"
         ? "Inbox"
       : currentView === "archived"
@@ -79,6 +104,14 @@ export const pageMetadata = ({
   subtitle:
     currentView === "tasks"
       ? `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`
+      : currentView === "for-you"
+        ? "Your assigned, upcoming, and important work."
+        : currentView === "recent"
+          ? "Work you opened recently."
+          : currentView === "starred"
+            ? "Important work saved for quick access."
+            : currentView?.startsWith("planning-")
+                ? "Plan and understand work across your projects."
       : currentView === "inbox"
         ? "Updates, mentions, and assignments that need your attention."
       : currentView === "archived"

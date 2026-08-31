@@ -5,6 +5,17 @@ import {
 
 export const SETTINGS_THEME_MODES = ["light", "dark"];
 
+export const TASKFLOW_LANGUAGES = Object.freeze([
+  Object.freeze({ code: "en", name: "English", locale: "English" }),
+  Object.freeze({ code: "hi", name: "हिन्दी", locale: "Hindi" }),
+  Object.freeze({ code: "es", name: "Español", locale: "Spanish" }),
+  Object.freeze({ code: "fr", name: "Français", locale: "French" }),
+  Object.freeze({ code: "de", name: "Deutsch", locale: "German" }),
+  Object.freeze({ code: "pt", name: "Português", locale: "Portuguese" }),
+  Object.freeze({ code: "ja", name: "日本語", locale: "Japanese" }),
+]);
+export const SETTINGS_LANGUAGE_CODES = TASKFLOW_LANGUAGES.map(({ code }) => code);
+
 export const TASKFLOW_BACKGROUNDS = Object.freeze([
   Object.freeze({
     id: "calm",
@@ -29,6 +40,30 @@ export const TASKFLOW_BACKGROUNDS = Object.freeze([
     name: "Focus",
     category: "Minimal",
     description: "A restrained neutral canvas.",
+  }),
+  Object.freeze({
+    id: "aurora-flow",
+    name: "Aurora Flow",
+    category: "Live",
+    description: "Slow-moving violet and aqua light.",
+  }),
+  Object.freeze({
+    id: "ocean-drift",
+    name: "Ocean Drift",
+    category: "Live",
+    description: "A calm animated blue horizon.",
+  }),
+  Object.freeze({
+    id: "sunset-bloom",
+    name: "Sunset Bloom",
+    category: "Live",
+    description: "Warm coral light that gently shifts.",
+  }),
+  Object.freeze({
+    id: "forest-breathe",
+    name: "Forest Breathe",
+    category: "Live",
+    description: "Soft green light with subtle movement.",
   }),
 ]);
 export const SETTINGS_BACKGROUND_IDS = TASKFLOW_BACKGROUNDS.map(({ id }) => id);
@@ -100,6 +135,14 @@ const isTimeOnly = (value) => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value ||
 
 const allowedViewPaths = new Set([
   "/",
+  "/for-you",
+  "/recent",
+  "/starred",
+  "/planning/timeline",
+  "/planning/board",
+  "/planning/lists",
+  "/planning/goals",
+  "/planning/issues",
   "/inbox",
   "/tasks",
   "/projects",
@@ -213,7 +256,13 @@ export const normalizeSettings = (value = {}, user = {}) => {
       // External suggestion infrastructure does not exist yet.
       externalSuggestions: false,
     },
-    language: { code: "en" },
+    language: {
+      code: choiceOrDefault(
+        value?.language?.code,
+        SETTINGS_LANGUAGE_CODES,
+        DEFAULT_SETTINGS.language.code
+      ),
+    },
     data:
       value?.data && typeof value.data === "object" && !Array.isArray(value.data)
         ? { ...value.data }
@@ -277,6 +326,14 @@ export const getSettingsValidationError = (settings = {}) => {
     )
   ) {
     return "Choose Sunday or Monday as the first day of the week.";
+  }
+
+  if (
+    !SETTINGS_LANGUAGE_CODES.includes(
+      settings?.language?.code ?? DEFAULT_SETTINGS.language.code
+    )
+  ) {
+    return "Choose an available language.";
   }
 
   if (

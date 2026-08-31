@@ -69,7 +69,7 @@ describe("settings defaults and normalization", () => {
         customResetTime: "05:30",
         externalSuggestions: false,
       },
-      language: { code: "en" },
+      language: { code: "fr" },
     });
   });
 

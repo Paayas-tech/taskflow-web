@@ -70,6 +70,7 @@ export default function CalendarEvent({
     <button
       className={`calendar-event calendar-event-${kind} calendar-event-${viewContext} priority-${priority} ${
         completed ? "is-completed" : ""
+      } ${task.source === "google" ? "calendar-event-google" : ""
       } ${segment?.continuesBefore ? "continues-before" : ""} ${
         segment?.continuesAfter ? "continues-after" : ""
       }`}
@@ -82,13 +83,14 @@ export default function CalendarEvent({
       title={`${task.title}. ${scheduleLabel}${
         task.reminder ? `. ${reminderLabel}` : ""
       }`}
-      aria-label={`Edit ${task.title}. ${scheduleLabel}${
+      aria-label={`${task.source === "google" ? "Open Google Calendar event" : "Edit"} ${task.title}. ${scheduleLabel}${
         task.reminder ? `. ${reminderLabel}` : ""
       }`}
     >
       <span className="calendar-priority-dot" aria-hidden="true" />
       {timeLabel && <span className="calendar-event-time">{timeLabel}</span>}
       <span className="calendar-event-title">{task.title}</span>
+      {task.source === "google" && <span className="calendar-event-source" aria-hidden="true">G</span>}
       {task.reminder && (
         <span className="calendar-reminder-icon" aria-label="Reminder enabled">
           <svg viewBox="0 0 16 16" aria-hidden="true">

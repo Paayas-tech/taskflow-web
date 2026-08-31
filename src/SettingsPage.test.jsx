@@ -61,6 +61,14 @@ vi.mock("react", () => ({
 vi.mock("./services/reminderService", () => ({
   requestNotificationPermission: vi.fn().mockResolvedValue("granted"),
 }));
+vi.mock("./application/googleCalendarIntegrationService", () => ({
+  googleCalendarIntegrationService: {
+    getConnection: vi.fn().mockResolvedValue(null),
+    startOAuth: vi.fn(),
+    sync: vi.fn(),
+    disconnect: vi.fn(),
+  },
+}));
 
 import SettingsPage from "./SettingsPage";
 import { DEFAULT_SETTINGS } from "./domain/settingsDomain";
@@ -227,7 +235,7 @@ function baseProps(overrides = {}) {
 function openCalendarDialog(runner) {
   let connect = findElement(
     runner.output,
-    (node) => node.type === "button" && textContent(node) === "Connect"
+    (node) => node.type === "button" && textContent(node) === "Setup required"
   );
   if (!connect) {
     const calendars = findElement(
@@ -238,7 +246,7 @@ function openCalendarDialog(runner) {
     runner.render();
     connect = findElement(
       runner.output,
-      (node) => node.type === "button" && textContent(node) === "Connect"
+      (node) => node.type === "button" && textContent(node) === "Setup required"
     );
   }
   connect.props.onClick();
@@ -264,7 +272,23 @@ describe("SettingsPage calendar modal lifecycle integration", () => {
     runner.render();
 
     expect(textContent(runner.output)).toContain("My Profile");
+    expect(textContent(runner.output)).toContain("Profile information");
+    expect(textContent(runner.output)).not.toContain("This name is visible to people you collaborate with.");
+    expect(textContent(runner.output)).not.toContain("Use the name your teammates will recognize.");
+    expect(textContent(runner.output)).not.toContain("Your sign-in email is managed securely by your TaskFlow account.");
+    expect(textContent(runner.output)).toContain("Signed in");
+    expect(textContent(runner.output)).toContain("Sign out");
+    expect(textContent(runner.output)).toContain("Delete account");
     expect(findElement(runner.output, (node) => node.props?.type === "text")).toBeDefined();
+    expect(findElement(runner.output, (node) => node.props?.type === "email" && node.props?.readOnly)).toBeDefined();
+  });
+
+  it("keeps account actions out of the settings overview", () => {
+    const runner = createRunner(baseProps());
+    runner.render();
+
+    expect(textContent(runner.output)).not.toContain("Sign out");
+    expect(textContent(runner.output)).not.toContain("Delete account");
   });
 
   it("preserves dialog semantics, absent initial focus, and body scroll locking", () => {
@@ -278,7 +302,7 @@ describe("SettingsPage calendar modal lifecycle integration", () => {
       (node) => node.props?.id === dialog.props["aria-labelledby"]
     );
     expect(dialog.props["aria-modal"]).toBe("true");
-    expect(textContent(title)).toContain("Connect Google Calendar");
+    expect(textContent(title)).toContain("Connect Microsoft Outlook");
     expect(dialog.props.tabIndex).toBeUndefined();
     expect(document.activeElement).toBe(outside);
     expect(document.body.style.overflow).toBe("hidden");

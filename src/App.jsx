@@ -4,6 +4,7 @@ import ArchivedTasksPage from "./ArchivedTasksPage";
 import ConfigurationErrorScreen from "./ConfigurationErrorScreen";
 import Dashboard from "./Dashboard";
 import DashboardInviteModal from "./DashboardInviteModal";
+import GlobalTopNav from "./GlobalTopNav";
 import InboxPage from "./InboxPage";
 import Login from "./Login";
 import Onboarding from "./Onboarding";
@@ -16,6 +17,8 @@ import SettingsPage from "./SettingsPage";
 import TaskForm from "./TaskForm";
 import TaskEditModal from "./TaskEditModal";
 import TasksPage from "./TasksPage";
+import WorkspacePage from "./WorkspacePage";
+import PlanningPage from "./PlanningPage";
 import {
   completeOnboarding,
   deleteAccount,
@@ -23,6 +26,8 @@ import {
   signOut,
 } from "./application/authService";
 import { createSignOutController } from "./application/signOutController";
+import { googleCalendarIntegrationService } from "./application/googleCalendarIntegrationService";
+import { attachmentService } from "./application/attachmentService";
 import {
   getTasks,
   createTask,
@@ -65,6 +70,12 @@ import {
   filterArchivedTasks,
 } from "./domain/archivedTasksDomain";
 import { isTaskComplete } from "./domain/taskDomain";
+import {
+  recordRecentItem,
+  toggleStarredItem,
+  workspaceItemForProject,
+  workspaceItemForTask,
+} from "./domain/workspaceNavigationDomain";
 import { isSupabaseConfigured } from "./infrastructure/supabase/client";
 import {
   isNavigationItemActive,
@@ -78,6 +89,15 @@ import {
 import { useModalLifecycle } from "./components/modal/useModalLifecycle";
 
 const navIcons = {
+  "for-you": <><circle cx="12" cy="12" r="8" /><path d="m8.5 12 2.2 2.2 4.8-5" /></>,
+  recent: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  starred: <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z" />,
+  timeline: <><path d="M5 5v14M5 8h7M5 13h12M5 18h9" /></>,
+  board: <><rect x="3" y="4" width="7" height="16" rx="1.5" /><rect x="14" y="4" width="7" height="16" rx="1.5" /></>,
+  lists: <><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="5" cy="6" r="1" /><circle cx="5" cy="12" r="1" /><circle cx="5" cy="18" r="1" /></>,
+  goals: <><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="4" /><path d="m12 12 6-6" /></>,
+  issues: <><path d="M12 3 2.8 20h18.4ZM12 9v4M12 17h.01" /></>,
+  pages: <><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M9 8h6M9 12h6M9 16h4" /></>,
   dashboard: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1.5" />
@@ -204,6 +224,8 @@ function App() {
   const [projectsError, setProjectsError] = useState("");
   const [projectCreateRequest, setProjectCreateRequest] = useState(0);
   const [projectTaskRefreshToken, setProjectTaskRefreshToken] = useState(0);
+  const [projectItemOpenRequest, setProjectItemOpenRequest] = useState(null);
+  const [projectPageView, setProjectPageView] = useState("overview");
   const [projects, setProjects] = useState([]);
   const [assignedProjectTasks, setAssignedProjectTasks] = useState([]);
   const [assignedProjectTasksLoading, setAssignedProjectTasksLoading] = useState(false);
@@ -219,7 +241,15 @@ function App() {
   const [dashboardSearchQuery, setDashboardSearchQuery] = useState("");
   const [dashboardChartPeriod, setDashboardChartPeriod] = useState("7-days");
   const [dashboardSummaryPeriod, setDashboardSummaryPeriod] = useState("week");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return window.localStorage?.getItem("taskflow:sidebar-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
   const [dashboardInviteOpen, setDashboardInviteOpen] = useState(false);
+  const [workspaceSelectedTask, setWorkspaceSelectedTask] = useState(null);
   const [taskFormSaving, setTaskFormSaving] = useState(false);
   const [taskFormError, setTaskFormError] = useState("");
   const [taskForm, setTaskForm] = useState(emptyTaskForm);
@@ -227,6 +257,8 @@ function App() {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsError, setSettingsError] = useState("");
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSheetOpen, setSettingsSheetOpen] = useState(false);
+  const [googleCalendarEvents, setGoogleCalendarEvents] = useState([]);
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [settingsSaveMessage, setSettingsSaveMessage] = useState("");
   const [settingsLoadedUserId, setSettingsLoadedUserId] = useState("");
@@ -236,6 +268,39 @@ function App() {
   const [quickTaskPendingIds, setQuickTaskPendingIds] = useState(
     () => new Set()
   );
+
+  useEffect(() => {
+    if (!settingsSheetOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setSettingsSheetOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [settingsSheetOpen]);
+
+  useEffect(() => {
+    if (!user || currentPath !== "/calendar") return undefined;
+    let active = true;
+    void (async () => {
+      try {
+        const connection = await googleCalendarIntegrationService.getConnection();
+        if (!connection) {
+          if (active) setGoogleCalendarEvents([]);
+          return;
+        }
+        const result = await googleCalendarIntegrationService.sync();
+        if (active) setGoogleCalendarEvents(Array.isArray(result.events) ? result.events : []);
+      } catch (error) {
+        console.warn("Google Calendar events could not be refreshed", error);
+      }
+    })();
+    return () => { active = false; };
+  }, [currentPath, user]);
   const newTaskButtonRef = useRef(null);
   const newProjectButtonRef = useRef(null);
   const taskModalRef = useRef(null);
@@ -698,6 +763,10 @@ function App() {
   }, [settings.background.selected]);
 
   useEffect(() => {
+    document.documentElement.lang = settings.language.code;
+  }, [settings.language.code]);
+
+  useEffect(() => {
     const defaultListId = settings.taskDefaults.listId;
     if (
       !user ||
@@ -1035,6 +1104,7 @@ function App() {
   const handleDeleteProject = useCallback(
     async (projectId) => {
       if (!user) throw new Error("You must be signed in to delete a project.");
+      await attachmentService.removeAll({ projectId, entityType: "project", entityId: projectId });
       await deleteProject(user.uid, projectId);
       await Promise.all([loadProjects(), loadAssignedProjectTasks()]);
     },
@@ -1081,11 +1151,11 @@ function App() {
       const result = await saveSettings(user, nextSettings);
       settingsRef.current = result.settings;
       setSettings(result.settings);
-      setSettingsSaveMessage(
-        result.profileUpdated
-          ? "Settings saved to your TaskFlow account."
-          : "Settings saved. Your display name will sync when you're online."
-      );
+        setSettingsSaveMessage(
+          result.profileUpdated
+            ? "Changes saved."
+            : "Saved locally."
+        );
       return result.settings;
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -1167,7 +1237,7 @@ function App() {
     lockBodyScroll: true,
   });
 
-  const navigate = (path) => {
+  const navigate = (path, { recordProject = true } = {}) => {
     if (path === currentPath) return;
 
     window.history.pushState({}, "", path);
@@ -1178,17 +1248,82 @@ function App() {
       void loadAssignedProjectTasks();
     }
 
-    if (
-      user &&
-      ["/", "/inbox", "/tasks", "/projects", "/calendar"].includes(path)
-    ) {
-      const nextSettings = updateSettingsLastViewed(settingsRef.current, path);
+    if (user) {
+      let nextSettings = settingsRef.current;
+      const openedProjectId = projectIdFromPath(path);
+      const openedProject = openedProjectId
+        ? projects.find((project) => project.id === openedProjectId)
+        : null;
+      if (openedProject && recordProject) {
+        nextSettings = {
+          ...nextSettings,
+          data: {
+            ...nextSettings.data,
+            workspaceNavigation: recordRecentItem(
+              nextSettings.data?.workspaceNavigation,
+              workspaceItemForProject(openedProject)
+            ),
+          },
+        };
+      }
+      if (["/", "/inbox", "/tasks", "/projects", "/calendar", "/for-you", "/recent", "/starred", "/planning/timeline", "/planning/board", "/planning/lists", "/planning/goals", "/planning/issues"].includes(path)) {
+        nextSettings = updateSettingsLastViewed(nextSettings, path);
+      }
+      if (nextSettings === settingsRef.current) return;
       settingsRef.current = nextSettings;
       setSettings(nextSettings);
       void saveSettings(user, nextSettings).catch((error) => {
         console.error("Error remembering the last viewed page:", error);
       });
     }
+  };
+
+  const updateWorkspaceNavigation = (updater) => {
+    const currentSettings = settingsRef.current;
+    const nextSettings = {
+      ...currentSettings,
+      data: {
+        ...currentSettings.data,
+        workspaceNavigation: updater(currentSettings.data?.workspaceNavigation || {}),
+      },
+    };
+    settingsRef.current = nextSettings;
+    setSettings(nextSettings);
+    void saveSettings(user, nextSettings).catch((error) => {
+      console.error("Error saving workspace navigation:", error);
+    });
+  };
+
+  const handleWorkspaceItemOpen = (item) => {
+    if (item.type === "project") {
+      navigate(projectPath(item.id));
+      return;
+    }
+    updateWorkspaceNavigation((data) => recordRecentItem(data, item));
+    if (item.projectId) {
+      setProjectItemOpenRequest({ projectId: item.projectId, itemId: item.id, request: Date.now() });
+      navigate(projectPath(item.projectId), { recordProject: false });
+      return;
+    }
+    const task = activeTasks.find((candidate) => candidate.id === item.id);
+    if (task) setWorkspaceSelectedTask(task);
+  };
+
+  const handleWorkspaceStarToggle = (item) => {
+    updateWorkspaceNavigation((data) => toggleStarredItem(data, item));
+  };
+
+  const handlePlanningGoalsChange = (goals) => {
+    const currentSettings = settingsRef.current;
+    const nextSettings = {
+      ...currentSettings,
+      data: { ...currentSettings.data, planningGoals: goals },
+    };
+    settingsRef.current = nextSettings;
+    setSettings(nextSettings);
+    void saveSettings(user, nextSettings).catch((error) => {
+      console.error("Error saving planning goals:", error);
+    });
   };
 
   if (configurationUnavailable) {
@@ -1267,121 +1402,152 @@ function App() {
     selectedProject,
     projectsLoading,
   });
+  const renderNavigationItem = (item) => {
+    const isActive = isNavigationItemActive(item.path, currentPath, currentView);
+    return (
+      <button
+        key={item.label}
+        type="button"
+        className={`nav-item ${isActive ? "active" : ""} ${item.enabled ? "" : "nav-item-disabled"}`}
+        disabled={!item.enabled}
+        aria-current={isActive ? "page" : undefined}
+        aria-label={item.enabled ? item.label : `${item.label}, coming soon`}
+        onClick={() => item.enabled && navigate(item.path)}
+      >
+        <span className="nav-item-main"><NavigationIcon name={item.icon} /><span>{item.label}</span></span>
+        {!item.enabled && <small>Soon</small>}
+        {item.label === "Projects" && projectInvitations.length > 0 && <small aria-label={`${projectInvitations.length} pending invitations`}>{projectInvitations.length}</small>}
+      </button>
+    );
+  };
+
+  const scrollProjectPageTo = (selector) => {
+    window.requestAnimationFrame(() => {
+      document.querySelector(selector)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    });
+  };
+
+  const openProjectPageSection = (section) => {
+    if (!selectedProject) {
+      navigate("/projects");
+      return;
+    }
+
+    setProjectPageView(section);
+    scrollProjectPageTo(section === "overview" ? ".project-task-hero" : ".project-view-toolbar");
+  };
+
+  const globalSearchItems = [
+    ...projects.map((candidate) => ({
+      id: candidate.id,
+      type: "project",
+      title: candidate.name,
+      subtitle: candidate.description || "Project",
+      item: candidate,
+    })),
+    ...activeTasks.map((task) => ({
+      id: task.id,
+      type: "task",
+      title: task.title,
+      subtitle: "Personal task",
+      item: task,
+    })),
+    ...assignedProjectTasks.map((task) => ({
+      id: task.id,
+      type: task.workType === "story" ? "story" : "task",
+      title: task.title,
+      subtitle: projects.find((candidate) => candidate.id === task.projectId)?.name || "Project work",
+      item: task,
+    })),
+  ].filter((item, index, items) => items.findIndex((candidate) =>
+    candidate.type === item.type && candidate.id === item.id
+  ) === index);
+
+  const handleGlobalSearchOpen = (result) => {
+    if (result.type === "home") {
+      navigate("/");
+      return;
+    }
+    if (result.type === "project") {
+      navigate(projectPath(result.id));
+      return;
+    }
+    handleWorkspaceItemOpen(workspaceItemForTask(result.item));
+  };
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage?.setItem("taskflow:sidebar-collapsed", String(next));
+      } catch {
+        // The preference still applies for the current session.
+      }
+      return next;
+    });
+  };
+
+  const globalCreateActions = [
+    {
+      label: "Task",
+      description: selectedProject ? `Add to ${selectedProject.name}` : "Create a personal task",
+      onSelect: () => openTaskForm(selectedProject ? { projectId: selectedProject.id } : {}),
+    },
+    {
+      label: "Project",
+      description: "Create a collaborative workspace",
+      onSelect: () => {
+        setProjectCreateRequest((request) => request + 1);
+        navigate("/projects");
+      },
+    },
+  ];
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+      <GlobalTopNav
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={toggleSidebar}
+        searchItems={globalSearchItems}
+        onOpenSearchItem={handleGlobalSearchOpen}
+        createActions={globalCreateActions}
+        notificationControl={<NotificationsPanel userId={user.uid} onNavigate={navigate} />}
+        displayName={settings.profile.displayName || user.displayName || user.user_metadata?.display_name || user.email}
+        email={user.email}
+        onOpenSettings={() => setSettingsSheetOpen(true)}
+      />
       <aside className="sidebar">
-        <div className="sidebar-brand">
-          <span className="brand-mark" aria-hidden="true" />
-          <div className="brand">TaskFlow</div>
-        </div>
-
-        <div className="sidebar-profile">
-          <div className="sidebar-avatar" aria-hidden="true">
-            {(settings.profile.displayName || user.email)?.[0]?.toUpperCase() || "U"}
-          </div>
-          <div className="sidebar-account-copy">
-            <strong>{settings.profile.displayName || user.email}</strong>
-            <span>Signed in</span>
-          </div>
-          <button
-            className={`sidebar-settings${currentView === "settings" || currentView === "archived" ? " active" : ""}`}
-            type="button"
-            onClick={() => navigate("/settings")}
-            aria-label="Settings"
-            title="Settings"
-          >
-            <NavigationIcon name="settings" />
-          </button>
-        </div>
-
         <nav className="nav-list" aria-label="Primary navigation">
-          {navigationItems.filter((item) => item.label !== "Settings").map((item) => {
-            const isActive = isNavigationItemActive(
-              item.path,
-              currentPath,
-              currentView
-            );
-
-            return (
-              <button
-              key={item.label}
-              type="button"
-              className={`nav-item ${
-                isActive ? "active" : ""
-              } ${item.enabled ? "" : "nav-item-disabled"}`}
-              disabled={!item.enabled}
-              aria-current={isActive ? "page" : undefined}
-              aria-label={item.enabled ? item.label : `${item.label}, coming soon`}
-              onClick={() => item.enabled && navigate(item.path)}
-            >
-              <span className="nav-item-main">
-                <NavigationIcon name={item.icon} />
-                <span>{item.label}</span>
-              </span>
-              {!item.enabled && <small>Soon</small>}
-              {item.label === "Projects" && projectInvitations.length > 0 && (
-                <small aria-label={`${projectInvitations.length} pending invitations`}>
-                  {projectInvitations.length}
-                </small>
-              )}
-              </button>
-            );
-          })}
+          <p className="nav-section-label">Workspace</p>
+          {navigationItems.filter((item) => item.label === "Dashboard").map(renderNavigationItem)}
+          {navigationItems.filter((item) => item.group === "workspace").map(renderNavigationItem)}
+          <p className="nav-section-label">Planning</p>
+          {navigationItems.filter((item) => item.group === "planning").map(renderNavigationItem)}
+          <section className="project-pages-nav" aria-label={`${selectedProject?.name || "Projects"} project pages`}>
+            <p className="nav-section-label">Project pages</p>
+            <button className={`nav-item project-page-nav-item${currentView === "project" && projectPageView === "overview" ? " active" : ""}`} type="button" aria-current={currentView === "project" && projectPageView === "overview" ? "page" : undefined} onClick={() => openProjectPageSection("overview")}>
+              <span className="nav-item-main"><NavigationIcon name="pages" /><span>Project pages</span></span>
+            </button>
+            <button className={`nav-item project-page-nav-item${currentView === "project" && projectPageView === "board" ? " active" : ""}`} type="button" aria-current={currentView === "project" && projectPageView === "board" ? "page" : undefined} onClick={() => openProjectPageSection("board")}>
+              <span className="nav-item-main"><NavigationIcon name="board" /><span>Board</span></span>
+            </button>
+            <button className={`nav-item project-page-nav-item${currentView === "project" && projectPageView === "list" ? " active" : ""}`} type="button" aria-current={currentView === "project" && projectPageView === "list" ? "page" : undefined} onClick={() => openProjectPageSection("list")}>
+              <span className="nav-item-main"><NavigationIcon name="lists" /><span>Lists</span></span>
+            </button>
+          </section>
+          {navigationItems.filter((item) => !item.group && !["Dashboard", "Projects", "Settings"].includes(item.label)).map(renderNavigationItem)}
         </nav>
 
-        <div className="sidebar-account">
-          <button
-            className="sidebar-logout"
-            type="button"
-            onClick={handleSignOut}
-            disabled={signOutState.pending}
-            aria-busy={signOutState.pending}
-            aria-describedby={
-              signOutState.error ? "sidebar-signout-error" : undefined
-            }
-          >
-            {signOutState.pending ? "Signing out..." : "Log out"}
-          </button>
-          {signOutState.error && (
-            <p
-              className="signout-error sidebar-signout-error"
-              id="sidebar-signout-error"
-              role="alert"
-            >
-              {signOutState.error}
-            </p>
-          )}
-        </div>
+        {signOutState.error && <p className="signout-error sidebar-signout-error" role="alert">{signOutState.error}</p>}
       </aside>
 
       <main className={`main-content view-${currentView}`}>
-        {currentView !== "project" && currentView !== "dashboard" && currentView !== "tasks" && <header className="topbar">
+        {currentView !== "project" && currentView !== "dashboard" && currentView !== "tasks" && currentView !== "archived" && <header className="topbar">
           <div className="topbar-title">
             <h1>{pageTitle}</h1>
             <p>{pageSubtitle}</p>
           </div>
 
-          {currentView !== "projects" && currentView !== "tasks" && currentView !== "inbox" && currentView !== "settings" && currentView !== "archived" && (
-            <div className="topbar-actions">
-              <button
-                ref={newTaskButtonRef}
-                className="primary-btn"
-                type="button"
-                onClick={() =>
-                  openTaskForm(
-                    {}
-                  )
-                }
-                disabled={taskFormSaving}
-                aria-haspopup="dialog"
-                aria-expanded={showTaskForm}
-                aria-controls="create-task-dialog"
-              >
-                + New Task
-              </button>
-            </div>
-          )}
         </header>}
 
         {!settingsLoading &&
@@ -1469,6 +1635,50 @@ function App() {
           </div>
         )}
 
+        {["for-you", "recent", "starred"].includes(currentView) && (
+          <WorkspacePage
+            mode={currentView}
+            tasks={activeTasks}
+            assignedTasks={assignedProjectTasks}
+            projects={projects}
+            workspaceData={settings.data?.workspaceNavigation}
+            onOpenItem={handleWorkspaceItemOpen}
+            onToggleStar={handleWorkspaceStarToggle}
+          />
+        )}
+
+        {currentView.startsWith("planning-") && (
+          <PlanningPage
+            view={currentView.replace("planning-", "")}
+            tasks={activeTasks}
+            assignedTasks={assignedProjectTasks}
+            projects={projects}
+            workspaceData={settings.data?.workspaceNavigation}
+            goals={settings.data?.planningGoals}
+            onGoalsChange={handlePlanningGoalsChange}
+            onOpenItem={handleWorkspaceItemOpen}
+            onToggleStar={handleWorkspaceStarToggle}
+          />
+        )}
+
+        {(["for-you", "recent", "starred"].includes(currentView) || currentView.startsWith("planning-")) && workspaceSelectedTask && (
+          <TaskEditModal
+            key={workspaceSelectedTask.id}
+            task={workspaceSelectedTask}
+            lists={lists}
+            projects={projects}
+            projectsLoading={projectsLoading}
+            projectsError={projectsError}
+            onRetryProjects={loadProjects}
+            browserNotificationsEnabled={settings.reminder.enableBrowserNotifications}
+            onUpdateTask={handleUpdateTask}
+            onDeleteTask={handleDeleteTask}
+            onArchiveTask={handleArchiveTask}
+            onClose={() => setWorkspaceSelectedTask(null)}
+            presentation="panel"
+          />
+        )}
+
         <div className="route-content" hidden={currentView !== "tasks"}>
           <TasksPage
             tasks={activeTasks}
@@ -1502,6 +1712,7 @@ function App() {
               settings.reminder.enableBrowserNotifications
             }
             initialWorkspaceView={currentPath === "/calendar" ? "calendar" : "list"}
+            externalCalendarEvents={googleCalendarEvents}
             onWorkspaceViewChange={(view) => navigate(view === "calendar" ? "/calendar" : "/tasks")}
           />
         </div>
@@ -1542,6 +1753,11 @@ function App() {
             lists={lists}
             formatSettings={settings.time}
             refreshToken={projectTaskRefreshToken}
+            openItemRequest={projectItemOpenRequest}
+            showEmbeddedTaskViews
+            requestedView={projectPageView === "list" ? "list" : "board"}
+            onViewChange={setProjectPageView}
+            onItemOpened={(task) => updateWorkspaceNavigation((data) => recordRecentItem(data, workspaceItemForTask(task)))}
             onBack={() => navigate("/projects")}
             onCreateTask={() =>
               openTaskForm({ projectId: selectedProject.id })
@@ -1554,7 +1770,6 @@ function App() {
 
         <div className="route-content" hidden={currentView !== "dashboard"}>
           <Dashboard
-            isActive={currentView === "dashboard"}
             tasks={activeTasks}
             tasksLoading={tasksLoading}
             tasksError={tasksError}
@@ -1582,11 +1797,10 @@ function App() {
             onTaskViewChange={setDashboardTaskView}
             quickCreateOpen={dashboardQuickCreateOpen}
             onStartQuickCreate={handleDashboardCreateStart}
-            onCreateTask={() => openTaskForm({})}
-            createTaskTriggerRef={newTaskButtonRef}
             onQuickCreate={handleDashboardQuickCreate}
             onCancelQuickCreate={() => setDashboardQuickCreateOpen(false)}
             onOpenTask={(task) => {
+              updateWorkspaceNavigation((data) => recordRecentItem(data, workspaceItemForTask(task)));
               setDashboardTaskOpenRequest({ id: task.id, request: Date.now() });
             }}
             onFilterTasks={(filters) => {
@@ -1596,7 +1810,8 @@ function App() {
             }}
             onViewAllTasks={() => navigate("/tasks")}
             onViewAllProjects={() => navigate("/projects")}
-            notificationControl={<NotificationsPanel userId={user.uid} onNavigate={navigate} />}
+            notificationControl={null}
+            showGlobalActions={false}
             searchQuery={dashboardSearchQuery}
             onSearchChange={setDashboardSearchQuery}
             chartPeriod={dashboardChartPeriod}
@@ -1679,6 +1894,7 @@ function App() {
               lists,
               projects,
             }}
+            onGoogleEventsChange={setGoogleCalendarEvents}
           />
         </div>
 
@@ -1691,7 +1907,8 @@ function App() {
             onRestoreTask={handleRestoreTask}
             onUpdateTask={handleUpdateTask}
             onDeleteTask={handleDeleteTask}
-            onBack={() => navigate("/settings")}
+            onBack={() => setSettingsSheetOpen(true)}
+            onViewTasks={() => navigate("/tasks")}
             lists={lists}
             projects={editableProjects}
             projectsLoading={projectsLoading}
@@ -1704,6 +1921,51 @@ function App() {
           />
         </div>
       </main>
+
+      {settingsSheetOpen && (
+        <div
+          className="settings-sheet-backdrop"
+          onMouseDown={(event) => event.target === event.currentTarget && setSettingsSheetOpen(false)}
+        >
+          <section className="settings-sheet" role="dialog" aria-modal="true" aria-label="TaskFlow settings">
+            <button className="settings-sheet-close" type="button" onClick={() => setSettingsSheetOpen(false)} aria-label="Close settings" title="Close">×</button>
+            <SettingsPage
+              settings={settings}
+              loading={settingsLoading}
+              error={settingsError}
+              saving={settingsSaving}
+              saveMessage={settingsSaveMessage}
+              onRetry={loadSettings}
+              onChange={handleSettingsChange}
+              onSave={handleSaveSettings}
+              onCommit={handleSaveSettings}
+              onSignOut={handleSignOut}
+              onDeleteAccount={handleDeleteAccount}
+              deleteAccountPending={deleteAccountState.pending}
+              deleteAccountError={deleteAccountState.error}
+              signOutPending={signOutState.pending}
+              signOutError={signOutState.error}
+              onNavigate={(path) => { setSettingsSheetOpen(false); navigate(path); }}
+              profileRequest={profileSettingsRequest}
+              onOpenProjectCreate={() => {
+                setSettingsSheetOpen(false);
+                setProjectCreateRequest((request) => request + 1);
+                navigate("/projects");
+              }}
+              onRestoreProject={handleRestoreProject}
+              exportData={{
+                version: 1,
+                exportedAt: new Date().toISOString(),
+                settings,
+                tasks,
+                lists,
+                projects,
+              }}
+              onGoogleEventsChange={setGoogleCalendarEvents}
+            />
+          </section>
+        </div>
+      )}
 
       {reminderNotice && (
         <aside className="reminder-toast" role="status" aria-live="assertive">

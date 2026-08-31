@@ -95,7 +95,8 @@ describe("Dashboard reference presentation", () => {
     expect(text).toContain("Projects");
     expect(text).toContain("Task by Priority");
     expect(text).toContain("Ready to get started?");
-    expect(text).toContain("+ New Task");
+    expect(text).not.toContain("+ New Task");
+    expect(text).toContain("Open Tasks");
     expect(text).not.toContain("Welcome back");
     expect(classNames(output)).not.toContain("dashboard-stat-grid");
     expect(classNames(output)).toContain("dashboard-reference-grid");
@@ -148,14 +149,13 @@ describe("Dashboard reference presentation", () => {
     expect(textContent(toggle)).toBe("✓");
   });
 
-  it("uses the existing creation and view-all actions", () => {
-    const onCreateTask = vi.fn();
+  it("routes task actions to the Tasks page instead of creating globally", () => {
     const onViewAllTasks = vi.fn();
-    const output = renderDashboard({ onCreateTask, onViewAllTasks });
-    findElement(output, (node) => node.type === "button" && textContent(node) === "+ New Task").props.onClick();
+    const output = renderDashboard({ onViewAllTasks });
+    expect(findElement(output, (node) => node.type === "button" && textContent(node) === "+ New Task")).toBeUndefined();
+    findElement(output, (node) => node.type === "button" && textContent(node) === "Open Tasks").props.onClick();
     findElement(output, (node) => node.type === "button" && textContent(node) === "View all").props.onClick();
-    expect(onCreateTask).toHaveBeenCalled();
-    expect(onViewAllTasks).toHaveBeenCalled();
+    expect(onViewAllTasks).toHaveBeenCalledTimes(2);
   });
 
   it("renders accessible projects and routes project actions through existing callbacks", () => {

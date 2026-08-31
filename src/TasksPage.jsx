@@ -40,6 +40,7 @@ export default function TasksPage({
   weekStartsOn = 0,
   initialWorkspaceView = "list",
   onWorkspaceViewChange,
+  externalCalendarEvents = [],
 }) {
   const selectedListKey = "all";
   const [searchQuery, setSearchQuery] = useState("");
@@ -279,9 +280,22 @@ export default function TasksPage({
               <p>Complete tasks quickly, or open a row to update its details.</p>
             </div>
             {!tasksLoading && !tasksError && (
-              <span className="tasks-count">
-                {filteredTasks.length} {filteredTasks.length === 1 ? "result" : "results"}
-              </span>
+              <div className="tasks-page-header-actions">
+                <span className="tasks-count">
+                  {filteredTasks.length} {filteredTasks.length === 1 ? "result" : "results"}
+                </span>
+                <button
+                  ref={createTaskTriggerRef}
+                  className="primary-btn compact-btn"
+                  type="button"
+                  onClick={() => setQuickCreateOpen(true)}
+                  aria-expanded={quickCreateOpen}
+                  aria-controls="personal-task-quick-create"
+                  hidden={quickCreateOpen}
+                >
+                  + Add task
+                </button>
+              </div>
             )}
           </div>
 
@@ -335,6 +349,7 @@ export default function TasksPage({
                 formatSettings={formatSettings}
                 weekStartsOn={weekStartsOn}
                 embedded
+                externalEvents={externalCalendarEvents}
               />
             </div>
           ) : <>
@@ -435,22 +450,6 @@ export default function TasksPage({
             </div>
           )}
 
-          {!tasksLoading && !tasksError && (
-            <div className="tasks-list-actions">
-              <button
-                ref={createTaskTriggerRef}
-                className="primary-btn compact-btn"
-                type="button"
-                onClick={() => setQuickCreateOpen(true)}
-                aria-expanded={quickCreateOpen}
-                aria-controls="personal-task-quick-create"
-                hidden={quickCreateOpen}
-              >
-                + Add task
-              </button>
-            </div>
-          )}
-
           {!tasksLoading && !tasksError && quickCreateOpen && (
             <div className="tasks-inline-create" id="personal-task-quick-create">
               <ProjectTaskQuickCreate
@@ -491,7 +490,7 @@ export default function TasksPage({
               </h3>
               <p>
                 {tasks.length === 0
-                  ? "Use New Task to create your first task."
+                  ? "Use + Add task above to create your first task."
                   : queryFiltersActive || quickFilter !== "all"
                     ? `No tasks are currently in ${activeListTitle}.`
                     : "Assign a task to this list or choose another list."}

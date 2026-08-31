@@ -407,3 +407,14 @@ enabled = true
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+[functions.google-calendar-oauth-callback]
+verify_jwt = false
+
+[functions.google-calendar-oauth-start]
+verify_jwt = true
+
+[functions.google-calendar-sync]
+verify_jwt = true
+
+[functions.google-calendar-disconnect]
+verify_jwt = true

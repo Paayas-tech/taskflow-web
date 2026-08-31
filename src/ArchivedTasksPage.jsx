@@ -11,6 +11,7 @@ export default function ArchivedTasksPage({
   onUpdateTask,
   onDeleteTask,
   onBack,
+  onViewTasks,
   lists,
   projects,
   projectsLoading,
@@ -78,14 +79,26 @@ export default function ArchivedTasksPage({
     <section className="archived-tasks-page" aria-labelledby="archived-tasks-title">
       <header className="archived-tasks-header">
         <div>
-          <p className="card-label">Account archive</p>
+          <p className="card-label">Task archive</p>
           <h2 id="archived-tasks-title">Archived Tasks</h2>
-          <p>Restore tasks to active views or permanently remove them.</p>
+          <p>Tasks stored here are hidden from your active work until you restore them.</p>
         </div>
         <button className="ghost-btn" type="button" onClick={onBack}>
-          Back to Settings
+          ← Back to Settings
         </button>
       </header>
+
+      <aside className="archive-explainer" aria-label="How archived tasks work">
+        <span className="archive-explainer-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M4 7h16v13H4zM3 4h18v3H3zM9 11h6" />
+          </svg>
+        </span>
+        <div>
+          <h3>Archive tasks you want to keep, but no longer need in active views</h3>
+          <p><strong>Archived</strong> tasks are hidden and can be restored later. <strong>Completed</strong> tasks remain visible as finished work.</p>
+        </div>
+      </aside>
 
       {mutationError && (
         <div className="inline-error task-mutation-error" role="alert">
@@ -116,29 +129,42 @@ export default function ArchivedTasksPage({
         </div>
       ) : tasks.length === 0 ? (
         <div className="tasks-state archived-tasks-empty">
-          <span className="archive-empty-icon" aria-hidden="true">A</span>
-          <h3>No archived tasks</h3>
-          <p>Tasks you archive will appear here without affecting completed tasks.</p>
+          <span className="archive-empty-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M4 7h16v13H4zM3 4h18v3H3zM9 11h6" />
+            </svg>
+          </span>
+          <h3>Nothing is archived</h3>
+          <p>When you archive a task, it will appear here with options to restore it or delete it permanently.</p>
+          <button className="primary-btn compact-btn" type="button" onClick={onViewTasks}>
+            View active tasks
+          </button>
         </div>
       ) : (
-        <div className="tasks-page-list archived-tasks-list">
-          {tasks.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              lists={lists}
-              projects={projects}
-              actionBusy={pendingTaskId === task.id}
-              selected={selectedTaskId === task.id}
-              onEdit={openEditor}
-              onRestore={(taskToRestore) => {
-                void restoreTask(taskToRestore).catch(() => undefined);
-              }}
-              onDeletePermanently={setTaskToDelete}
-              formatSettings={formatSettings}
-            />
-          ))}
-        </div>
+        <section className="archived-tasks-results" aria-labelledby="archived-results-title">
+          <div className="archived-tasks-results-heading">
+            <h3 id="archived-results-title">Archived tasks</h3>
+            <span>{tasks.length}</span>
+          </div>
+          <div className="tasks-page-list archived-tasks-list">
+            {tasks.map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                lists={lists}
+                projects={projects}
+                actionBusy={pendingTaskId === task.id}
+                selected={selectedTaskId === task.id}
+                onEdit={openEditor}
+                onRestore={(taskToRestore) => {
+                  void restoreTask(taskToRestore).catch(() => undefined);
+                }}
+                onDeletePermanently={setTaskToDelete}
+                formatSettings={formatSettings}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       {selectedTask && (

@@ -5,6 +5,7 @@ import {
   SETTINGS_TIME_FORMATS,
   SETTINGS_WEEK_STARTS,
   TASKFLOW_BACKGROUNDS,
+  TASKFLOW_LANGUAGES,
   getSettingsValidationError,
 } from "./domain/settingsDomain";
 import {
@@ -20,7 +21,6 @@ import {
   SettingsDetail,
   SettingsRow,
   ToggleRow,
-  UnavailableProviders,
 } from "./settings/SettingsControls";
 import {
   AccountSettingsSection,
@@ -30,10 +30,11 @@ import {
 } from "./settings/SettingsOverviewSections";
 import ProfileSettingsPanel from "./settings/ProfileSettingsPanel";
 import CalendarConnectionSection from "./settings/CalendarConnectionSection";
-import SettingsSignOutSection from "./settings/SettingsSignOutSection";
 import ProjectRemindersPanel from "./settings/ProjectRemindersPanel";
 import BackgroundSettingsPanel from "./settings/BackgroundSettingsPanel";
 import ArchivedProjectsPanel from "./settings/ArchivedProjectsPanel";
+import GoogleCalendarIntegrationPanel from "./settings/GoogleCalendarIntegrationPanel";
+import { googleCalendarIntegrationService } from "./application/googleCalendarIntegrationService";
 
 const updateSection = (settings, section, patch) => ({
   ...settings,
@@ -75,8 +76,19 @@ export default function SettingsPage({
   onOpenProjectCreate,
   onRestoreProject,
   exportData,
+  onGoogleEventsChange,
 }) {
-  const [panelStack, setPanelStack] = useState([]);
+  const callbackParameters = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const parameters = new URLSearchParams(window.location.search);
+    return parameters.get("integration") === "google" ? parameters : null;
+  }, []);
+  const googleCallbackError = callbackParameters?.get("reason") === "authorization_denied"
+    ? "Google Calendar access was cancelled. Nothing was connected."
+    : callbackParameters?.get("reason") === "invalid_or_expired_state"
+      ? "This Google connection request expired. Please start again."
+      : "Google Calendar could not be connected. Please try again.";
+  const [panelStack, setPanelStack] = useState(() => callbackParameters ? ["calendars"] : []);
   const [notificationMessage, setNotificationMessage] = useState("");
   const [panelMessage, setPanelMessage] = useState("");
   const [backgroundSearch, setBackgroundSearch] = useState("");
@@ -84,6 +96,22 @@ export default function SettingsPage({
   const [projectActionId, setProjectActionId] = useState("");
   const [confirmingAccountDelete, setConfirmingAccountDelete] = useState(false);
   const [calendarSetupProviderId, setCalendarSetupProviderId] = useState("");
+  const [googleConnection, setGoogleConnection] = useState(null);
+  const [googleConnectionLoading, setGoogleConnectionLoading] = useState(false);
+  const [googlePendingAction, setGooglePendingAction] = useState("");
+  const [googleIntegrationError, setGoogleIntegrationError] = useState(() =>
+    callbackParameters?.get("google_calendar") === "error"
+      ? googleCallbackError
+      : ""
+  );
+  const [googleIntegrationMessage, setGoogleIntegrationMessage] = useState(() =>
+    callbackParameters?.get("google_calendar") === "connected"
+      ? "Google Calendar connected."
+      : ""
+  );
+  const [googleSyncSummary, setGoogleSyncSummary] = useState(null);
+  const [confirmingGoogleDisconnect, setConfirmingGoogleDisconnect] = useState(false);
+  const googleCallbackSyncStartedRef = useRef(false);
   const calendarDialogRef = useRef(null);
   const validationError = useMemo(
     () => getSettingsValidationError(settings),
@@ -101,6 +129,9 @@ export default function SettingsPage({
     TASKFLOW_BACKGROUNDS.find(
       ({ id }) => id === settings.background.selected
     )?.name || "Calm";
+  const languageLabel =
+    TASKFLOW_LANGUAGES.find(({ code }) => code === settings.language.code)?.name ||
+    "English";
   const defaultViewLabel =
     defaultViewOptions.find(([value]) => value === settings.navigation.defaultView)?.[1] || "Dashboard";
   const weekStartLabel = titleCase(settings.time.weekStartsOn);
@@ -125,6 +156,31 @@ export default function SettingsPage({
     setPanelMessage("");
     setPanelStack(["profile"]);
   }, [profileRequest]);
+
+  const loadGoogleConnection = async () => {
+    setGoogleConnectionLoading(true);
+    try {
+      const connection = await googleCalendarIntegrationService.getConnection();
+      setGoogleConnection(connection);
+      setGoogleIntegrationError("");
+    } catch (connectionError) {
+      console.error("Error loading Google Calendar connection:", connectionError);
+      setGoogleIntegrationError("Google Calendar connection status could not be loaded.");
+    } finally {
+      setGoogleConnectionLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activePanel !== "integrations" && activePanel !== "calendars") return;
+    void loadGoogleConnection();
+  }, [activePanel]);
+
+  useEffect(() => {
+    if (!callbackParameters || typeof window === "undefined") return;
+    const cleanUrl = `${window.location.pathname}${window.location.hash || ""}`;
+    window.history?.replaceState?.({}, "", cleanUrl);
+  }, [callbackParameters]);
 
   const openPanel = (panel) => {
     setPanelMessage("");
@@ -160,6 +216,94 @@ export default function SettingsPage({
       `${provider.name} disconnected.`
     );
   };
+
+  const connectGoogleCalendar = async () => {
+    setGooglePendingAction("connect");
+    setGoogleIntegrationError("");
+    setGoogleIntegrationMessage("");
+    try {
+      const authorizationUrl = await googleCalendarIntegrationService.startOAuth();
+      window.location.assign(authorizationUrl);
+    } catch (connectionError) {
+      setGoogleIntegrationError(connectionError?.message || "Google Calendar connection could not be started.");
+      setGooglePendingAction("");
+    }
+  };
+
+  const syncGoogleCalendar = async () => {
+    setGooglePendingAction("sync");
+    setGoogleIntegrationError("");
+    setGoogleIntegrationMessage("");
+    try {
+      const result = await googleCalendarIntegrationService.sync();
+      onGoogleEventsChange?.(Array.isArray(result.events) ? result.events : []);
+      setGoogleSyncSummary({
+        calendarCount: result.calendars?.length || 0,
+        eventCount: result.events?.length || 0,
+      });
+      setGoogleConnection((connection) => connection ? {
+        ...connection,
+        last_synced_at: result.lastSyncedAt,
+        sync_status: "success",
+        sync_error: null,
+      } : connection);
+      setGoogleIntegrationMessage("Google Calendar synced.");
+    } catch (syncError) {
+      setGoogleIntegrationError(syncError?.message || "Google Calendar could not be synced.");
+    } finally {
+      setGooglePendingAction("");
+    }
+  };
+
+  const disconnectGoogleCalendar = async () => {
+    setGooglePendingAction("disconnect");
+    setGoogleIntegrationError("");
+    setGoogleIntegrationMessage("");
+    try {
+      await googleCalendarIntegrationService.disconnect();
+      onGoogleEventsChange?.([]);
+      setGoogleConnection(null);
+      setGoogleSyncSummary(null);
+      setConfirmingGoogleDisconnect(false);
+      setGoogleIntegrationMessage("Google Calendar disconnected.");
+    } catch (disconnectError) {
+      setGoogleIntegrationError(disconnectError?.message || "Google Calendar could not be disconnected.");
+    } finally {
+      setGooglePendingAction("");
+    }
+  };
+
+  useEffect(() => {
+    if (
+      activePanel !== "calendars" ||
+      callbackParameters?.get("google_calendar") !== "connected" ||
+      googleCallbackSyncStartedRef.current
+    ) return;
+    googleCallbackSyncStartedRef.current = true;
+    void (async () => {
+      setGooglePendingAction("sync");
+      setGoogleIntegrationError("");
+      try {
+        const result = await googleCalendarIntegrationService.sync();
+        onGoogleEventsChange?.(Array.isArray(result.events) ? result.events : []);
+        setGoogleSyncSummary({
+          calendarCount: result.calendars?.length || 0,
+          eventCount: result.events?.length || 0,
+        });
+        setGoogleConnection((connection) => connection ? {
+          ...connection,
+          last_synced_at: result.lastSyncedAt,
+          sync_status: "success",
+          sync_error: null,
+        } : connection);
+        setGoogleIntegrationMessage("Google Calendar connected and synced.");
+      } catch (syncError) {
+        setGoogleIntegrationError(syncError?.message || "Google Calendar connected, but events could not be synced.");
+      } finally {
+        setGooglePendingAction("");
+      }
+    })();
+  }, [activePanel, callbackParameters, onGoogleEventsChange]);
 
   const enableBrowserNotifications = async (enabled) => {
     setNotificationMessage("");
@@ -239,19 +383,37 @@ export default function SettingsPage({
           saving={saving}
           onChange={onChange}
           onBack={closePanel}
+          onSignOut={onSignOut}
+          signOutPending={signOutPending}
+          signOutError={signOutError}
+          onDeleteAccount={onDeleteAccount}
+          deleteAccountPending={deleteAccountPending}
+          deleteAccountError={deleteAccountError}
+          confirmingDelete={confirmingAccountDelete}
+          onBeginDelete={() => setConfirmingAccountDelete(true)}
+          onCancelDelete={() => {
+            if (deleteAccountPending) return;
+            setConfirmingAccountDelete(false);
+          }}
         />
       );
     }
 
     if (activePanel === "integrations") {
       return (
-        <PlaceholderPanel
-          title="Integrations"
-          description="Prepared connection points without simulated accounts."
+        <GoogleCalendarIntegrationPanel
+          connection={googleConnection}
+          loading={googleConnectionLoading}
+          pendingAction={googlePendingAction}
+          error={googleIntegrationError}
+          message={googleIntegrationMessage}
+          syncSummary={googleSyncSummary}
           onBack={closePanel}
-        >
-          <UnavailableProviders providers={["Google Calendar", "Microsoft Outlook", "iCloud"]} />
-        </PlaceholderPanel>
+          onConnect={() => void connectGoogleCalendar()}
+          onSync={() => void syncGoogleCalendar()}
+          onDisconnect={() => void disconnectGoogleCalendar()}
+          onRetry={() => void loadGoogleConnection()}
+        />
       );
     }
 
@@ -364,6 +526,12 @@ export default function SettingsPage({
         <CalendarConnectionSection
           settings={settings}
           saving={saving}
+          googleConnection={googleConnection}
+          googleLoading={googleConnectionLoading}
+          googlePendingAction={googlePendingAction}
+          googleError={googleIntegrationError}
+          googleMessage={googleIntegrationMessage}
+          googleSyncSummary={googleSyncSummary}
           selectedProvider={selectedCalendarProvider}
           setup={setup}
           dialogRef={calendarDialogRef}
@@ -371,6 +539,13 @@ export default function SettingsPage({
           onBack={closePanel}
           onConnect={setCalendarSetupProviderId}
           onDisconnect={(provider) => void disconnectCalendar(provider)}
+          onConnectGoogle={() => void connectGoogleCalendar()}
+          onSyncGoogle={() => void syncGoogleCalendar()}
+          onDisconnectGoogle={() => void disconnectGoogleCalendar()}
+          confirmingGoogleDisconnect={confirmingGoogleDisconnect}
+          onRequestGoogleDisconnect={() => setConfirmingGoogleDisconnect(true)}
+          onCancelGoogleDisconnect={() => setConfirmingGoogleDisconnect(false)}
+          onRetryGoogle={() => void loadGoogleConnection()}
           onCloseSetup={() => setCalendarSetupProviderId("")}
         />
       );
@@ -511,8 +686,13 @@ export default function SettingsPage({
 
     if (activePanel === "language") {
       return (
-        <SettingsDetail title="Language" description="English is the only translation bundled with TaskFlow." onBack={closePanel}>
-          <SelectionRows ariaLabel="Language" value="en" onSelect={() => undefined} options={[["en", "English", "Current application language"]]} />
+        <SettingsDetail title="Language" description="Choose your saved locale and browser accessibility language. Interface copy remains English for now." onBack={closePanel}>
+          <SelectionRows
+            ariaLabel="Language"
+            value={settings.language.code}
+            onSelect={(code) => commitSection("language", { code }, "Language preference saved.")}
+            options={TASKFLOW_LANGUAGES.map(({ code, name, locale }) => [code, name, `${locale} locale`])}
+          />
         </SettingsDetail>
       );
     }
@@ -538,11 +718,14 @@ export default function SettingsPage({
           onDefaultTimeChange={(defaultTime) =>
             onChange(updateSection(settings, "reminder", { defaultTime }))
           }
+          onDefaultTimeCommit={(defaultTime) =>
+            void commitSection("reminder", { defaultTime }, "")
+          }
           onInAppRemindersChange={(enableInAppReminders) =>
-            void commitSection("reminder", { enableInAppReminders }, "Reminder preference saved.")
+            void commitSection("reminder", { enableInAppReminders }, "")
           }
           onSoundChange={(enableSound) =>
-            void commitSection("reminder", { enableSound }, "Reminder sound preference saved.")
+            void commitSection("reminder", { enableSound }, "")
           }
         />
       );
@@ -585,18 +768,6 @@ export default function SettingsPage({
       );
     }
 
-    if (activePanel === "support") {
-      return (
-        <PlaceholderPanel
-          title="Support"
-          description="TaskFlow does not currently publish a help center, support address, or feedback endpoint."
-          onBack={closePanel}
-        >
-          <p>No verified support resource is available in this repository.</p>
-        </PlaceholderPanel>
-      );
-    }
-
     if (activePanel === "about") {
       return (
         <SettingsDetail title="About" description="Application information." onBack={closePanel}>
@@ -631,10 +802,16 @@ export default function SettingsPage({
       >
         {activePanel ? renderPanel() : (
           <div className="settings-overview">
+            <header className="settings-sheet-account-header">
+              <span aria-hidden="true">{(settings.profile.displayName || settings.profile.email)?.[0]?.toUpperCase() || "U"}</span>
+              <div>
+                <strong>{settings.profile.displayName || "TaskFlow user"}</strong>
+                <small>{settings.profile.email}</small>
+              </div>
+            </header>
             <AccountSettingsSection
               displayName={settings.profile.displayName}
               onOpenProfile={() => openPanel("profile")}
-              onOpenIntegrations={() => openPanel("integrations")}
               onOpenArchivedTasks={() => onNavigate?.("/archived-tasks")}
               onOpenImportData={() => openPanel("importData")}
             />
@@ -654,6 +831,7 @@ export default function SettingsPage({
               defaultViewLabel={defaultViewLabel}
               defaultListLabel={selectedList?.name || "Inbox"}
               timeSettingsLabel={`${settings.time.format === "12-hour" ? "12 Hour" : "24 Hour"} · ${weekStartLabel}`}
+              languageLabel={languageLabel}
               onOpenMyDay={() => openPanel("myDay")}
               onOpenCalendars={() => openPanel("calendars")}
               onOpenTheme={() => openPanel("theme")}
@@ -667,43 +845,20 @@ export default function SettingsPage({
             <TaskflowSettingsSection
               onOpenWhatsNew={() => openPanel("whatsNew")}
               onOpenShortcuts={() => openPanel("shortcuts")}
-              onOpenSupport={() => openPanel("support")}
               onOpenAbout={() => openPanel("about")}
             />
           </div>
         )}
 
-        {(notificationMessage || panelMessage || saveMessage) && (
+        {activePanel !== "projectReminders" && (notificationMessage || panelMessage || saveMessage) && (
           <p className="settings-inline-note" role="status">
             {notificationMessage || panelMessage || saveMessage}
           </p>
         )}
         {validationError && <p className="form-error settings-validation" role="alert">{validationError}</p>}
 
-        {activePanel === "projectReminders" && (
-          <div className="settings-save-bar">
-            <p>Save the reminder offset after editing.</p>
-            <button className="primary-btn" type="submit" disabled={saving || Boolean(validationError)}>
-              {saving ? "Saving..." : "Save settings"}
-            </button>
-          </div>
-        )}
       </form>
 
-      <SettingsSignOutSection
-        onSignOut={onSignOut}
-        pending={signOutPending}
-        error={signOutError}
-        onDeleteAccount={onDeleteAccount}
-        deletePending={deleteAccountPending}
-        deleteError={deleteAccountError}
-        confirmingDelete={confirmingAccountDelete}
-        onBeginDelete={() => setConfirmingAccountDelete(true)}
-        onCancelDelete={() => {
-          if (deleteAccountPending) return;
-          setConfirmingAccountDelete(false);
-        }}
-      />
     </div>
   );
 }

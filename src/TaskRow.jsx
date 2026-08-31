@@ -65,6 +65,7 @@ export default function TaskRow({
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const completed = isTaskComplete(task);
+  const externalGoogleEvent = task.source === "google";
   const archived = isArchived(task);
   const lifecycleBusy = actionBusy || localActionBusy;
   const taskList = lists.find((list) => list.id === task.listId);
@@ -94,7 +95,7 @@ export default function TaskRow({
     <article
       className={`tasks-page-row ${completed ? "task-row-completed" : ""} ${
         archived ? "task-row-archived" : ""
-      } ${selected ? "is-selected" : ""} ${bulkSelectionEnabled ? "has-bulk-selection" : ""} ${bulkSelected ? "is-bulk-selected" : ""} ${
+      } ${externalGoogleEvent ? "task-row-google-event" : ""} ${selected ? "is-selected" : ""} ${bulkSelectionEnabled ? "has-bulk-selection" : ""} ${bulkSelected ? "is-bulk-selected" : ""} ${
         reminderDue ? "task-row-reminder-due" : ""
       }`}
       aria-busy={completionBusy || lifecycleBusy}
@@ -120,7 +121,9 @@ export default function TaskRow({
           disabled={lifecycleBusy}
         />
       )}
-      {archived ? (
+      {externalGoogleEvent ? (
+        <span className="task-google-source-icon" aria-label="Google Calendar event">G</span>
+      ) : archived ? (
         <span className="archive-status-icon" aria-hidden="true">A</span>
       ) : (
         <button
@@ -168,14 +171,14 @@ export default function TaskRow({
           </div>
         )}
         <div className="tasks-page-meta">
-          <span className="task-list-badge">
+          {externalGoogleEvent ? <span className="task-google-calendar-badge">Google Calendar · {task.calendarName}</span> : <span className="task-list-badge">
             <span
               className="list-color-dot"
               style={{ backgroundColor: displayListColor(taskList?.color) }}
               aria-hidden="true"
             />
             {taskList?.name || "Inbox"}
-          </span>
+          </span>}
           {taskProject && (
             <span className="task-project-badge">
               <span
@@ -184,6 +187,11 @@ export default function TaskRow({
                 aria-hidden="true"
               />
               {taskProject.name}
+            </span>
+          )}
+          {task.attachmentCount > 0 && (
+            <span className="task-attachment-count" aria-label={`${task.attachmentCount} ${task.attachmentCount === 1 ? "attachment" : "attachments"}`} title={`${task.attachmentCount} ${task.attachmentCount === 1 ? "attachment" : "attachments"}`}>
+              <span aria-hidden="true">⌕</span> {task.attachmentCount}
             </span>
           )}
           {task.storyName && (
@@ -199,7 +207,7 @@ export default function TaskRow({
               {task.assigneeName || "TaskFlow user"}
             </span>
           )}
-          {dueDateMeta && (
+          {!externalGoogleEvent && dueDateMeta && (
             <time
               className={`task-due-meta task-due-${dueDateMeta.tone}`}
               dateTime={task.dueDate}
@@ -207,9 +215,10 @@ export default function TaskRow({
               {dueDateMeta.label}
             </time>
           )}
-          <span className={`priority priority-${task.priority}`}>
+          {!externalGoogleEvent && <span className={`priority priority-${task.priority}`}>
             {priorityLabels[task.priority] || "Medium priority"}
-          </span>
+          </span>}
+          {externalGoogleEvent && task.location && <span className="task-google-location">{task.location}</span>}
           {task.reminder && (
             <span className={`task-reminder-meta ${reminderDue ? "is-due" : ""}`}>
               {reminderMeta}
