@@ -2,7 +2,7 @@ begin;
 
 set local role postgres;
 create extension if not exists pgtap with schema extensions;
-select extensions.plan(15);
+select extensions.plan(20);
 
 select extensions.has_table('public', 'attachments', 'shared attachment metadata table exists');
 select extensions.ok((select not public from storage.buckets where id = 'taskflow-attachments'), 'attachment bucket is private');
@@ -54,6 +54,23 @@ select extensions.throws_ok($$
   insert into public.attachments (project_id, entity_type, entity_id, storage_path, file_name, content_type, size_bytes, uploaded_by)
   values ('00000000-0000-0000-0000-000000000201', 'task', '00000000-0000-0000-0000-000000000401', 'cross-scope', 'file.pdf', 'application/pdf', 100, '00000000-0000-0000-0000-000000000101')
 $$, 'P0001', 'Attachment task entity is unavailable', 'personal or cross-scope task attachment is rejected');
+
+select extensions.ok(private.attachment_storage_path_is_valid(
+  'projects/00000000-0000-0000-0000-000000000201/project/00000000-0000-0000-0000-000000000201/00000000-0000-0000-0000-000000000610-file.pdf'
+), 'project Storage path is valid');
+select extensions.ok(private.attachment_storage_path_is_valid(
+  'projects/00000000-0000-0000-0000-000000000201/story/00000000-0000-0000-0000-000000000404/00000000-0000-0000-0000-000000000611-file.pdf'
+), 'Story Storage path is valid');
+select extensions.is(private.attachment_storage_path_is_valid(
+  'projects/00000000-0000-0000-0000-000000000201/task/00000000-0000-0000-0000-000000000401/00000000-0000-0000-0000-000000000612-file.pdf'
+), false, 'personal or cross-project task Storage path is invalid');
+select extensions.is(private.attachment_storage_path_is_valid(
+  'projects/00000000-0000-0000-0000-000000000201/task/missing/file.pdf'
+), false, 'malformed Storage path is invalid');
+select extensions.throws_ok($$
+  insert into public.attachments (id, project_id, entity_type, entity_id, storage_path, file_name, content_type, size_bytes, uploaded_by)
+  values ('00000000-0000-0000-0000-000000000613', '00000000-0000-0000-0000-000000000201', 'project', '00000000-0000-0000-0000-000000000201', 'projects/00000000-0000-0000-0000-000000000201/project/00000000-0000-0000-0000-000000000201/00000000-0000-0000-0000-000000000999-file.pdf', 'file.pdf', 'application/pdf', 100, '00000000-0000-0000-0000-000000000101')
+$$, 'P0001', 'Attachment storage path does not match its entity', 'metadata path must contain its attachment id');
 
 select * from extensions.finish();
 rollback;

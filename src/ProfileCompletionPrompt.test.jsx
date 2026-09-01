@@ -49,7 +49,7 @@ describe("ProfileCompletionPrompt", () => {
       onDismiss: vi.fn(),
     });
 
-    expect(textContent(output)).toContain("TaskFlow user");
+    expect(textContent(output)).toContain("Help teammates recognize you.");
     expect(textContent(output)).not.toContain(userId);
     findButton(output, "Add display name").props.onClick();
     expect(onOpenProfile).toHaveBeenCalledOnce();

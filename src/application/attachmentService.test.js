@@ -54,11 +54,36 @@ describe("attachment service", () => {
     expect(repo.deleteMetadata).toHaveBeenCalledWith("a");
   });
 
+  it("keeps metadata when object deletion fails and returns a useful error", async () => {
+    const repo = repository();
+    repo.removeObject.mockRejectedValue(new Error("storage unavailable"));
+    const service = createAttachmentService(repo);
+    await expect(service.remove({ id: "a", storagePath: "projects/p/task/t/a.pdf" })).rejects.toThrow(/delete/i);
+    expect(repo.deleteMetadata).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unavailable signed URL", async () => {
+    const repo = repository();
+    repo.createSignedUrl.mockResolvedValue("");
+    const service = createAttachmentService(repo);
+    await expect(service.open({ storagePath: "projects/p/task/t/a.pdf" })).rejects.toThrow(/open/i);
+  });
+
   it("cleans all entity attachments before entity deletion", async () => {
     const repo = repository();
     repo.list.mockResolvedValue([{ id: "a", storagePath: "one" }, { id: "b", storagePath: "two" }]);
     const service = createAttachmentService(repo);
     await service.removeAll(context);
+    expect(repo.removeObject).toHaveBeenCalledTimes(2);
+    expect(repo.deleteMetadata).toHaveBeenCalledTimes(2);
+  });
+
+  it("cleans all project attachments before project deletion", async () => {
+    const repo = repository();
+    repo.listProject.mockResolvedValue([{ id: "a", storagePath: "one" }, { id: "b", storagePath: "two" }]);
+    const service = createAttachmentService(repo);
+    await service.removeAll({ projectId: "project-a", entityType: "project", entityId: "project-a" });
+    expect(repo.listProject).toHaveBeenCalledWith("project-a");
     expect(repo.removeObject).toHaveBeenCalledTimes(2);
     expect(repo.deleteMetadata).toHaveBeenCalledTimes(2);
   });

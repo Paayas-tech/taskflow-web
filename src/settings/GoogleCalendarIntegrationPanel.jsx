@@ -28,7 +28,7 @@ export default function GoogleCalendarIntegrationPanel({
             <span className="settings-google-mark" aria-hidden="true">G</span>
             <div>
               <h3 id="google-calendar-integration-title">Google Calendar</h3>
-              <p>{connected ? connection.calendar_account_email || "Connected Google account" : "Bring upcoming events into TaskFlow."}</p>
+              <p>{connected ? connection.calendar_account_email || "Google account" : "View upcoming events."}</p>
             </div>
             <span className={`settings-integration-status ${connected ? "is-connected" : ""}`}>
               {connected ? "Connected" : "Not connected"}
@@ -57,7 +57,7 @@ export default function GoogleCalendarIntegrationPanel({
             </div>
           ) : (
             <button className="primary-btn settings-google-connect" type="button" onClick={onConnect} disabled={Boolean(pendingAction)}>
-              {pendingAction === "connect" ? "Opening Google…" : "Connect Google Calendar"}
+              {pendingAction === "connect" ? "Opening Google…" : "Connect Google"}
             </button>
           )}
 

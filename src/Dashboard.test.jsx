@@ -88,12 +88,12 @@ describe("Dashboard reference presentation", () => {
     expect(text).toMatch(/(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),/);
     expect(text).toContain("Task Overview");
     expect(text).toContain("My tasks");
-    expect(text).toContain("Tasks I’ve assigned");
+    expect(text).toContain("Assigned by me");
     expect(text).toContain("People");
-    expect(text).toContain("Upcoming Tasks");
+    expect(text).toContain("Upcoming");
     expect(text).toContain("Completed");
     expect(text).toContain("Projects");
-    expect(text).toContain("Task by Priority");
+    expect(text).toContain("Priority");
     expect(text).toContain("Ready to get started?");
     expect(text).not.toContain("+ New Task");
     expect(text).toContain("Open Tasks");

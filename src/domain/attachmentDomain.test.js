@@ -25,6 +25,11 @@ describe("attachment domain", () => {
     expect(validateAttachmentFile(file("large.pdf", "application/pdf", ATTACHMENT_MAX_BYTES + 1))).toMatch(/10 MB/);
   });
 
+  it("accepts the exact 10 MB boundary and rejects one byte above it", () => {
+    expect(validateAttachmentFile(file("limit.pdf", "application/pdf", ATTACHMENT_MAX_BYTES))).toBe("");
+    expect(validateAttachmentFile(file("too-large.pdf", "application/pdf", ATTACHMENT_MAX_BYTES + 1))).toMatch(/10 MB/);
+  });
+
   it("creates safe project-scoped paths without retaining traversal characters", () => {
     expect(safeAttachmentFileName("../Q3 budget (final).XLSX")).toBe("Q3-budget-final.xlsx");
     expect(buildAttachmentStoragePath({
@@ -36,6 +41,17 @@ describe("attachment domain", () => {
   it("enforces project attachment identity and supported entity types", () => {
     expect(() => validateAttachmentEntity({ projectId: "a", entityType: "project", entityId: "b" })).toThrow(/must belong/);
     expect(() => validateAttachmentEntity({ projectId: "a", entityType: "comment", entityId: "b" })).toThrow(/valid attachment/);
+  });
+
+  it.each([
+    ["project", "project-a"],
+    ["story", "story-a"],
+    ["task", "task-a"],
+  ])("builds a scoped %s attachment path", (entityType, entityId) => {
+    expect(buildAttachmentStoragePath({
+      projectId: "project-a", entityType, entityId,
+      attachmentId: "attachment-a", fileName: "notes.txt",
+    })).toBe(`projects/project-a/${entityType}/${entityId}/attachment-a-notes.txt`);
   });
 
   it("formats compact file sizes", () => {

@@ -85,10 +85,7 @@ export default function Onboarding({ displayName, saving, onComplete, onStartOve
           <form onSubmit={continueFromProfile}>
             <p className="onboarding-kicker">Welcome to your workspace</p>
             <h1 id="onboarding-title">Let’s make TaskFlow yours.</h1>
-            <p className="onboarding-copy">
-              Start with the name your teammates will recognize. You can change
-              it later in Settings.
-            </p>
+            <p className="onboarding-copy">Use the name your teammates know.</p>
             <label className="auth-label onboarding-field">
               Display name
               <input
@@ -108,10 +105,7 @@ export default function Onboarding({ displayName, saving, onComplete, onStartOve
           <div>
             <p className="onboarding-kicker">Choose your purpose</p>
             <h1 id="onboarding-title">What will you use TaskFlow for?</h1>
-            <p className="onboarding-copy">
-              This helps us shape your workspace around what matters to you.
-              You can still use every TaskFlow feature.
-            </p>
+            <p className="onboarding-copy">Choose what best fits your work.</p>
             <div className="onboarding-choices" role="radiogroup" aria-label="TaskFlow purpose">
               {purposeChoices.map((choice) => (
                 <button

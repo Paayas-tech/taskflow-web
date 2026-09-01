@@ -9,7 +9,7 @@ export default function ProfileCompletionPrompt({
     <aside className="profile-completion-prompt" aria-labelledby="profile-completion-title">
       <div>
         <strong id="profile-completion-title">Finish your profile</strong>
-        <p>Add a display name so teammates see it instead of “TaskFlow user”.</p>
+        <p>Help teammates recognize you.</p>
       </div>
       <div className="profile-completion-actions">
         <button className="primary-btn compact-btn" type="button" onClick={onOpenProfile}>

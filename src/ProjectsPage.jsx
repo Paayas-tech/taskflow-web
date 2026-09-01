@@ -322,7 +322,7 @@ export default function ProjectsPage({
         <div className="projects-state" role="status" aria-live="polite">
           <div className="state-spinner" aria-hidden="true" />
           <h3>Loading projects...</h3>
-          <p>Your saved projects are being retrieved securely.</p>
+          <p>Loading projects…</p>
         </div>
       ) : error ? (
         <div className="projects-state error-state" role="alert">
@@ -336,7 +336,7 @@ export default function ProjectsPage({
         <div className="projects-state projects-empty-state">
           <span className="projects-empty-icon" aria-hidden="true">◇</span>
           <h3>No projects yet</h3>
-          <p>Create a project when a goal needs more space than a single task or list.</p>
+          <p>Create a workspace for related work.</p>
           <button className="primary-btn" type="button" onClick={openCreateProject}>
             Create your first project
           </button>
@@ -421,7 +421,7 @@ export default function ProjectsPage({
               <div className="project-context-content">
                 <section>
                   <h3>Description</h3>
-                  <p>{viewingProject.description || "No description has been added yet."}</p>
+                  <p className="project-description-compact">{viewingProject.description || "No description."}</p>
                 </section>
                 <dl className="project-context-facts">
                   <div><dt>Your access</dt><dd>{viewingProject.viewerRole || (viewingProject.ownerId === userId ? "owner" : "member")}</dd></div>
@@ -468,7 +468,7 @@ export default function ProjectsPage({
                 <p className="card-label">{editingProject ? "Project details" : "New project"}</p>
                 <h2 id="create-project-dialog-title">{editingProject ? "Edit Project" : "Create Project"}</h2>
                 <p id="create-project-dialog-description">
-                  Give this work area a clear name and a recognizable color.
+                  Name and identify this project.
                 </p>
               </div>
               <button
@@ -502,7 +502,7 @@ export default function ProjectsPage({
                   name="description"
                   value={values.description}
                   onChange={handleChange}
-                  placeholder="What outcome are you working toward?"
+                  placeholder="Short project summary"
                   rows="2"
                   maxLength="1000"
                   disabled={saving}
@@ -549,7 +549,7 @@ export default function ProjectsPage({
           <section className="confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-project-title" aria-busy={deleting}>
             <p className="card-label">Permanent action</p>
             <h3 id="delete-project-title">Delete “{projectToDelete.name}”?</h3>
-            <p>This permanently deletes the project and its project tasks. This cannot be undone.</p>
+            <p>Deletes this project and its tasks permanently.</p>
             {deleteError && <p className="form-error" role="alert">{deleteError}</p>}
             <div className="confirmation-actions">
               <button className="ghost-btn" type="button" disabled={deleting} onClick={() => setProjectToDelete(null)}>Cancel</button>

@@ -277,7 +277,7 @@ export default function TasksPage({
             <div>
               <p className="card-label">Task workspace</p>
               <h2 id="tasks-page-title">{activeListTitle}</h2>
-              <p>Complete tasks quickly, or open a row to update its details.</p>
+              <p>Review and update your tasks.</p>
             </div>
             {!tasksLoading && !tasksError && (
               <div className="tasks-page-header-actions">
@@ -471,7 +471,7 @@ export default function TasksPage({
             <div className="tasks-state" role="status" aria-live="polite">
               <div className="state-spinner" aria-hidden="true" />
               <h3>Loading tasks...</h3>
-              <p>Your saved tasks are being retrieved securely.</p>
+              <p>Loading tasks…</p>
             </div>
           ) : tasksError ? (
             <div className="tasks-state error-state" role="alert">

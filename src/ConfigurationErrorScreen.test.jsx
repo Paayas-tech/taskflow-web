@@ -13,7 +13,7 @@ describe("configuration error screen", () => {
     );
 
     expect(markup).toContain(CONFIGURATION_ERROR_MESSAGE);
-    expect(markup).toContain("Reload TaskFlow");
+    expect(markup).toContain("Retry");
     expect(markup).not.toContain(secretUrl);
     expect(markup).not.toContain(secretKey);
     expect(markup).not.toMatch(/VITE_SUPABASE|anon key/i);

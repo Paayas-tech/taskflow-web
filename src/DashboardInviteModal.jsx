@@ -36,14 +36,14 @@ export default function DashboardInviteModal({ userId, projects = [], onClose })
 
   return <div className="task-modal-backdrop dashboard-invite-backdrop" onMouseDown={onBackdropMouseDown}>
     <section ref={dialogRef} className="dashboard-invite-modal" role="dialog" aria-modal="true" aria-labelledby="dashboard-invite-title" aria-busy={busy} tabIndex={-1}>
-      <header><div><p className="card-label">Collaboration</p><h2 id="dashboard-invite-title">Invite people</h2><p>Add teammates to a project by email.</p></div><button type="button" className="icon-btn" aria-label="Close invitation dialog" onClick={onClose} disabled={busy}>×</button></header>
+      <header><div><p className="card-label">Collaboration</p><h2 id="dashboard-invite-title">Invite people</h2><p>Invite by email.</p></div><button type="button" className="icon-btn" aria-label="Close invitation dialog" onClick={onClose} disabled={busy}>×</button></header>
       {manageableProjects.length ? <form onSubmit={submit}>
         {error && <p className="form-error" role="alert">{error}</p>}
         <label><span>Email addresses</span><textarea value={emails} onChange={(event) => setEmails(event.target.value)} placeholder="name@example.com, teammate@example.com" required disabled={busy} /><small>Separate multiple addresses with commas.</small></label>
         <div className="dashboard-invite-fields"><label><span>Project</span><select value={projectId} onChange={(event) => setProjectId(event.target.value)} disabled={busy}>{manageableProjects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label><span>Access</span><select value={role} onChange={(event) => setRole(event.target.value)} disabled={busy}><option value="editor">Editor</option><option value="viewer">Viewer</option></select></label></div>
-        <p className="dashboard-invite-help">Invitees receive an email and can accept after signing in with that address.</p>
+        <p className="dashboard-invite-help">They must sign in with this address.</p>
         <footer><button className="ghost-btn" type="button" onClick={onClose} disabled={busy}>Cancel</button><button className="primary-btn" type="submit" disabled={busy || !emails.trim() || !projectId}>{busy ? "Sending…" : "Send invitation"}</button></footer>
-      </form> : <div className="dashboard-card-empty"><strong>No manageable projects</strong><span>Create or own a project before inviting teammates.</span><button className="ghost-btn" type="button" onClick={onClose}>Close</button></div>}
+      </form> : <div className="dashboard-card-empty"><strong>No projects to manage</strong><span>Create or own a project first.</span><button className="ghost-btn" type="button" onClick={onClose}>Close</button></div>}
     </section>
   </div>;
 }

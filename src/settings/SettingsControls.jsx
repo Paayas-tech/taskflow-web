@@ -99,7 +99,7 @@ export function UnavailableProviders({ providers }) {
         <div className="settings-provider-row" key={provider}>
           <span>
             <strong>{provider}</strong>
-            <small>No connection is configured.</small>
+            <small>Not connected</small>
           </span>
           <button className="ghost-btn compact-btn" type="button" disabled>
             Not available
@@ -114,7 +114,7 @@ export function PlaceholderPanel({ title, description, onBack, children }) {
   return (
     <SettingsDetail title={title} description={description} onBack={onBack}>
       <div className="settings-placeholder-panel">
-        {children || <p>This capability is not connected in TaskFlow yet.</p>}
+        {children || <p>Not available yet.</p>}
       </div>
     </SettingsDetail>
   );
