@@ -19,7 +19,7 @@ export default function BackgroundSettingsPanel({
   return (
     <SettingsDetail
       title="Choose Background"
-      description="TaskFlow-created abstract surfaces; selection applies immediately."
+      description="Choose a workspace background."
       onBack={onBack}
       headerAction={<span aria-hidden="true">⌕</span>}
     >
@@ -58,7 +58,7 @@ export default function BackgroundSettingsPanel({
       </div>
       {visibleBackgrounds.length === 0 && (
         <div className="settings-background-empty" role="status">
-          No backgrounds match your search.
+          No matches.
         </div>
       )}
     </SettingsDetail>

@@ -93,7 +93,7 @@ describe("BackgroundSettingsPanel", () => {
       "Choose Background"
     );
     expect(textContent(output)).toContain(
-      "TaskFlow-created abstract surfaces; selection applies immediately."
+      "Choose a workspace background."
     );
     expect(textContent(output)).toContain("⌕");
     expect(textContent(output)).toContain("Search backgrounds");
@@ -147,6 +147,6 @@ describe("BackgroundSettingsPanel", () => {
 
     expect(backgroundButtons(output)).toHaveLength(0);
     expect(status.props.className).toBe("settings-background-empty");
-    expect(textContent(status)).toBe("No backgrounds match your search.");
+    expect(textContent(status)).toBe("No matches.");
   });
 });

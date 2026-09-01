@@ -321,7 +321,7 @@ export default function CalendarPage({
         <div className="calendar-state" role="status" aria-live="polite">
           <div className="state-spinner" aria-hidden="true" />
           <h2>Loading calendar...</h2>
-          <p>Your dated tasks are being retrieved securely.</p>
+          <p>Loading calendar…</p>
         </div>
       </section>
     );
@@ -483,7 +483,7 @@ export default function CalendarPage({
       {normalizedTasks.length === 0 && calendarView !== "agenda" && (
         <div className="calendar-no-tasks" role="status">
           <h3>No scheduled tasks yet</h3>
-          <p>Tasks with a valid due date will appear on this calendar.</p>
+          <p>Add due dates to see tasks here.</p>
           <button
             className="primary-btn"
             type="button"
@@ -702,7 +702,7 @@ export default function CalendarPage({
           {selectedDateTasks.length === 0 ? (
             <div className="calendar-date-empty">
               <h4>No tasks on this date</h4>
-              <p>Select another day or create a task for this date.</p>
+              <p>Choose another day or add a task.</p>
             </div>
           ) : (
             <div className="tasks-page-list calendar-agenda-list">

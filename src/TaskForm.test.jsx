@@ -213,7 +213,7 @@ describe("TaskForm reminder coordination", () => {
     const checkbox = byName(runner.output, "reminder");
     expect(checkbox.props).toMatchObject({ type: "checkbox", checked: false });
     expect(textContent(runner.output)).toContain(
-      "ReminderSchedule a browser or in-app notification."
+      "ReminderGet an alert."
     );
     expect(reminderPreset(runner.output)).toBeUndefined();
 

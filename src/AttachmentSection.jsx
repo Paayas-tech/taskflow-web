@@ -22,6 +22,8 @@ export default function AttachmentSection({
   const [attachments, setAttachments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [errorKind, setErrorKind] = useState("");
+  const [errorHidden, setErrorHidden] = useState(false);
   const [message, setMessage] = useState("");
   const [uploadingName, setUploadingName] = useState("");
   const [openingId, setOpeningId] = useState("");
@@ -39,8 +41,13 @@ export default function AttachmentSection({
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setErrorKind("");
+    setErrorHidden(false);
     try { updateItems(await attachmentService.list({ projectId, entityType, entityId })); }
-    catch (loadError) { setError(loadError.message); }
+    catch {
+      setError("Failed to load attachments.");
+      setErrorKind("load");
+    }
     finally { setLoading(false); }
   }, [entityId, entityType, projectId, updateItems]);
 
@@ -50,6 +57,8 @@ export default function AttachmentSection({
     if (!file || uploadingName || !canManage) return;
     setUploadingName(file.name);
     setError("");
+    setErrorKind("");
+    setErrorHidden(false);
     setMessage("");
     try {
       const created = await attachmentService.upload({
@@ -57,7 +66,7 @@ export default function AttachmentSection({
       });
       updateItems([created, ...attachments]);
       setMessage("Attachment uploaded.");
-    } catch (uploadError) { setError(uploadError.message); }
+    } catch (uploadError) { setError(uploadError.message); setErrorKind("action"); }
     finally {
       setUploadingName("");
       if (inputRef.current) inputRef.current.value = "";
@@ -67,6 +76,8 @@ export default function AttachmentSection({
   const openAttachment = async (attachment) => {
     setOpeningId(attachment.id);
     setError("");
+    setErrorKind("");
+    setErrorHidden(false);
     try {
       const url = await attachmentService.open(attachment);
       const link = document.createElement("a");
@@ -74,19 +85,21 @@ export default function AttachmentSection({
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       link.click();
-    } catch (openError) { setError(openError.message); }
+    } catch (openError) { setError(openError.message); setErrorKind("action"); }
     finally { setOpeningId(""); }
   };
 
   const deleteAttachment = async (attachment) => {
     setDeletingId(attachment.id);
     setError("");
+    setErrorKind("");
+    setErrorHidden(false);
     try {
       await attachmentService.remove(attachment);
       updateItems(attachments.filter((item) => item.id !== attachment.id));
       setConfirmingDeleteId("");
       setMessage("Attachment deleted.");
-    } catch (deleteError) { setError(deleteError.message); }
+    } catch (deleteError) { setError(deleteError.message); setErrorKind("action"); }
     finally { setDeletingId(""); }
   };
 
@@ -100,7 +113,7 @@ export default function AttachmentSection({
       onDrop={allowDrop && canManage ? (event) => { event.preventDefault(); setDragActive(false); void upload(event.dataTransfer.files?.[0]); } : undefined}
     >
       <header className="attachment-section-header">
-        <div><h3 id={titleId}>Attachments <span>{attachments.length}</span></h3><p>Files and supporting documents for this {entityType === "story" ? "Story" : entityType}.</p></div>
+        <div><h3 id={titleId}>Attachments <span>{attachments.length}</span> <span className="inline-info-wrap"><button className="inline-info" type="button" aria-label="How attachments work">?</button><span className="inline-info-tooltip" role="tooltip">Private files, 10 MB max. Owners and editors manage; viewers can open.</span></span></h3><p>Files for this {entityType === "story" ? "Story" : entityType}.</p></div>
         {canManage && (
           <>
             <input ref={inputRef} className="sr-only" type="file" accept={ATTACHMENT_ACCEPT} onChange={(event) => void upload(event.target.files?.[0])} disabled={Boolean(uploadingName)} />
@@ -108,12 +121,23 @@ export default function AttachmentSection({
           </>
         )}
       </header>
-      {allowDrop && canManage && <p className="attachment-drop-hint">Drop a supported file here, or use Add attachment.</p>}
+      {allowDrop && canManage && <p className="attachment-drop-hint">Drop a file here or choose Add attachment.</p>}
       {uploadingName && <div className="attachment-uploading" role="status"><span className="state-spinner" /><span><strong>Uploading…</strong><small>{uploadingName}</small></span></div>}
-      {error && <div className="attachment-feedback is-error" role="alert"><span>{error}</span><button type="button" onClick={() => setError("")}>Dismiss</button></div>}
+      {!loading && error && !errorHidden && (
+        <div className="attachment-feedback is-error" role="alert" aria-live="assertive">
+          <div>
+            <strong>{error}</strong>
+            {errorKind === "load" && <small>You can try again or close this message.</small>}
+          </div>
+          <div className="attachment-feedback-actions">
+            {errorKind === "load" && <button className="primary-btn compact-btn" type="button" onClick={() => void load()}>Retry</button>}
+            <button className="attachment-feedback-close" type="button" onClick={() => setErrorHidden(true)} aria-label="Close attachment error" title="Close">×</button>
+          </div>
+        </div>
+      )}
       {message && <p className="attachment-feedback" role="status">{message}</p>}
       {loading ? <p className="attachment-state" role="status">Loading attachments…</p> : attachments.length === 0 ? (
-        <div className="attachment-empty"><span aria-hidden="true">⌕</span><div><strong>No attachments yet</strong><p>Add files, references, or supporting documents here.</p></div></div>
+        <div className="attachment-empty"><span aria-hidden="true">⌕</span><div><strong>No attachments</strong><p>Add a supporting file.</p></div></div>
       ) : (
         <div className="attachment-list">
           {attachments.map((attachment) => (

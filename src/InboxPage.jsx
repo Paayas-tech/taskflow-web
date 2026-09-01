@@ -139,7 +139,7 @@ export default function InboxPage({ userId, onNavigate }) {
       {loading ? (
         <div className="inbox-state" role="status"><span className="state-spinner" aria-hidden="true" /><p>Loading activity…</p></div>
       ) : visibleNotifications.length === 0 ? (
-        <div className="inbox-state"><span className="inbox-state-icon" aria-hidden="true">✓</span><h2>You're all caught up</h2><p>{view === "mentioned" ? "No mentions need your attention." : view === "unread" ? "You have no unread notifications." : "No activity to show yet."}</p></div>
+        <div className="inbox-state"><span className="inbox-state-icon" aria-hidden="true">✓</span><h2>All caught up</h2><p>{view === "mentioned" ? "No mentions." : view === "unread" ? "No unread notifications." : "No activity."}</p></div>
       ) : (
         <div className="inbox-feed" aria-live="polite">
           {visibleNotifications.map((notification) => (

@@ -370,7 +370,7 @@ describe("ProjectTasksPage workspace coordination", () => {
       runner.output,
       (node) => node.props?.["aria-label"] === "Dismiss Stories explanation"
     )).toBeUndefined();
-    expect(textContent(runner.output)).toContain("Group related tasks into stories.");
+    expect(textContent(runner.output)).toContain("Group related tasks.");
   });
 
   it("shows clear Story and filter guidance when a project has no Stories", async () => {
@@ -381,7 +381,7 @@ describe("ProjectTasksPage workspace coordination", () => {
 
     expect(textContent(runner.output)).toContain("No Stories yet");
     expect(textContent(runner.output)).toContain(
-      "Create a Story to organize related tasks."
+      "Create one to group tasks."
     );
     expect(findElements(
       runner.output,
@@ -398,7 +398,7 @@ describe("ProjectTasksPage workspace coordination", () => {
     await flushWorkspace(runner, props);
 
     expect(textContent(runner.output)).toContain(
-      "Group related tasks into stories."
+      "Group related tasks."
     );
     expect(textContent(runner.output)).toContain("No Story");
 

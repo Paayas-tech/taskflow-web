@@ -677,7 +677,7 @@ describe("App create-task modal lifecycle integration", () => {
     expect(dialog.props.role).toBe("dialog");
     expect(dialog.props["aria-modal"]).toBe("true");
     expect(textContent(title)).toBe("Create Task");
-    expect(textContent(description)).toContain("Add the details now");
+    expect(textContent(description)).toContain("Add task details.");
     expect(dialog.props.tabIndex).toBe(-1);
     expect(document.activeElement).toBe(close.props.ref.current);
     expect(document.body.style.overflow).toBe("hidden");

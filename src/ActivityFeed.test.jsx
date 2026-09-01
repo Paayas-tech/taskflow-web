@@ -143,8 +143,8 @@ describe("ActivityFeed realtime fallback", () => {
     const runner = createRunner({ userId: "user-a", projectId: "project-a" });
     await flush(runner);
 
-    expect(textContent(runner.output)).toContain("Activity history");
-    expect(textContent(runner.output)).toContain("A timeline of changes and updates.");
+    expect(textContent(runner.output)).toContain("Activity");
+    expect(textContent(runner.output)).toContain("Recent changes.");
     expect(textContent(runner.output)).toContain("Refresh");
   });
 

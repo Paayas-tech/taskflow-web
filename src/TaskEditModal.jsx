@@ -417,12 +417,12 @@ export default function TaskEditModal({
               <h2 id={titleId}>{pageTitle}</h2>
               <p id={descriptionId}>
                 {activePage === "comments"
-                  ? "Discuss this task with project members."
+                  ? "Discuss this work."
                   : activePage === "history"
-                    ? "Review task-specific changes and activity."
+                    ? "Recent changes."
                     : activePage === "tasks"
-                      ? "View Story progress and manage its linked tasks."
-                      : "Update this task without leaving your current workspace."}
+                      ? "Linked tasks and progress."
+                      : "Edit details."}
               </p>
             </div>
 
@@ -542,7 +542,7 @@ export default function TaskEditModal({
 
           {activePage === "details" && (readOnly ? (
             <section className="settings-section" aria-label="Read-only task details">
-              <p className="form-hint">You have view-only access to this task.</p>
+              <p className="form-hint">View only</p>
               <h3>{task.title}</h3>
               {task.description && <p>{task.description}</p>}
               <p className="form-hint">Status: {task.status} · Priority: {task.priority}{task.dueDate ? ` · Due ${task.dueDate}` : ""}</p>
@@ -599,7 +599,7 @@ export default function TaskEditModal({
                     <p className="card-label">Story</p>
                     <span className="story-progress-indicator">{completedRelatedTaskCount}/{relatedTasks.length} tasks completed</span>
                   </div>
-                  <p>{task.description || "No description has been added to this Story yet."}</p>
+                  <p>{task.description || "No description."}</p>
                 </div>
                 <div className="story-page-meta" aria-label="Story summary">
                   <span><small>Status</small><strong>{task.status === "completed" ? "Done" : task.status === "in-progress" ? "In progress" : "To do"}</strong></span>
@@ -627,7 +627,7 @@ export default function TaskEditModal({
                 </div>
                 {relatedTasks.length > 0 && !readOnly && onCreateRelatedTask && (
                   <div className="story-task-action">
-                    <small>This task will be linked to this Story.</small>
+                    <small>Linked to this Story.</small>
                     <button className="primary-btn compact-btn" type="button" onClick={() => setShowRelatedTaskCreate(true)}>+ Add task</button>
                   </div>
                 )}
@@ -649,7 +649,7 @@ export default function TaskEditModal({
                   <input
                     ref={relatedTaskInputRef}
                     aria-label="New task title"
-                    placeholder="Add a task to this Story"
+                    placeholder="Task title"
                     value={relatedTaskTitle}
                     onChange={(event) => setRelatedTaskTitle(event.target.value)}
                     disabled={creatingRelatedTask}
@@ -681,8 +681,8 @@ export default function TaskEditModal({
                 ))}
                 {relatedTasks.length === 0 && (
                   <div className="story-task-empty">
-                    <strong>No tasks in this Story yet.</strong>
-                    <p>Add a task to start organizing your work.</p>
+                    <strong>No tasks</strong>
+                    <p>Add the first task.</p>
                     {!readOnly && onCreateRelatedTask && (
                       <div className="story-task-action story-task-empty-action">
                         <button className="primary-btn compact-btn" type="button" onClick={() => setShowRelatedTaskCreate(true)}>+ Add task</button>
@@ -707,16 +707,16 @@ export default function TaskEditModal({
           {isPanel && !projectId && activePage === "subtasks" && (
             <section className="task-panel-empty-state" aria-labelledby={`${dialogId}-subtasks-title`}>
               <span aria-hidden="true">✓</span>
-              <h3 id={`${dialogId}-subtasks-title`}>No subtasks available</h3>
-              <p>Personal tasks do not currently support subtasks.</p>
+              <h3 id={`${dialogId}-subtasks-title`}>No subtasks</h3>
+              <p>Available for project tasks only.</p>
             </section>
           )}
 
           {isPanel && !projectId && activePage === "activity" && (
             <section className="task-panel-empty-state" aria-labelledby={`${dialogId}-activity-title`}>
               <span aria-hidden="true">↻</span>
-              <h3 id={`${dialogId}-activity-title`}>Activity is unavailable</h3>
-              <p>Task history is available for project tasks, but not for personal tasks yet.</p>
+              <h3 id={`${dialogId}-activity-title`}>No activity</h3>
+              <p>Available for project tasks only.</p>
             </section>
           )}
         </section>
@@ -744,8 +744,8 @@ export default function TaskEditModal({
             </h3>
             <p id={deleteDescriptionId}>
               {isStory
-                ? `“${task.title}” will be permanently removed. Its tasks will remain in this project under No Story.`
-                : `“${task.title}” will be permanently removed from TaskFlow. This cannot be undone.`}
+                ? `Delete “${task.title}”? Linked tasks move to No Story.`
+                : `Delete “${task.title}” permanently?`}
             </p>
             {deleteError && (
               <p className="form-error" role="alert">

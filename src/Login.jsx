@@ -208,9 +208,9 @@ export default function Login({ onSignInSuccess, onRecoverPassword, initialMode 
           </div>
           <div>
             <p>Plan clearly. Work calmly.</p>
-            <h2>One thoughtful place for tasks, projects, and teamwork.</h2>
+            <h2>Tasks, projects, and teamwork in one place.</h2>
           </div>
-          <small>Your day, organized without the noise.</small>
+          <small>Stay focused and organized.</small>
         </aside>
         <div className="auth-card">
         <div className="auth-card-topline">
@@ -232,8 +232,8 @@ export default function Login({ onSignInSuccess, onRecoverPassword, initialMode 
           {awaitingOtp
             ? `Enter the code sent to ${confirmationEmail}.`
             : isLogin
-            ? "Sign in to continue to your workspace."
-            : "Create your TaskFlow account to get started."}
+            ? "Continue to your workspace."
+            : "Start using TaskFlow."}
         </p>
 
         {!awaitingOtp && <div className="auth-mode-tabs" role="tablist" aria-label="Account access">

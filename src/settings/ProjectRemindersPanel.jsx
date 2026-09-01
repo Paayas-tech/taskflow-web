@@ -11,14 +11,14 @@ export default function ProjectRemindersPanel({
   return (
     <SettingsDetail
       title="Project Reminders"
-      description="Choose how TaskFlow reminds you about upcoming work. Changes save automatically."
+      description="Set reminder timing and delivery."
       onBack={onBack}
     >
       <div className="settings-reminder-preferences">
         <section className="settings-reminder-card" aria-labelledby="reminder-timing-title">
           <div className="settings-reminder-card-heading">
             <h3 id="reminder-timing-title">Reminder timing</h3>
-            <p>Used as the default when you add a reminder to a task.</p>
+            <p>Default for new reminders.</p>
           </div>
           <label className="settings-reminder-time-field">
             <span>Remind me</span>
@@ -39,18 +39,18 @@ export default function ProjectRemindersPanel({
         <section className="settings-reminder-card settings-reminder-delivery" aria-labelledby="reminder-delivery-title">
           <div className="settings-reminder-card-heading">
             <h3 id="reminder-delivery-title">Delivery</h3>
-            <p>Control how reminders get your attention.</p>
+            <p>Choose how alerts arrive.</p>
           </div>
           <div className="settings-reminder-toggle-list">
             <ToggleRow
               label="In-app reminders"
-              description="Show reminders while TaskFlow is open."
+              description="Show alerts in TaskFlow."
               checked={reminder.enableInAppReminders}
               onChange={onInAppRemindersChange}
             />
             <ToggleRow
               label="Reminder sound"
-              description="Play a subtle sound when a reminder arrives."
+              description="Play a sound for alerts."
               checked={reminder.enableSound}
               onChange={onSoundChange}
             />

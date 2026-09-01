@@ -81,7 +81,7 @@ export default function ArchivedTasksPage({
         <div>
           <p className="card-label">Task archive</p>
           <h2 id="archived-tasks-title">Archived Tasks</h2>
-          <p>Tasks stored here are hidden from your active work until you restore them.</p>
+          <p>Hidden tasks you can restore.</p>
         </div>
         <button className="ghost-btn" type="button" onClick={onBack}>
           ← Back to Settings
@@ -96,7 +96,7 @@ export default function ArchivedTasksPage({
         </span>
         <div>
           <h3>Archive tasks you want to keep, but no longer need in active views</h3>
-          <p><strong>Archived</strong> tasks are hidden and can be restored later. <strong>Completed</strong> tasks remain visible as finished work.</p>
+          <p><strong>Archived</strong> hides work. <strong>Completed</strong> marks it finished.</p>
         </div>
       </aside>
 
@@ -117,7 +117,7 @@ export default function ArchivedTasksPage({
         <div className="tasks-state" role="status" aria-live="polite">
           <div className="state-spinner" aria-hidden="true" />
           <h3>Loading archived tasks...</h3>
-          <p>Your archived tasks are being retrieved securely.</p>
+          <p>Loading archive…</p>
         </div>
       ) : error ? (
         <div className="tasks-state error-state" role="alert">
@@ -135,7 +135,7 @@ export default function ArchivedTasksPage({
             </svg>
           </span>
           <h3>Nothing is archived</h3>
-          <p>When you archive a task, it will appear here with options to restore it or delete it permanently.</p>
+          <p>Archived tasks appear here.</p>
           <button className="primary-btn compact-btn" type="button" onClick={onViewTasks}>
             View active tasks
           </button>
@@ -196,9 +196,9 @@ export default function ArchivedTasksPage({
             aria-busy={pendingTaskId === taskToDelete.id}
           >
             <p className="card-label">Permanent action</p>
-            <h3 id="archive-delete-title">Delete this archived task permanently?</h3>
+            <h3 id="archive-delete-title">Delete permanently?</h3>
             <p id="archive-delete-description">
-              “{taskToDelete.title}” will be removed from TaskFlow. This cannot be undone.
+              Delete “{taskToDelete.title}”?
             </p>
             <div className="confirmation-actions">
               <button

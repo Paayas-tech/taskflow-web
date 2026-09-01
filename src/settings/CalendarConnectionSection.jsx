@@ -29,7 +29,7 @@ export default function CalendarConnectionSection({
   return (
     <SettingsDetail
       title="Calendar Settings"
-      description="Connect Google Calendar to securely bring upcoming events into TaskFlow."
+      description="View upcoming Google events in TaskFlow."
       onBack={onBack}
     >
       <div className="settings-compact-list settings-calendar-providers">
@@ -120,7 +120,7 @@ export default function CalendarConnectionSection({
           <section className="confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="google-disconnect-title" aria-describedby="google-disconnect-description">
             <p className="card-label">Calendar connection</p>
             <h3 id="google-disconnect-title">Disconnect Google Calendar?</h3>
-            <p id="google-disconnect-description">Google events will be removed from TaskFlow. Your Google Calendar events will not be deleted.</p>
+            <p id="google-disconnect-description">Removes synced events from TaskFlow. Google Calendar stays unchanged.</p>
             <div className="confirmation-actions">
               <button className="ghost-btn" type="button" onClick={onCancelGoogleDisconnect} disabled={Boolean(googlePendingAction)}>Cancel</button>
               <button className="danger-btn" type="button" onClick={onDisconnectGoogle} disabled={Boolean(googlePendingAction)}>{googlePendingAction === "disconnect" ? "Disconnecting…" : "Disconnect"}</button>
@@ -153,10 +153,7 @@ export default function CalendarConnectionSection({
               </button>
             </header>
             <div className="settings-connection-content">
-              <p>
-                {selectedProvider.name} cannot be connected yet because its secure
-                server-side authorization flow has not been implemented.
-              </p>
+              <p>{selectedProvider.name} setup is not available yet.</p>
               {setup.missingVariables.length > 0 && (
                 <div className="settings-connection-requirements">
                   <strong>Required configuration</strong>
@@ -168,10 +165,7 @@ export default function CalendarConnectionSection({
                 </div>
               )}
               <p>{selectedProvider.setup}</p>
-              <p className="settings-connection-security-note">
-                Client secrets, access tokens, refresh tokens, passwords, and Apple
-                app-specific passwords must not be stored in Vite variables or TaskFlow local settings.
-              </p>
+              <p className="settings-connection-security-note">Keep provider credentials server-side.</p>
             </div>
             <footer>
               <button className="primary-btn" type="button" disabled>

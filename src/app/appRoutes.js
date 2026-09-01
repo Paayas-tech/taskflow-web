@@ -38,8 +38,9 @@ export const routeViews = {
 export const projectIdFromPath = (pathname) => {
   if (!pathname.startsWith("/projects/")) return null;
 
-  const encodedProjectId = pathname.slice("/projects/".length);
-  if (!encodedProjectId || encodedProjectId.includes("/")) return null;
+  const segments = pathname.slice("/projects/".length).split("/");
+  if (!segments[0] || segments.length > 2 || (segments[1] && segments[1] !== "overview")) return null;
+  const encodedProjectId = segments[0];
 
   try {
     const projectId = decodeURIComponent(encodedProjectId);
@@ -51,6 +52,7 @@ export const projectIdFromPath = (pathname) => {
 
 export const projectPath = (projectId) =>
   `/projects/${encodeURIComponent(projectId)}`;
+export const projectOverviewPath = (projectId) => `${projectPath(projectId)}/overview`;
 
 export const normalizePath = (pathname) => {
   const withoutTrailingSlash =
@@ -60,16 +62,16 @@ export const normalizePath = (pathname) => {
   if (routeViews[withoutTrailingSlash]) return withoutTrailingSlash;
 
   const projectId = projectIdFromPath(withoutTrailingSlash);
-  return projectId ? projectPath(projectId) : "/";
+  return projectId ? (withoutTrailingSlash.endsWith("/overview") ? projectOverviewPath(projectId) : projectPath(projectId)) : "/";
 };
 
 export const routeViewFromPath = (pathname) =>
-  projectIdFromPath(pathname) ? "project" : routeViews[pathname];
+  projectIdFromPath(pathname) ? (pathname.endsWith("/overview") ? "project-overview" : "project") : routeViews[pathname];
 
 export const isNavigationItemActive = (itemPath, currentPath, currentView) =>
   itemPath === currentPath ||
   (itemPath === "/tasks" && currentPath === "/tasks") ||
-  (itemPath === "/projects" && currentView === "project") ||
+  (itemPath === "/projects" && ["project", "project-overview"].includes(currentView)) ||
   (itemPath === "/settings" && currentView === "archived");
 
 export const pageMetadata = ({
@@ -99,35 +101,35 @@ export const pageMetadata = ({
               ? "Settings"
               : currentView === "projects"
                 ? "Projects"
-                : currentView === "project"
+                : ["project", "project-overview"].includes(currentView)
                   ? selectedProject?.name || "Project"
                   : "Dashboard",
   subtitle:
     currentView === "tasks"
       ? `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`
       : currentView === "for-you"
-        ? "Your assigned, upcoming, and important work."
+        ? "Assigned and upcoming work."
         : currentView === "recent"
-          ? "Work you opened recently."
+          ? "Recently opened work."
           : currentView === "starred"
-            ? "Important work saved for quick access."
+            ? "Saved work."
             : currentView?.startsWith("planning-")
-                ? "Plan and understand work across your projects."
+                ? "Plan across projects."
       : currentView === "inbox"
-        ? "Updates, mentions, and assignments that need your attention."
+        ? "Updates and mentions."
       : currentView === "archived"
           ? `${archivedTaskCount} ${
               archivedTaskCount === 1 ? "archived task" : "archived tasks"
             }`
           : currentView === "settings"
-              ? "Personalize reminders, notifications, appearance, and your profile."
+              ? "Preferences and account."
               : currentView === "projects"
                 ? `${projectCount} ${projectCount === 1 ? "project" : "projects"}`
-                : currentView === "project"
+                : ["project", "project-overview"].includes(currentView)
                   ? selectedProject
-                    ? "Board, list, and calendar views for this project."
+                    ? "Project work and planning."
                     : projectsLoading
                       ? "Loading project..."
                       : "Project unavailable"
-                  : "A clear view of what needs your attention.",
+                  : "Work that needs attention.",
 });

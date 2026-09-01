@@ -78,12 +78,12 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
     <section className="settings-section task-history-panel" aria-labelledby={`activity-${taskId || projectId}`}>
       <div className="collaboration-panel-heading">
         <span className="collaboration-heading-icon" aria-hidden="true">↻</span>
-        <div><h3 id={`activity-${taskId || projectId}`}>Activity history</h3><p>A timeline of changes and updates.</p></div>
+        <div><h3 id={`activity-${taskId || projectId}`}>Activity</h3><p>Recent changes.</p></div>
         <button className="ghost-btn compact-btn collaboration-refresh" type="button" onClick={refreshActivity} disabled={refreshing}><span className={refreshing ? "is-spinning" : ""} aria-hidden="true">↻</span><span>{refreshing ? "Refreshing…" : "Refresh"}</span></button>
       </div>
       {liveNotice && <p className="form-hint" role="status">{liveNotice}</p>}
       {refreshNotice && <p className="form-success collaboration-refresh-notice" role="status">{refreshNotice}</p>}
-      {loading ? <div className="task-collaboration-state" role="status"><span className="state-spinner" /><p>Loading activity…</p></div> : error ? <p className="form-error" role="alert">{error}</p> : visible.length === 0 ? <div className="task-collaboration-empty"><span aria-hidden="true">↻</span><strong>No activity yet</strong><p>Task updates will be recorded here.</p></div> : <div className="settings-list task-history-list">{Object.entries(groups).map(([label, items]) => <section key={label}><h4>{label}</h4>{items.map((item) => <ActivityRow key={item.id} activity={item} />)}</section>)}</div>}
+      {loading ? <div className="task-collaboration-state" role="status"><span className="state-spinner" /><p>Loading…</p></div> : error ? <p className="form-error" role="alert">{error}</p> : visible.length === 0 ? <div className="task-collaboration-empty"><span aria-hidden="true">↻</span><strong>No activity</strong><p>Changes appear here.</p></div> : <div className="settings-list task-history-list">{Object.entries(groups).map(([label, items]) => <section key={label}><h4>{label}</h4>{items.map((item) => <ActivityRow key={item.id} activity={item} />)}</section>)}</div>}
     </section>
   );
 }

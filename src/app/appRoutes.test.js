@@ -5,6 +5,7 @@ import {
   normalizePath,
   pageMetadata,
   projectIdFromPath,
+  projectOverviewPath,
   projectPath,
   routeViewFromPath,
   routeViews,
@@ -81,6 +82,13 @@ describe("TaskFlow project routes", () => {
     expect(normalizePath(path)).toBe(path);
   });
 
+  it("recognizes and normalizes the project overview route", () => {
+    expect(projectOverviewPath("project-a")).toBe("/projects/project-a/overview");
+    expect(projectIdFromPath("/projects/project-a/overview")).toBe("project-a");
+    expect(normalizePath("/projects/project-a/overview/")).toBe("/projects/project-a/overview");
+    expect(routeViewFromPath("/projects/project-a/overview")).toBe("project-overview");
+  });
+
   it("rejects decoded ids that contain path separators", () => {
     expect(projectIdFromPath("/projects/team%2Fproject")).toBeNull();
   });
@@ -125,6 +133,7 @@ describe("TaskFlow route presentation", () => {
     expect(isNavigationItemActive("/projects", "/projects/project-a", "project")).toBe(true);
     expect(isNavigationItemActive("/settings", "/archived-tasks", "archived")).toBe(true);
     expect(isNavigationItemActive("/tasks", "/projects/project-a", "project")).toBe(false);
+    expect(isNavigationItemActive("/projects", "/projects/project-a/overview", "project-overview")).toBe(true);
   });
 
   it("preserves route-derived page metadata", () => {
@@ -139,7 +148,7 @@ describe("TaskFlow route presentation", () => {
       })
     ).toEqual({
       title: "Launch",
-      subtitle: "Board, list, and calendar views for this project.",
+      subtitle: "Project work and planning.",
     });
 
     expect(
@@ -155,9 +164,9 @@ describe("TaskFlow route presentation", () => {
   });
 
   it.each([
-    ["dashboard", "Dashboard", "A clear view of what needs your attention."],
-    ["inbox", "Inbox", "Updates, mentions, and assignments that need your attention."],
-    ["settings", "Settings", "Personalize reminders, notifications, appearance, and your profile."],
+    ["dashboard", "Dashboard", "Work that needs attention."],
+    ["inbox", "Inbox", "Updates and mentions."],
+    ["settings", "Settings", "Preferences and account."],
     ["projects", "Projects", "2 projects"],
     ["archived", "Archived Tasks", "2 archived tasks"],
   ])("preserves %s page copy", (currentView, title, subtitle) => {

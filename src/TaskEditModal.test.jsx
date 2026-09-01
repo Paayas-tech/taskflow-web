@@ -314,7 +314,7 @@ describe("TaskEditModal lifecycle integration", () => {
 
     expect(dialog.props["aria-modal"]).toBe("true");
     expect(textContent(title)).toBe("Edit Task");
-    expect(textContent(description)).toContain("Update this task");
+    expect(textContent(description)).toContain("Edit details.");
     expect(textContent(document.activeElement?.node)).toBe("Archive");
     expect(document.body.style.overflow).toBe("hidden");
 
@@ -442,8 +442,8 @@ describe("TaskEditModal lifecycle integration", () => {
       onCreateRelatedTask: vi.fn().mockResolvedValue(undefined),
     }));
 
-    expect(textContent(runner.output)).toContain("No tasks in this Story yet.");
-    expect(textContent(runner.output)).toContain("Add a task to start organizing your work.");
+    expect(textContent(runner.output)).toContain("No tasks");
+    expect(textContent(runner.output)).toContain("Add the first task.");
     expect(findElement(
       runner.output,
       (node) => node.type === "button" && textContent(node) === "+ Add task"

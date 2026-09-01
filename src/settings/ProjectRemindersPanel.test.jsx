@@ -80,7 +80,7 @@ describe("ProjectRemindersPanel", () => {
       "Project Reminders"
     );
     expect(textContent(output)).toContain(
-      "Choose how TaskFlow reminds you about upcoming work. Changes save automatically."
+      "Set reminder timing and delivery."
     );
     expect(backButton.props["aria-label"]).toBe("Back from Project Reminders");
     expect(textContent(backButton)).toBe("←");
@@ -110,10 +110,10 @@ describe("ProjectRemindersPanel", () => {
     const toggles = findElements(output, (node) => node.props?.type === "checkbox");
 
     expect(textContent(output)).toContain(
-      "In-app remindersShow reminders while TaskFlow is open."
+      "In-app remindersShow alerts in TaskFlow."
     );
     expect(textContent(output)).toContain(
-      "Reminder soundPlay a subtle sound when a reminder arrives."
+      "Reminder soundPlay a sound for alerts."
     );
     expect(toggles.map((toggle) => toggle.props.checked)).toEqual([true, false]);
 

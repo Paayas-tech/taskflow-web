@@ -432,7 +432,7 @@ export default function SettingsPage({
             ? settings.myDay.customResetTime
             : "Midnight";
       return (
-        <SettingsDetail title="My Day" description="Control the daily boundary used by Today." onBack={closePanel}>
+        <SettingsDetail title="My Day" description="Set when your day resets." onBack={closePanel}>
           <div className="settings-compact-list">
             <SettingsRow label="Reset Time" value={resetLabel} onClick={() => openPanel("myDayReset")} />
             <SettingsRow label="External Suggestions" value="Not available" onClick={() => openPanel("externalSuggestions")} />
@@ -440,7 +440,7 @@ export default function SettingsPage({
           </div>
           {confirmingFilterReset && (
             <div className="settings-inline-confirm" role="alertdialog" aria-label="Reset filter suggestions">
-              <p>TaskFlow does not currently store My Day filter suggestions. Confirm to clear any future-compatible local value.</p>
+              <p>Clear saved filter suggestions?</p>
               <div>
                 <button className="ghost-btn" type="button" onClick={() => setConfirmingFilterReset(false)}>Cancel</button>
                 <button
@@ -511,12 +511,12 @@ export default function SettingsPage({
       return (
         <PlaceholderPanel
           title="External Suggestions"
-          description="External task sources require reviewed integrations that TaskFlow does not have yet."
+          description="External suggestions are not available yet."
           onBack={closePanel}
         >
           <ToggleRow
             label="Use external suggestions"
-            description="Unavailable until an integration is connected."
+            description="Requires an integration."
             checked={false}
             disabled
             status="Not available"
@@ -560,7 +560,7 @@ export default function SettingsPage({
 
     if (activePanel === "theme") {
       return (
-        <SettingsDetail title="Theme" description="Selection applies and saves immediately." onBack={closePanel}>
+        <SettingsDetail title="Theme" description="Choose your appearance." onBack={closePanel}>
           <SelectionRows
             ariaLabel="Theme"
             value={settings.theme.mode}
@@ -598,7 +598,7 @@ export default function SettingsPage({
 
     if (activePanel === "defaultView") {
       return (
-        <SettingsDetail title="Default View" description="Used when TaskFlow opens at its root URL." onBack={closePanel}>
+        <SettingsDetail title="Default View" description="Choose your start page." onBack={closePanel}>
           <SelectionRows
             ariaLabel="Default view"
             value={settings.navigation.defaultView}
@@ -617,7 +617,7 @@ export default function SettingsPage({
         ...customLists.map((list) => [list.id, list.name, "Custom list"]),
       ];
       return (
-        <SettingsDetail title="Default List" description="Preselected for newly created tasks." onBack={closePanel}>
+        <SettingsDetail title="Default List" description="Used for new tasks." onBack={closePanel}>
           <SelectionRows
             ariaLabel="Default list"
             value={settings.taskDefaults.listId || ""}
@@ -632,14 +632,14 @@ export default function SettingsPage({
 
     if (activePanel === "timeSettings") {
       return (
-        <SettingsDetail title="Time Settings" description="Formatting applies to TaskFlow task and Calendar metadata." onBack={closePanel}>
+        <SettingsDetail title="Time Settings" description="Set date and time formats." onBack={closePanel}>
           <div className="settings-compact-list">
             <SettingsRow label="Time Format" value={settings.time.format === "12-hour" ? "12 Hour" : "24 Hour"} onClick={() => openPanel("timeFormat")} />
             <SettingsRow label="Date Settings" value={settings.time.dateFormat} onClick={() => openPanel("dateFormat")} />
             <SettingsRow label="Week Starts On" value={weekStartLabel} onClick={() => openPanel("weekStart")} />
             <ToggleRow
               label="Time Detection"
-              description="Natural-language time detection is not implemented."
+              description="Not available yet."
               checked={false}
               disabled
               status="Not available"
@@ -693,7 +693,7 @@ export default function SettingsPage({
 
     if (activePanel === "language") {
       return (
-        <SettingsDetail title="Language" description="Choose your saved locale and browser accessibility language. Interface copy remains English for now." onBack={closePanel}>
+        <SettingsDetail title="Language" description="Choose your locale. Interface text remains English." onBack={closePanel}>
           <SelectionRows
             ariaLabel="Language"
             value={settings.language.code}
@@ -708,10 +708,10 @@ export default function SettingsPage({
       return (
         <PlaceholderPanel
           title="Import Data"
-          description="Import validation and preview infrastructure is not implemented."
+          description="Import is not available yet."
           onBack={closePanel}
         >
-          <p>Import functionality will be available here after a supported file schema is approved.</p>
+          <p>You can still export your TaskFlow data.</p>
           <button className="secondary-btn" type="button" onClick={downloadExport}>Export TaskFlow data</button>
         </PlaceholderPanel>
       );
@@ -754,7 +754,7 @@ export default function SettingsPage({
 
     if (activePanel === "whatsNew") {
       return (
-        <SettingsDetail title="What's New?" description="Features present in this TaskFlow branch." onBack={closePanel}>
+        <SettingsDetail title="What's New?" description="Recent TaskFlow features." onBack={closePanel}>
           <ol className="settings-release-list">
             <li><strong>Archived Tasks</strong><span>Archive, restore, and permanently remove tasks.</span></li>
             <li><strong>Calendar and reminders</strong><span>Month, week, day, agenda, and scheduled reminders.</span></li>
@@ -766,7 +766,7 @@ export default function SettingsPage({
 
     if (activePanel === "shortcuts") {
       return (
-        <SettingsDetail title="Keyboard Shortcuts" description="Only interactions implemented today are listed." onBack={closePanel}>
+        <SettingsDetail title="Keyboard Shortcuts" description="Available keyboard actions." onBack={closePanel}>
           <div className="settings-shortcuts">
             <p><kbd>Esc</kbd><span>Close an open task dialog when safe.</span></p>
             <p><kbd>Tab</kbd><span>Move through available controls and dialog fields.</span></p>

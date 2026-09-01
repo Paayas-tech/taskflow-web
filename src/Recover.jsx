@@ -55,7 +55,7 @@ export default function Recover({ recoverySession, onBack, onComplete }) {
       setConfirmation("");
       onComplete();
     } catch {
-      setError("We couldn't update your password. Request a new reset link and try again.");
+      setError("Password update failed. Request a new link.");
     } finally {
       setSubmitting(false);
     }
@@ -68,8 +68,8 @@ export default function Recover({ recoverySession, onBack, onComplete }) {
         <h1>{recoverySession ? "Set a new password" : "Reset your password"}</h1>
         <p className="auth-subtitle">
           {recoverySession
-            ? "Choose a new password for your TaskFlow account."
-            : "Enter your email and we'll send password-reset instructions."}
+            ? "Choose a new password."
+            : "Enter your email for a reset link."}
         </p>
 
         <form

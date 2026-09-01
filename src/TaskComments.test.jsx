@@ -58,9 +58,9 @@ describe("TaskComments structured mention UI", () => {
     const view = runner(() => TaskComments({ userId: "owner", taskId: "task", members: [] }));
     const tree = view.render();
 
-    expect(text(tree)).toContain("CommentsShare updates and mention project members.");
+    expect(text(tree)).toContain("CommentsUpdates and mentions.");
     expect(findAll(tree, (node) => node.type === "label" && text(node) === "Write a comment")).toHaveLength(1);
-    expect(findAll(tree, (node) => node.type === "textarea")[0].props.placeholder).toContain("choose a teammate");
+    expect(findAll(tree, (node) => node.type === "textarea")[0].props.placeholder).toBe("Write a comment");
   });
 
   it("offers only supplied project members and stores the selected member ID", async () => {

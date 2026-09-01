@@ -91,19 +91,19 @@ export default function TaskComments({ userId, taskId, members = [] }) {
         <span className="collaboration-heading-icon" aria-hidden="true">↩</span>
         <div>
           <h3 id="task-comments-title">Comments</h3>
-          <p>Share updates and mention project members.</p>
+          <p>Updates and mentions.</p>
         </div>
         <span className="collaboration-count" aria-label={`${comments.length} comments`}>{comments.length}</span>
       </div>
       {liveNotice && <p className="form-hint" role="status">{liveNotice}</p>}
-      {loading ? <div className="task-collaboration-state" role="status"><span className="state-spinner" /><p>Loading comments…</p></div> : comments.length === 0 ? <div className="task-collaboration-empty"><span aria-hidden="true">↩</span><strong>No comments yet</strong><p>Start a focused conversation about this task.</p></div> : (
+      {loading ? <div className="task-collaboration-state" role="status"><span className="state-spinner" /><p>Loading…</p></div> : comments.length === 0 ? <div className="task-collaboration-empty"><span aria-hidden="true">↩</span><strong>No comments</strong><p>Start the conversation.</p></div> : (
         <div className="settings-list task-comment-list">
           {comments.map((comment) => <CommentRow key={comment.id} comment={comment} currentUserId={userId} profilesById={profilesById} mentionCandidates={members} onUpdate={updateComment} onDelete={deleteComment} />)}
         </div>
       )}
       <form onSubmit={postComment} className="task-comment-composer">
         <label htmlFor={`comment-${taskId}`}>Write a comment</label>
-        <textarea id={`comment-${taskId}`} value={content} onChange={(event) => changeContent(event.target.value)} placeholder="Write a comment, then choose a teammate to mention." maxLength={4000} disabled={posting} />
+        <textarea id={`comment-${taskId}`} value={content} onChange={(event) => changeContent(event.target.value)} placeholder="Write a comment" maxLength={4000} disabled={posting} />
         {members.length > 0 && <div className="task-comment-mentions" aria-label="Mention a project member"><span>Mention</span>{members.map((member) => <button key={member.userId} className="ghost-btn compact-btn" type="button" onClick={() => addMention(member)} disabled={posting}>@{safeDisplayName(member)}</button>)}</div>}
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="task-comment-submit"><span>{String(content || "").length}/4000</span><button className="primary-btn" type="submit" disabled={posting || !content.trim()}>{posting ? "Posting..." : "Post comment"}</button></div>

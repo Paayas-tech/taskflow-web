@@ -415,7 +415,7 @@ describe("ProjectsPage modal lifecycle integration", () => {
     expect(dialog.props.role).toBe("dialog");
     expect(dialog.props["aria-modal"]).toBe("true");
     expect(textContent(title)).toBe("Create Project");
-    expect(textContent(description)).toContain("Give this work area a clear name");
+    expect(textContent(description)).toContain("Name and identify this project.");
     expect(dialog.props.tabIndex).toBe(-1);
     expect(document.activeElement).toBe(nameInput.props.ref.current);
     expect(document.body.style.overflow).toBe("hidden");

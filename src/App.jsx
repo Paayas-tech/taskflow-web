@@ -12,6 +12,7 @@ import NotificationsPanel from "./NotificationsPanel";
 import ProfileCompletionPrompt from "./ProfileCompletionPrompt";
 import ProjectsPage from "./ProjectsPage";
 import ProjectTasksPage from "./ProjectTasksPage";
+import ProjectOverviewPage from "./ProjectOverviewPage";
 import Recover from "./Recover";
 import SettingsPage from "./SettingsPage";
 import TaskForm from "./TaskForm";
@@ -83,6 +84,7 @@ import {
   normalizePath,
   pageMetadata,
   projectIdFromPath,
+  projectOverviewPath,
   projectPath,
   routeViewFromPath,
 } from "./app/appRoutes";
@@ -1535,11 +1537,11 @@ function App() {
         <nav className="nav-list" aria-label="Primary navigation">
           {navigationItems.filter((item) => ["Dashboard", "Tasks"].includes(item.label)).map(renderNavigationItem)}
           <section className="sidebar-projects" aria-label="My Projects">
-            <div className={`sidebar-projects-heading${["projects", "project"].includes(currentView) ? " active" : ""}`}>
+            <div className={`sidebar-projects-heading${["projects", "project", "project-overview"].includes(currentView) ? " active" : ""}`}>
               <button
                 className="sidebar-projects-link"
                 type="button"
-                aria-current={["projects", "project"].includes(currentView) ? "page" : undefined}
+                aria-current={["projects", "project", "project-overview"].includes(currentView) ? "page" : undefined}
                 aria-label="Projects"
                 onClick={() => navigate("/projects")}
               >
@@ -1642,9 +1644,7 @@ function App() {
                 <div>
                   <p className="card-label">New task</p>
                   <h2 id="create-task-dialog-title">Create Task</h2>
-                  <p id="create-task-dialog-description">
-                    Add the details now, then adjust them anytime from Tasks.
-                  </p>
+                  <p id="create-task-dialog-description">Add task details.</p>
                 </div>
 
                 <button
@@ -1806,12 +1806,25 @@ function App() {
             onViewChange={setProjectPageView}
             onItemOpened={(task) => updateWorkspaceNavigation((data) => recordRecentItem(data, workspaceItemForTask(task)))}
             onBack={() => navigate("/projects")}
+            onOpenOverview={() => navigate(projectOverviewPath(selectedProjectId))}
             onCreateTask={() =>
               openTaskForm({ projectId: selectedProject.id })
             }
             browserNotificationsEnabled={
               settings.reminder.enableBrowserNotifications
             }
+          />
+        )}
+
+        {currentView === "project-overview" && (
+          <ProjectOverviewPage
+            userId={user.uid}
+            projectId={selectedProjectId}
+            onBack={() => navigate(projectPath(selectedProjectId))}
+            onOpenTask={(itemId) => {
+              setProjectItemOpenRequest({ projectId: selectedProjectId, itemId, request: Date.now() });
+              navigate(projectPath(selectedProjectId), { recordProject: false });
+            }}
           />
         )}
 

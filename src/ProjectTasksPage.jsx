@@ -54,7 +54,7 @@ const sortProjectTasks = (tasks, sort) => [...tasks].sort((first, second) => {
 
 export default function ProjectTasksPage({
   userId, projectId, project, projects, projectsLoading, projectsError,
-  onRetryProjects, lists, onBack, browserNotificationsEnabled,
+  onRetryProjects, lists, onBack, onOpenOverview, browserNotificationsEnabled,
   formatSettings, refreshToken = 0, openItemRequest = null, onItemOpened,
   showEmbeddedTaskViews = false, requestedView = "board", onViewChange,
 }) {
@@ -678,29 +678,32 @@ export default function ProjectTasksPage({
           <div>
             <h2 id="project-task-title">{project.name}</h2>
             <p className="project-access">Your access · <span>{project.viewerRole || "member"}</span>{!canEditTasks ? " · Read only" : ""}</p>
-            {project.description && <p>{project.description}</p>}
+            {project.description && <p className="project-description-compact">{project.description}</p>}
+            {project.description?.length > 160 && <details className="project-about"><summary>About</summary><p>{project.description}</p></details>}
           </div>
         </div>
         <div className="project-card-actions">
+          <button className="ghost-btn compact-btn" type="button" onClick={onOpenOverview}>Overview</button>
           <button ref={membersButtonRef} className="ghost-btn compact-btn" type="button" onClick={() => setShowMembers(true)}>Members</button>
         </div>
       </header>
 
-      <AttachmentSection
-        projectId={projectId}
-        entityType="project"
-        entityId={projectId}
-        userId={userId}
-        uploaderName={members.find((member) => member.userId === userId)?.displayName || "TaskFlow user"}
-        canManage={canEditTasks}
-        compact
-      />
+      <div className="project-resources-grid">
+        <AttachmentSection
+          projectId={projectId}
+          entityType="project"
+          entityId={projectId}
+          userId={userId}
+          uploaderName={members.find((member) => member.userId === userId)?.displayName || "TaskFlow user"}
+          canManage={canEditTasks}
+          compact
+        />
 
-      <section className="project-stories" aria-labelledby="project-stories-title">
+        <section className="project-stories" aria-labelledby="project-stories-title">
         <header>
           <div>
             <h3 id="project-stories-title">Stories <span className="project-story-count" aria-label={`${stories.length} Stories`}>{stories.length}</span></h3>
-            <p className="project-stories-help">Group related tasks into stories.</p>
+            <p className="project-stories-help">Group related tasks.</p>
           </div>
           <div className="project-stories-actions">
             {canEditTasks && <button className="primary-btn compact-btn" type="button" onClick={openStoryCreate}>+ New Story</button>}
@@ -722,7 +725,7 @@ export default function ProjectTasksPage({
             <div className="project-story-empty">
               <span>
                 <strong>No Stories yet</strong>
-                <small>{canEditTasks ? "Create a Story to organize related tasks." : "No Stories in this project yet."}</small>
+                <small>{canEditTasks ? "Create one to group tasks." : "Nothing to show."}</small>
               </span>
             </div>
           )}
@@ -741,9 +744,17 @@ export default function ProjectTasksPage({
             </div>
           </details>
         )}
-      </section>
+        </section>
+      </div>
 
       {showEmbeddedTaskViews && <>
+      <header className="project-workspace-heading">
+        <div>
+          <h3>Tasks</h3>
+          <p>Plan and track project work.</p>
+        </div>
+        <span>{activeTasks.filter((task) => task.workType !== "story").length} tasks</span>
+      </header>
       <div className="project-view-toolbar">
         <div className="project-view-primary-controls">
           <div className="project-view-switcher" role="group" aria-label="Project view">
@@ -868,7 +879,7 @@ export default function ProjectTasksPage({
       {showCreate && (
         <div className="task-modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeCreate()}>
           <section ref={createDialogRef} className="task-modal" role="dialog" aria-modal="true" aria-labelledby="project-create-task-title" aria-busy={creating}>
-            <div className="task-modal-header"><div><p className="card-label">{createValues.workType === "story" ? "Project story" : "Project task"}</p><h2 id="project-create-task-title">Create {createValues.workType === "story" ? "Story" : "Task"}</h2><p>This {createValues.workType === "story" ? "Story" : "task"} will be added to {project.name}.</p></div><button className="ghost-btn compact-btn" type="button" onClick={closeCreate} disabled={creating}>Close</button></div>
+            <div className="task-modal-header"><div><p className="card-label">{createValues.workType === "story" ? "Project story" : "Project task"}</p><h2 id="project-create-task-title">Create {createValues.workType === "story" ? "Story" : "Task"}</h2><p>Add to {project.name}.</p></div><button className="ghost-btn compact-btn" type="button" onClick={closeCreate} disabled={creating}>Close</button></div>
             <TaskForm values={createValues} onChange={handleCreateChange} onSubmit={handleCreate} onCancel={closeCreate} submitLabel={createValues.workType === "story" ? "Create Story" : "Create Task"} busyLabel="Creating..." busy={creating} error={createError} lists={lists} projects={editableProjects} projectMembers={members} projectStories={stories} projectsLoading={projectsLoading} projectsError={projectsError} onRetryProjects={onRetryProjects} browserNotificationsEnabled={browserNotificationsEnabled} />
           </section>
         </div>

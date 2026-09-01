@@ -189,7 +189,7 @@ export default function ProjectMembersModal({
           <div>
             <p className="card-label">Collaboration</p>
             <h2 id="project-members-title">Project members</h2>
-            <p>{project.name} · You are {project.viewerRole || "a member"}.</p>
+            <p>{project.name} · {project.viewerRole || "Member"}</p>
           </div>
           <button className="ghost-btn compact-btn" type="button" onClick={onClose} disabled={Boolean(busyId)}>Close</button>
         </div>
@@ -225,7 +225,7 @@ export default function ProjectMembersModal({
                 <div className="project-invite-heading">
                   <div>
                     <h3 id="project-invite-title">Invite a teammate</h3>
-                    <p>Give someone access to this project by email.</p>
+                    <p>Invite by email.</p>
                   </div>
                 </div>
                 <form className="project-form project-invite-form" onSubmit={submitInvitation}>
@@ -244,7 +244,7 @@ export default function ProjectMembersModal({
                     <button className="primary-btn" type="submit" disabled={Boolean(busyId)}>{busyId === "invite" ? "Sending..." : "Send invitation"}</button>
                   </div>
                 </form>
-                <p className="project-invite-note">Invitees receive an email and can accept after signing in with the invited address.</p>
+                <p className="project-invite-note">They must sign in with this address.</p>
                 </section>
                 {invitations.length > 0 && (
                   <div className="projects-grid project-invitations-grid" aria-label="Project invitations">
@@ -270,7 +270,7 @@ export default function ProjectMembersModal({
           <div className="confirmation-backdrop">
             <section ref={confirmationDialogRef} className="confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="remove-member-title" tabIndex={-1}>
               <h3 id="remove-member-title">Remove this member?</h3>
-              <p>{safeDisplayName(memberToRemove)} will immediately lose access to this project.</p>
+              <p>Remove {safeDisplayName(memberToRemove)} from this project?</p>
               <div className="confirmation-actions">
                 <button className="ghost-btn" type="button" onClick={() => { setMemberToRemove(null); window.requestAnimationFrame(() => removeTriggerRef.current?.focus()); }}>Cancel</button>
                 <button className="danger-btn" type="button" onClick={() => {

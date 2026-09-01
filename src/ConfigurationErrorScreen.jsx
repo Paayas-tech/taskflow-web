@@ -1,5 +1,5 @@
 export const CONFIGURATION_ERROR_MESSAGE =
-  "TaskFlow is temporarily unavailable because its application configuration is incomplete. Please contact the administrator.";
+  "TaskFlow setup is incomplete. Contact your administrator.";
 
 export default function ConfigurationErrorScreen({ onRetry }) {
   return (
@@ -9,11 +9,11 @@ export default function ConfigurationErrorScreen({ onRetry }) {
         role="alert"
         aria-labelledby="configuration-error-title"
       >
-        <p className="card-label">TaskFlow unavailable</p>
+        <p className="card-label">Unavailable</p>
         <h1 id="configuration-error-title">Configuration required</h1>
         <p>{CONFIGURATION_ERROR_MESSAGE}</p>
         <button className="primary-btn" type="button" onClick={onRetry}>
-          Reload TaskFlow
+          Retry
         </button>
       </section>
     </main>

@@ -125,7 +125,7 @@ export default function TaskForm({
           <span>{isStory ? "Story title" : "Task title"}</span>
           <input
             name="title"
-            placeholder={isStory ? "What larger piece of work does this Story represent?" : "What needs to be done?"}
+            placeholder={isStory ? "Story title" : "Task title"}
             value={values.title}
             onChange={onChange}
             disabled={busy}
@@ -137,7 +137,7 @@ export default function TaskForm({
       <section className="task-form-section task-form-supporting">
         <div className="task-form-section-heading">
           <strong>Details</strong>
-          <span>{isStory ? "Explain the outcome covered by this Story." : "Add context that will help when you return to this task."}</span>
+          <span>{isStory ? "Describe the outcome." : "Add useful context."}</span>
         </div>
 
         <div className="task-form-supporting-grid">
@@ -161,7 +161,7 @@ export default function TaskForm({
       <section className="task-form-section task-form-organization">
         <div className="task-form-section-heading">
           <strong>{isStory ? "Planning" : "Organization"}</strong>
-          <span>{isStory ? "Set ownership, timing, status, and priority." : "Choose where this task belongs and when it needs attention."}</span>
+          <span>{isStory ? "Owner, timing, and status." : "Placement and timing."}</span>
         </div>
 
         <div className="task-form-controls-grid">
@@ -314,7 +314,7 @@ export default function TaskForm({
           />
           <span>
             <strong>Reminder</strong>
-            Schedule a browser or in-app notification.
+            Get an alert.
           </span>
         </label>}
 
@@ -364,7 +364,7 @@ export default function TaskForm({
 
             {!values.reminderAt && (
               <p className="task-reminder-note">
-                This reminder remains visual-only until a time is selected.
+                Choose a time to activate it.
               </p>
             )}
             {reminderPresetError && (
