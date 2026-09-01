@@ -283,6 +283,38 @@ describe("SettingsPage calendar modal lifecycle integration", () => {
     expect(findElement(runner.output, (node) => node.props?.type === "email" && node.props?.readOnly)).toBeDefined();
   });
 
+  it("resets a previously opened profile subsection when Settings home is explicitly requested", () => {
+    const runner = createRunner(baseProps({ profileRequest: 1, homeRequest: 0 }));
+    runner.render();
+    expect(textContent(runner.output)).toContain("Profile information");
+
+    const homeProps = baseProps({ profileRequest: 0, homeRequest: 1 });
+    runner.render(homeProps);
+    runner.render(homeProps);
+
+    expect(findElement(runner.output, (node) => node.props?.className === "settings-overview")).toBeDefined();
+    expect(textContent(runner.output)).not.toContain("Profile information");
+  });
+
+  it("opens My Profile directly after another Settings subsection was active", () => {
+    const runner = createRunner(baseProps());
+    const backgrounds = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node).startsWith("Background")
+    );
+    backgrounds.props.onClick();
+    runner.render();
+    expect(textContent(runner.output)).toContain("Choose Background");
+
+    const profileProps = baseProps({ profileRequest: 1, homeRequest: 0 });
+    runner.render(profileProps);
+    runner.render(profileProps);
+
+    expect(textContent(runner.output)).toContain("My Profile");
+    expect(textContent(runner.output)).toContain("Profile information");
+    expect(textContent(runner.output)).not.toContain("Choose Background");
+  });
+
   it("keeps account actions out of the settings overview", () => {
     const runner = createRunner(baseProps());
     runner.render();

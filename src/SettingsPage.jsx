@@ -73,6 +73,7 @@ export default function SettingsPage({
   deleteAccountError = "",
   onNavigate,
   profileRequest = 0,
+  homeRequest = 0,
   onOpenProjectCreate,
   onRestoreProject,
   exportData,
@@ -156,6 +157,12 @@ export default function SettingsPage({
     setPanelMessage("");
     setPanelStack(["profile"]);
   }, [profileRequest]);
+
+  useEffect(() => {
+    if (!homeRequest) return;
+    setPanelMessage("");
+    setPanelStack([]);
+  }, [homeRequest]);
 
   const loadGoogleConnection = async () => {
     setGoogleConnectionLoading(true);

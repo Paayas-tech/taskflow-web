@@ -11,6 +11,7 @@ export const navigationItems = [
   { label: "Inbox", path: "/inbox", enabled: true, icon: "inbox" },
   { label: "Tasks", path: "/tasks", enabled: true, icon: "tasks" },
   { label: "Projects", path: "/projects", enabled: true, icon: "projects" },
+  { label: "Calendar", path: "/calendar", enabled: true, icon: "calendar" },
   { label: "Reminders", enabled: false, icon: "reminders" },
   { label: "Settings", path: "/settings", enabled: true, icon: "settings" },
 ];

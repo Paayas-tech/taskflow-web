@@ -58,7 +58,11 @@ export const createAttachmentService = (
   },
 
   async open(attachment) {
-    try { return await repository.createSignedUrl(attachment.storagePath); }
+    try {
+      const url = await repository.createSignedUrl(attachment.storagePath);
+      if (!url) throw new Error("Signed URL is unavailable");
+      return url;
+    }
     catch (error) { throw friendlyAttachmentError(error, "This attachment could not be opened. Please try again."); }
   },
 

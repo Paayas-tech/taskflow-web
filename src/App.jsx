@@ -248,6 +248,13 @@ function App() {
       return false;
     }
   });
+  const [sidebarProjectsExpanded, setSidebarProjectsExpanded] = useState(() => {
+    try {
+      return window.localStorage?.getItem("taskflow:sidebar-projects-expanded") !== "false";
+    } catch {
+      return true;
+    }
+  });
   const [dashboardInviteOpen, setDashboardInviteOpen] = useState(false);
   const [workspaceSelectedTask, setWorkspaceSelectedTask] = useState(null);
   const [taskFormSaving, setTaskFormSaving] = useState(false);
@@ -263,6 +270,7 @@ function App() {
   const [settingsSaveMessage, setSettingsSaveMessage] = useState("");
   const [settingsLoadedUserId, setSettingsLoadedUserId] = useState("");
   const [profileSettingsRequest, setProfileSettingsRequest] = useState(0);
+  const [settingsHomeRequest, setSettingsHomeRequest] = useState(0);
   const [dismissedProfilePromptUserId, setDismissedProfilePromptUserId] = useState("");
   const [reminderNotice, setReminderNotice] = useState(null);
   const [quickTaskPendingIds, setQuickTaskPendingIds] = useState(
@@ -1421,22 +1429,6 @@ function App() {
     );
   };
 
-  const scrollProjectPageTo = (selector) => {
-    window.requestAnimationFrame(() => {
-      document.querySelector(selector)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-    });
-  };
-
-  const openProjectPageSection = (section) => {
-    if (!selectedProject) {
-      navigate("/projects");
-      return;
-    }
-
-    setProjectPageView(section);
-    scrollProjectPageTo(section === "overview" ? ".project-task-hero" : ".project-view-toolbar");
-  };
-
   const globalSearchItems = [
     ...projects.map((candidate) => ({
       id: candidate.id,
@@ -1487,6 +1479,18 @@ function App() {
     });
   };
 
+  const toggleSidebarProjects = () => {
+    setSidebarProjectsExpanded((current) => {
+      const next = !current;
+      try {
+        window.localStorage?.setItem("taskflow:sidebar-projects-expanded", String(next));
+      } catch {
+        // The disclosure still works for the current session.
+      }
+      return next;
+    });
+  };
+
   const globalCreateActions = [
     {
       label: "Task",
@@ -1514,28 +1518,70 @@ function App() {
         notificationControl={<NotificationsPanel userId={user.uid} onNavigate={navigate} />}
         displayName={settings.profile.displayName || user.displayName || user.user_metadata?.display_name || user.email}
         email={user.email}
-        onOpenSettings={() => setSettingsSheetOpen(true)}
+        onOpenProfile={() => {
+          setSettingsHomeRequest(0);
+          setProfileSettingsRequest((request) => request + 1);
+          setSettingsSheetOpen(true);
+        }}
+        onOpenSettings={() => {
+          setProfileSettingsRequest(0);
+          setSettingsHomeRequest((request) => request + 1);
+          setSettingsSheetOpen(true);
+        }}
+        onSignOut={handleSignOut}
+        signOutPending={signOutState.pending}
       />
       <aside className="sidebar">
         <nav className="nav-list" aria-label="Primary navigation">
-          <p className="nav-section-label">Workspace</p>
-          {navigationItems.filter((item) => item.label === "Dashboard").map(renderNavigationItem)}
-          {navigationItems.filter((item) => item.group === "workspace").map(renderNavigationItem)}
-          <p className="nav-section-label">Planning</p>
-          {navigationItems.filter((item) => item.group === "planning").map(renderNavigationItem)}
-          <section className="project-pages-nav" aria-label={`${selectedProject?.name || "Projects"} project pages`}>
-            <p className="nav-section-label">Project pages</p>
-            <button className={`nav-item project-page-nav-item${currentView === "project" && projectPageView === "overview" ? " active" : ""}`} type="button" aria-current={currentView === "project" && projectPageView === "overview" ? "page" : undefined} onClick={() => openProjectPageSection("overview")}>
-              <span className="nav-item-main"><NavigationIcon name="pages" /><span>Project pages</span></span>
-            </button>
-            <button className={`nav-item project-page-nav-item${currentView === "project" && projectPageView === "board" ? " active" : ""}`} type="button" aria-current={currentView === "project" && projectPageView === "board" ? "page" : undefined} onClick={() => openProjectPageSection("board")}>
-              <span className="nav-item-main"><NavigationIcon name="board" /><span>Board</span></span>
-            </button>
-            <button className={`nav-item project-page-nav-item${currentView === "project" && projectPageView === "list" ? " active" : ""}`} type="button" aria-current={currentView === "project" && projectPageView === "list" ? "page" : undefined} onClick={() => openProjectPageSection("list")}>
-              <span className="nav-item-main"><NavigationIcon name="lists" /><span>Lists</span></span>
-            </button>
+          {navigationItems.filter((item) => ["Dashboard", "Tasks"].includes(item.label)).map(renderNavigationItem)}
+          <section className="sidebar-projects" aria-label="My Projects">
+            <div className={`sidebar-projects-heading${["projects", "project"].includes(currentView) ? " active" : ""}`}>
+              <button
+                className="sidebar-projects-link"
+                type="button"
+                aria-current={["projects", "project"].includes(currentView) ? "page" : undefined}
+                aria-label="Projects"
+                onClick={() => navigate("/projects")}
+              >
+                <span className="nav-item-main"><NavigationIcon name="projects" /><span>Projects</span></span>
+                {projectInvitations.length > 0 && <small aria-label={`${projectInvitations.length} pending invitations`}>{projectInvitations.length}</small>}
+              </button>
+              <button
+                className="sidebar-projects-toggle"
+                type="button"
+                aria-label={`${sidebarProjectsExpanded ? "Collapse" : "Expand"} My Projects`}
+                aria-expanded={sidebarProjectsExpanded}
+                aria-controls="sidebar-project-list"
+                onClick={toggleSidebarProjects}
+              >
+                <span aria-hidden="true">{sidebarProjectsExpanded ? "⌄" : "›"}</span>
+              </button>
+            </div>
+            {sidebarProjectsExpanded && !sidebarCollapsed && (
+              <div className="sidebar-projects-panel" id="sidebar-project-list">
+                <p>My Projects</p>
+                <div className="sidebar-project-list">
+                  {projectsLoading && <span className="sidebar-project-state" role="status">Loading projects…</span>}
+                  {!projectsLoading && projectsError && <span className="sidebar-project-state" role="alert">Projects unavailable</span>}
+                  {!projectsLoading && !projectsError && projects.filter((project) => project.status === "active" && !project.archivedAt).map((project) => (
+                    <button
+                      className={`sidebar-project-link${selectedProjectId === project.id ? " active" : ""}`}
+                      type="button"
+                      key={project.id}
+                      aria-current={selectedProjectId === project.id ? "page" : undefined}
+                      onClick={() => navigate(projectPath(project.id))}
+                    >
+                      <span className="sidebar-project-mark" style={{ "--project-color": project.color || "var(--accent)" }} aria-hidden="true" />
+                      <span>{project.name}</span>
+                    </button>
+                  ))}
+                  {!projectsLoading && !projectsError && projects.filter((project) => project.status === "active" && !project.archivedAt).length === 0 && <span className="sidebar-project-state">No active projects</span>}
+                </div>
+                <button className="sidebar-projects-all" type="button" onClick={() => navigate("/projects")}>View all projects</button>
+              </div>
+            )}
           </section>
-          {navigationItems.filter((item) => !item.group && !["Dashboard", "Projects", "Settings"].includes(item.label)).map(renderNavigationItem)}
+          {navigationItems.filter((item) => ["Calendar", "Reminders"].includes(item.label)).map(renderNavigationItem)}
         </nav>
 
         {signOutState.error && <p className="signout-error sidebar-signout-error" role="alert">{signOutState.error}</p>}
@@ -1558,6 +1604,7 @@ function App() {
             <ProfileCompletionPrompt
               displayName={settings.profile.displayName}
               onOpenProfile={() => {
+                setSettingsHomeRequest(0);
                 setProfileSettingsRequest((request) => request + 1);
                 navigate("/settings");
               }}
@@ -1881,6 +1928,7 @@ function App() {
             signOutError={signOutState.error}
             onNavigate={navigate}
             profileRequest={profileSettingsRequest}
+            homeRequest={settingsHomeRequest}
             onOpenProjectCreate={() => {
               setProjectCreateRequest((request) => request + 1);
               navigate("/projects");
@@ -1947,6 +1995,7 @@ function App() {
               signOutError={signOutState.error}
               onNavigate={(path) => { setSettingsSheetOpen(false); navigate(path); }}
               profileRequest={profileSettingsRequest}
+              homeRequest={settingsHomeRequest}
               onOpenProjectCreate={() => {
                 setSettingsSheetOpen(false);
                 setProjectCreateRequest((request) => request + 1);

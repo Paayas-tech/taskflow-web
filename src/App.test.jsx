@@ -218,7 +218,7 @@ vi.mock("./application/projectService", () => ({
 }));
 vi.mock("./application/settingsService", () => ({
   getSettings: vi.fn(() => new Promise(() => {})),
-  saveSettings: vi.fn(),
+  saveSettings: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("./services/reminderService", () => ({
   createReminderScheduler: () => ({
@@ -353,6 +353,7 @@ function createDocument() {
 }
 
 function createWindow() {
+  const storage = new Map();
   return {
     ...createEventTarget(),
     location: { pathname: "/" },
@@ -362,6 +363,10 @@ function createWindow() {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     }),
+    localStorage: {
+      getItem: vi.fn((key) => storage.get(key) ?? null),
+      setItem: vi.fn((key, value) => storage.set(key, String(value))),
+    },
     scrollTo: vi.fn(),
   };
 }
@@ -492,8 +497,24 @@ describe("App create-task modal lifecycle integration", () => {
     findElement(runner.output, (node) => node.props?.["aria-label"] === "Account menu").props.onClick();
     runner.render();
     expect(textContent(runner.output)).toContain("test-user");
+    expect(textContent(runner.output)).toContain("Profile");
     expect(textContent(runner.output)).toContain("Settings");
-    expect(textContent(runner.output)).not.toContain("Log out");
+    expect(textContent(runner.output)).toContain("Sign out");
+
+    findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "Profile"
+    ).props.onClick();
+    runner.render();
+    expect(findElement(
+      runner.output,
+      (node) => node.props?.role === "dialog" && node.props?.["aria-label"] === "TaskFlow settings"
+    )).toBeDefined();
+    findElement(runner.output, (node) => node.props?.["aria-label"] === "Close settings").props.onClick();
+    runner.render();
+
+    findElement(runner.output, (node) => node.props?.["aria-label"] === "Account menu").props.onClick();
+    runner.render();
 
     findElement(
       runner.output,
@@ -505,6 +526,63 @@ describe("App create-task modal lifecycle integration", () => {
       (node) => node.props?.role === "dialog" && node.props?.["aria-label"] === "TaskFlow settings"
     )).toBeDefined();
     expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Close settings")).toBeDefined();
+  });
+
+  it("renders the simplified sidebar with an independently collapsible accessible project list", async () => {
+    projectService.getProjects.mockResolvedValue([
+      { id: "project-a", name: "Launch", color: "#6757c8", status: "active", viewerRole: "owner" },
+      { id: "project-b", name: "Shared roadmap", status: "active", viewerRole: "viewer" },
+      { id: "project-c", name: "Archived work", status: "archived", archivedAt: "2026-08-01", viewerRole: "owner" },
+    ]);
+    const runner = createRunner();
+    await Promise.resolve();
+    await Promise.resolve();
+    runner.render();
+
+    const primaryNavigation = findElement(
+      runner.output,
+      (node) => node.type === "nav" && node.props?.["aria-label"] === "Primary navigation"
+    );
+    const navigationText = textContent(primaryNavigation);
+    for (const label of ["Dashboard", "Tasks", "Projects", "Calendar", "Reminders"]) {
+      expect(navigationText).toContain(label);
+    }
+    for (const hiddenLabel of ["Planning", "Timeline", "Board", "Lists", "Goals", "Issues", "Starred", "For you", "Recent", "Project pages", "Settings"]) {
+      expect(navigationText).not.toContain(hiddenLabel);
+    }
+    expect(navigationText).toContain("Launch");
+    expect(navigationText).toContain("Shared roadmap");
+    expect(navigationText).not.toContain("Archived work");
+
+    const launchProject = findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "Launch"
+    );
+    launchProject.props.onClick();
+    runner.render();
+    expect(window.history.pushState).toHaveBeenCalledWith({}, "", "/projects/project-a");
+    expect(findElement(
+      runner.output,
+      (node) => node.type === "button" && textContent(node) === "Launch"
+    ).props["aria-current"]).toBe("page");
+
+    const disclosure = findElement(
+      runner.output,
+      (node) => node.type === "button" && node.props?.["aria-controls"] === "sidebar-project-list"
+    );
+    expect(disclosure.props["aria-expanded"]).toBe(true);
+    disclosure.props.onClick();
+    runner.render();
+    expect(window.localStorage.setItem).toHaveBeenCalledWith("taskflow:sidebar-projects-expanded", "false");
+    expect(findElement(runner.output, (node) => node.props?.id === "sidebar-project-list")).toBeUndefined();
+
+    const projectsLink = findElement(
+      runner.output,
+      (node) => node.type === "button" && node.props?.["aria-label"] === "Projects"
+    );
+    projectsLink.props.onClick();
+    runner.render();
+    expect(window.history.pushState).toHaveBeenCalledWith({}, "", "/projects");
   });
 
   it("exposes inline personal-task creation without opening the full task form", async () => {

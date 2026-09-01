@@ -15,7 +15,10 @@ export default function GlobalTopNav({
   notificationControl,
   displayName,
   email,
+  onOpenProfile,
   onOpenSettings,
+  onSignOut,
+  signOutPending = false,
 }) {
   const [query, setQuery] = useState("");
   const [openMenu, setOpenMenu] = useState("");
@@ -125,7 +128,9 @@ export default function GlobalTopNav({
           {openMenu === "profile" && (
             <div className="global-nav-popover global-profile-menu" role="menu" aria-label="Account">
               <div><span className="global-profile-large" aria-hidden="true">{initial}</span><span><strong>{displayName || "TaskFlow user"}</strong><small>{email}</small></span></div>
+              <button type="button" role="menuitem" onClick={() => { setOpenMenu(""); onOpenProfile?.(); }}>Profile</button>
               <button type="button" role="menuitem" onClick={() => { setOpenMenu(""); onOpenSettings?.(); }}>Settings</button>
+              <button type="button" role="menuitem" disabled={signOutPending} onClick={() => { setOpenMenu(""); onSignOut?.(); }}>{signOutPending ? "Signing out…" : "Sign out"}</button>
             </div>
           )}
         </div>
