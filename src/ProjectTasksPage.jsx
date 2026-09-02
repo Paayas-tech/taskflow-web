@@ -714,7 +714,14 @@ export default function ProjectTasksPage({
             const storyTasks = activeTasks.filter((task) => task.storyId === story.id);
             const completedCount = storyTasks.filter(isTaskComplete).length;
             return (
-              <button key={story.id} type="button" title="Open Story and view its tasks" onClick={(event) => openEditor(story, event.currentTarget)}>
+              <button
+                key={story.id}
+                className={selectedTaskId === story.id ? "is-selected" : ""}
+                type="button"
+                title="Open Story and view its tasks"
+                aria-pressed={selectedTaskId === story.id}
+                onClick={(event) => openEditor(story, event.currentTarget)}
+              >
                 <span className="project-story-icon" aria-hidden="true">▱</span>
                 <span><strong>{story.title}</strong><small>{completedCount}/{storyTasks.length} tasks completed</small></span>
                 <span aria-hidden="true">→</span>
@@ -722,12 +729,7 @@ export default function ProjectTasksPage({
             );
           })}
           {stories.length === 0 && (
-            <div className="project-story-empty">
-              <span>
-                <strong>No Stories yet</strong>
-                <small>{canEditTasks ? "Create one to group tasks." : "Nothing to show."}</small>
-              </span>
-            </div>
+            <p className="project-story-empty">No Stories yet</p>
           )}
         </div>
         {archivedStories.length > 0 && (

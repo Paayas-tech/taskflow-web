@@ -137,7 +137,7 @@ export default function AttachmentSection({
       )}
       {message && <p className="attachment-feedback" role="status">{message}</p>}
       {loading ? <p className="attachment-state" role="status">Loading attachments…</p> : attachments.length === 0 ? (
-        <div className="attachment-empty"><span aria-hidden="true">⌕</span><div><strong>No attachments</strong><p>Add a supporting file.</p></div></div>
+        <p className="attachment-empty">No attachments</p>
       ) : (
         <div className="attachment-list">
           {attachments.map((attachment) => (

@@ -53,7 +53,7 @@ export default function CommentRow({ comment, currentUserId, profilesById, menti
   };
 
   return (
-    <article className="settings-card task-comment-row" aria-busy={busy}>
+    <article className="task-comment-row" aria-busy={busy}>
       <span className="task-collaboration-avatar" aria-hidden="true">{authorName.slice(0, 1).toUpperCase()}</span>
       <div className="section-heading-row">
         <div>

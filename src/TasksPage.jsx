@@ -275,7 +275,7 @@ export default function TasksPage({
         <div className="tasks-content">
           <div className="tasks-page-header">
             <div>
-              <p className="card-label">Task workspace</p>
+              <p className="card-label">My Tasks</p>
               <h2 id="tasks-page-title">{activeListTitle}</h2>
               <p>Review and update your tasks.</p>
             </div>
@@ -470,30 +470,22 @@ export default function TasksPage({
           {tasksLoading ? (
             <div className="tasks-state" role="status" aria-live="polite">
               <div className="state-spinner" aria-hidden="true" />
-              <h3>Loading tasks...</h3>
               <p>Loading tasks…</p>
             </div>
           ) : tasksError ? (
             <div className="tasks-state error-state" role="alert">
-              <h3>Tasks unavailable</h3>
+              <h3>My Tasks unavailable</h3>
               <p>{tasksError}</p>
               <button className="ghost-btn" onClick={onRetry}>Try again</button>
             </div>
           ) : filteredTasks.length === 0 ? (
             <div className="tasks-state">
-              <h3>
+              <p>
                 {tasks.length === 0
                   ? "No tasks yet"
                   : queryFiltersActive || quickFilter !== "all"
                     ? "No matching tasks"
                     : `No tasks in ${activeListTitle}`}
-              </h3>
-              <p>
-                {tasks.length === 0
-                  ? "Use + Add task above to create your first task."
-                  : queryFiltersActive || quickFilter !== "all"
-                    ? `No tasks are currently in ${activeListTitle}.`
-                    : "Assign a task to this list or choose another list."}
               </p>
               {hasActiveFilters && (
                 <button className="ghost-btn" type="button" onClick={clearFilters}>

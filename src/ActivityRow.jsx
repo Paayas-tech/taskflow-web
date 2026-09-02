@@ -28,7 +28,7 @@ export default function ActivityRow({ activity }) {
   const actorName = activity.userId ? safeDisplayName(activity) : "TaskFlow";
   const fallbackLabel = String(activity.type || "activity update").replaceAll("_", " ");
   return (
-    <article className="settings-card task-history-row">
+    <article className="task-history-row">
       <span className={`task-history-icon task-history-icon-${activity.type || "default"}`} aria-hidden="true">{activityIcons[activity.type] || "•"}</span>
       <div className="task-history-content"><p><strong>{actorName}</strong> {labels[activity.type] || fallbackLabel}{activity.metadata?.taskTitle ? <span className="task-history-subject">{activity.metadata.taskTitle}</span> : null}</p><time dateTime={activity.createdAt || undefined}>{activity.createdAt ? new Date(activity.createdAt).toLocaleString() : "Just now"}</time></div>
     </article>

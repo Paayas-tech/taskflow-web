@@ -373,16 +373,14 @@ describe("ProjectTasksPage workspace coordination", () => {
     expect(textContent(runner.output)).toContain("Group related tasks.");
   });
 
-  it("shows clear Story and filter guidance when a project has no Stories", async () => {
+  it("shows a quiet Story empty state with one creation action", async () => {
     projectService.getProjectTasks.mockResolvedValue([]);
     const props = baseProps();
     const runner = createRunner(props);
     await flushWorkspace(runner, props);
 
     expect(textContent(runner.output)).toContain("No Stories yet");
-    expect(textContent(runner.output)).toContain(
-      "Create one to group tasks."
-    );
+    expect(textContent(runner.output)).not.toContain("Create one to group tasks.");
     expect(findElements(
       runner.output,
       (node) => node.type === "button" && textContent(node) === "+ New Story"

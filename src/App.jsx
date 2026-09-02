@@ -1535,7 +1535,10 @@ function App() {
       />
       <aside className="sidebar">
         <nav className="nav-list" aria-label="Primary navigation">
-          {navigationItems.filter((item) => ["Dashboard", "Tasks"].includes(item.label)).map(renderNavigationItem)}
+          <div className="sidebar-nav-section">
+            <p className="sidebar-nav-label">Workspace</p>
+            {["Dashboard", "For you", "Recent", "Starred", "Inbox", "My Tasks"].map((label) => navigationItems.find((item) => item.label === label)).filter(Boolean).map(renderNavigationItem)}
+          </div>
           <section className="sidebar-projects" aria-label="My Projects">
             <div className={`sidebar-projects-heading${["projects", "project", "project-overview"].includes(currentView) ? " active" : ""}`}>
               <button
@@ -1583,7 +1586,7 @@ function App() {
               </div>
             )}
           </section>
-          {navigationItems.filter((item) => ["Calendar", "Reminders"].includes(item.label)).map(renderNavigationItem)}
+          {navigationItems.filter((item) => item.label === "Calendar").map(renderNavigationItem)}
         </nav>
 
         {signOutState.error && <p className="signout-error sidebar-signout-error" role="alert">{signOutState.error}</p>}
@@ -1861,6 +1864,11 @@ function App() {
             onCancelQuickCreate={() => setDashboardQuickCreateOpen(false)}
             onOpenTask={(task) => {
               updateWorkspaceNavigation((data) => recordRecentItem(data, workspaceItemForTask(task)));
+              if (task.projectId) {
+                setProjectItemOpenRequest({ projectId: task.projectId, itemId: task.id, request: Date.now() });
+                navigate(projectPath(task.projectId), { recordProject: false });
+                return;
+              }
               setDashboardTaskOpenRequest({ id: task.id, request: Date.now() });
             }}
             onFilterTasks={(filters) => {
@@ -1869,6 +1877,7 @@ function App() {
               navigate("/tasks");
             }}
             onViewAllTasks={() => navigate("/tasks")}
+            onViewAllAssigned={() => navigate("/for-you")}
             onViewAllProjects={() => navigate("/projects")}
             notificationControl={null}
             showGlobalActions={false}
@@ -1887,6 +1896,7 @@ function App() {
               });
             }}
             quickTaskPendingIds={quickTaskPendingIds}
+            selectedTaskId={dashboardTaskOpenRequest?.id || null}
             projects={projects}
             projectsLoading={projectsLoading}
             projectsError={projectsError}
