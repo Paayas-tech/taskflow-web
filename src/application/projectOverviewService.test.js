@@ -24,7 +24,7 @@ describe("project overview service", () => {
     const repo = repository();
     repo.getProject.mockResolvedValue(null);
     await expect(createProjectOverviewService(repo).load("outsider", "project-a")).resolves.toBeNull();
-    expect(repo.getProjectOverviewMetrics).not.toHaveBeenCalled();
+    expect(repo.getProjectOverviewMetrics).toHaveBeenCalledWith("project-a");
   });
 
   it("validates and persists health changes", async () => {

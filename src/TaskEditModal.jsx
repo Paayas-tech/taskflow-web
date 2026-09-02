@@ -51,6 +51,7 @@ export default function TaskEditModal({
   const [saveError, setSaveError] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [confirmingStoryArchive, setConfirmingStoryArchive] = useState(false);
+  const [attachmentChanged, setAttachmentChanged] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [lifecycleAction, setLifecycleAction] = useState("");
@@ -61,6 +62,7 @@ export default function TaskEditModal({
   const [activePage, setActivePage] = useState(() =>
     task.workType === "story" ? "tasks" : "details"
   );
+  const [activityView, setActivityView] = useState("comments");
   const [relatedTaskTitle, setRelatedTaskTitle] = useState("");
   const [showRelatedTaskCreate, setShowRelatedTaskCreate] = useState(false);
   const [creatingRelatedTask, setCreatingRelatedTask] = useState(false);
@@ -90,10 +92,8 @@ export default function TaskEditModal({
   const completedRelatedTaskCount = relatedTasks.filter(isTaskComplete).length;
   const allRelatedTasksSelected = relatedTasks.length > 0
     && relatedTasks.every((relatedTask) => selectedRelatedTaskIds.has(relatedTask.id));
-  const pageTitle = activePage === "comments"
-    ? "Comments"
-    : activePage === "history"
-      ? "History"
+  const pageTitle = activePage === "activity"
+    ? "Activity"
       : activePage === "tasks"
         ? task.title
         : isPanel ? task.title : `Edit ${isStory ? "Story" : "Task"}`;
@@ -247,7 +247,9 @@ export default function TaskEditModal({
   const { onBackdropMouseDown } = useModalLifecycle({
     isOpen: !isPanel,
     modalRef: dialogRef,
-    onClose,
+    onClose: () => onClose(attachmentChanged ? {
+      attachmentNotice: "Attachment changes were already saved. Only unsaved field edits were discarded.",
+    } : undefined),
     isDismissDisabled: busy,
     allowEscape: !confirmingDelete && !confirmingStoryArchive,
     trapFocus: !confirmingDelete && !confirmingStoryArchive,
@@ -256,7 +258,9 @@ export default function TaskEditModal({
 
   const closeModal = () => {
     if (busy) return;
-    onClose();
+    onClose(attachmentChanged ? {
+      attachmentNotice: "Attachment changes were already saved. Only unsaved field edits were discarded.",
+    } : undefined);
   };
 
   const handleChange = (event) => {
@@ -416,10 +420,8 @@ export default function TaskEditModal({
               <p className="card-label">{isPanel ? `${isStory ? "Story" : "Task"} details` : task.title}</p>
               <h2 id={titleId}>{pageTitle}</h2>
               <p id={descriptionId}>
-                {activePage === "comments"
-                  ? "Discuss this work."
-                  : activePage === "history"
-                    ? "Recent changes."
+                {activePage === "activity"
+                  ? activityView === "comments" ? "Discuss this work." : "Recent changes."
                     : activePage === "tasks"
                       ? "Linked tasks and progress."
                       : "Edit details."}
@@ -508,13 +510,16 @@ export default function TaskEditModal({
 
           {userId && projectId && (
             <nav className="task-modal-pages" aria-label="Task workspace">
-              {(isStory ? ["details", "tasks", "comments", "history"] : ["details", "comments", "history"]).map((page) => (
+              {(isStory ? ["details", "tasks", "activity"] : ["details", "activity"]).map((page) => (
                 <button
                   key={page}
                   type="button"
                   className={activePage === page ? "active" : ""}
                   aria-current={activePage === page ? "page" : undefined}
-                  onClick={() => setActivePage(page)}
+                  onClick={() => {
+                    setActivePage(page);
+                    if (page === "activity") setActivityView("comments");
+                  }}
                   disabled={busy}
                 >
                   {page[0].toUpperCase() + page.slice(1)}
@@ -568,7 +573,8 @@ export default function TaskEditModal({
           ))}
 
           {userId && projectId && activePage === "details" && (
-            <AttachmentSection
+            <div className="task-attachment-boundary">
+              <AttachmentSection
               projectId={projectId}
               entityType={isStory ? "story" : "task"}
               entityId={task.id}
@@ -578,16 +584,23 @@ export default function TaskEditModal({
               compact
               allowDrop={!isStory}
               onCountChange={onAttachmentCountChange}
-            />
+              onMutation={() => setAttachmentChanged(true)}
+              />
+            </div>
           )}
 
-          {userId && projectId && activePage === "comments" && (
+          {userId && projectId && activePage === "activity" && (
             <div className="task-modal-page task-modal-comments-page">
-              <TaskComments
-                userId={userId}
-                taskId={task.id}
-                members={projectMembers}
-              />
+              <div className="task-activity-switch" role="tablist" aria-label="Activity view">
+                {[['comments', 'Comments'], ['all', 'All activity']].map(([value, label]) => (
+                  <button key={value} type="button" role="tab" aria-selected={activityView === value} className={activityView === value ? "active" : ""} onClick={() => setActivityView(value)}>{label}</button>
+                ))}
+              </div>
+              {activityView === "comments" ? (
+                <TaskComments userId={userId} taskId={task.id} members={projectMembers} />
+              ) : (
+                <ActivityFeed userId={userId} projectId={projectId} taskId={task.id} includeComments members={projectMembers} />
+              )}
             </div>
           )}
 
@@ -692,16 +705,6 @@ export default function TaskEditModal({
                 )}
               </div>
             </section>
-          )}
-
-          {userId && projectId && activePage === "history" && (
-            <div className="task-modal-page task-modal-history-page">
-              <ActivityFeed
-                userId={userId}
-                projectId={projectId}
-                taskId={task.id}
-              />
-            </div>
           )}
 
           {isPanel && !projectId && activePage === "subtasks" && (
@@ -810,6 +813,7 @@ export default function TaskEditModal({
           </section>
         </div>
       )}
+
     </>
   );
 }

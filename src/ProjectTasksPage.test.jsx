@@ -305,6 +305,14 @@ function latestQuickCreate() {
   return childCalls.quickCreates.at(-1);
 }
 
+function selectProjectView(runner, props, label) {
+  findElement(
+    runner.output,
+    (node) => node.type === "button" && textContent(node) === label
+  ).props.onClick();
+  runner.render(props);
+}
+
 beforeEach(() => {
   const storedValues = new Map();
   globalThis.document = {
@@ -358,10 +366,35 @@ describe("ProjectTasksPage workspace coordination", () => {
     expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Search project tasks")).toBeUndefined();
   });
 
+  it("uses one Board, List, Stories, and Attachments workspace switcher", async () => {
+    const props = baseProps();
+    const runner = createRunner(props);
+    await flushWorkspace(runner, props);
+
+    expect(findElements(runner.output, (node) => node.props?.role === "tab").map(textContent)).toEqual([
+      "Board", "List", "Stories", "Attachments",
+    ]);
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Filter project tasks by story")).toBeDefined();
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Search project tasks")).toBeDefined();
+    expect(textContent(findElement(runner.output, (node) => node.props?.className === "project-story-filter"))).toContain("Story:All stories");
+
+    selectProjectView(runner, props, "Attachments");
+    expect(findElement(runner.output, (node) => node.props?.["data-testid"] === "attachments")).toBeDefined();
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Filter project tasks by story")).toBeUndefined();
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Search project tasks")).toBeUndefined();
+    expect(findElement(runner.output, (node) => node.props?.["data-testid"] === "project-board")).toBeUndefined();
+
+    selectProjectView(runner, props, "Stories");
+    expect(textContent(runner.output)).toContain("Group related tasks.");
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Filter project tasks by story")).toBeUndefined();
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Search project tasks")).toBeUndefined();
+  });
+
   it("keeps Stories guidance compact without an instructional banner", async () => {
     const props = baseProps();
     const runner = createRunner(props);
     await flushWorkspace(runner, props);
+    selectProjectView(runner, props, "Stories");
 
     expect(textContent(runner.output)).not.toContain(
       "Stories group related tasks. Create a Story, then add tasks inside it."
@@ -378,6 +411,7 @@ describe("ProjectTasksPage workspace coordination", () => {
     const props = baseProps();
     const runner = createRunner(props);
     await flushWorkspace(runner, props);
+    selectProjectView(runner, props, "Stories");
 
     expect(textContent(runner.output)).toContain("No Stories yet");
     expect(textContent(runner.output)).not.toContain("Create one to group tasks.");
@@ -394,12 +428,11 @@ describe("ProjectTasksPage workspace coordination", () => {
     props.projects = [props.project];
     const runner = createRunner(props);
     await flushWorkspace(runner, props);
+    selectProjectView(runner, props, "Stories");
 
     expect(textContent(runner.output)).toContain(
       "Group related tasks."
     );
-    expect(textContent(runner.output)).toContain("No Story");
-
     const createStory = findElement(
       runner.output,
       (node) => node.type === "button" && textContent(node) === "+ New Story"
@@ -462,6 +495,7 @@ describe("ProjectTasksPage workspace coordination", () => {
     const props = baseProps();
     const runner = createRunner(props);
     await flushWorkspace(runner, props);
+    selectProjectView(runner, props, "Stories");
 
     const storyCard = findElement(
       runner.output,
@@ -497,6 +531,7 @@ describe("ProjectTasksPage workspace coordination", () => {
     const props = baseProps();
     const runner = createRunner(props);
     await flushWorkspace(runner, props);
+    selectProjectView(runner, props, "Stories");
 
     findElement(
       runner.output,
@@ -526,6 +561,7 @@ describe("ProjectTasksPage workspace coordination", () => {
     const props = baseProps();
     const runner = createRunner(props);
     await flushWorkspace(runner, props);
+    selectProjectView(runner, props, "Stories");
     findElement(
       runner.output,
       (node) => node.type === "button" && node.props?.title === "Open Story and view its tasks"
@@ -637,6 +673,7 @@ describe("ProjectTasksPage workspace coordination", () => {
     const props = baseProps();
     const runner = createRunner(props);
     await flushWorkspace(runner, props);
+    selectProjectView(runner, props, "Stories");
     findElement(
       runner.output,
       (node) => node.type === "button" && node.props?.title === "Open Story and view its tasks"
@@ -667,6 +704,7 @@ describe("ProjectTasksPage workspace coordination", () => {
     const props = baseProps();
     const runner = createRunner(props);
     await flushWorkspace(runner, props);
+    selectProjectView(runner, props, "Stories");
     findElement(
       runner.output,
       (node) => node.type === "button" && node.props?.title === "Open Story and view its tasks"
@@ -702,6 +740,8 @@ describe("ProjectTasksPage workspace coordination", () => {
       legacyLinked.id, neverCategorized.id,
     ]);
 
+    selectProjectView(runner, props, "Stories");
+
     findElement(
       runner.output,
       (node) => node.type === "button" && textContent(node) === "Restore"
@@ -719,6 +759,7 @@ describe("ProjectTasksPage workspace coordination", () => {
     const props = baseProps();
     const runner = createRunner(props);
     await flushWorkspace(runner, props);
+    selectProjectView(runner, props, "Stories");
     findElement(
       runner.output,
       (node) => node.type === "button" && node.props?.title === "Open Story and view its tasks"
@@ -728,6 +769,7 @@ describe("ProjectTasksPage workspace coordination", () => {
 
     await childCalls.taskEditors.at(-1).onDeleteTask(story.id);
     runner.render(props);
+    selectProjectView(runner, props, "Board");
     findElement(
       runner.output,
       (node) => node.props?.["aria-label"] === "Filter project tasks by story"

@@ -79,6 +79,7 @@ vi.mock("./TaskForm", () => ({
 vi.mock("./ActivityFeed", () => ({ default: () => <section aria-label="Task history view">Task history content</section> }));
 vi.mock("./TaskAssigneeSelector", () => ({ default: () => null }));
 vi.mock("./TaskComments", () => ({ default: () => <section aria-label="Task comments view">Task comments content</section> }));
+vi.mock("./AttachmentSection", () => ({ default: ({ onMutation }) => <button type="button" aria-label="Simulate attachment change" onClick={() => onMutation?.("upload")}>Attachment section</button> }));
 
 import TaskEditModal from "./TaskEditModal";
 
@@ -357,7 +358,7 @@ describe("TaskEditModal lifecycle integration", () => {
     expect(findElement(close, (node) => node.type === "svg")).toBeTruthy();
   });
 
-  it("keeps details, comments, and history on separate task pages", () => {
+  it("merges comments and history into the Activity page", () => {
     const runner = createRunner(baseProps({
       userId: "user-1",
       projectId: "project-1",
@@ -370,22 +371,36 @@ describe("TaskEditModal lifecycle integration", () => {
 
     findElement(
       runner.output,
-      (node) => node.type === "button" && textContent(node) === "Comments"
+      (node) => node.type === "button" && textContent(node) === "Activity"
     ).props.onClick();
     runner.render();
 
     expect(textContent(runner.output)).toContain("Task comments content");
     expect(textContent(runner.output)).not.toContain("Task history content");
     expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Task form")).toBeUndefined();
+    expect(findElement(runner.output, (node) => node.type === "button" && textContent(node) === "Comments").props["aria-selected"]).toBe(true);
 
     findElement(
       runner.output,
-      (node) => node.type === "button" && textContent(node) === "History"
+      (node) => node.type === "button" && textContent(node) === "All activity"
     ).props.onClick();
     runner.render();
 
     expect(textContent(runner.output)).toContain("Task history content");
     expect(textContent(runner.output)).not.toContain("Task comments content");
+  });
+
+  it("reports saved attachment changes without blocking close", () => {
+    const props = baseProps({ userId: "user-1", projectId: "project-1", presentation: "panel" });
+    const runner = createRunner(props);
+
+    findElement(runner.output, (node) => node.props?.["aria-label"] === "Simulate attachment change").props.onClick();
+    runner.render();
+    findElement(runner.output, (node) => node.props?.title === "Close").props.onClick();
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+    expect(props.onClose).toHaveBeenCalledWith({
+      attachmentNotice: "Attachment changes were already saved. Only unsaved field edits were discarded.",
+    });
   });
 
   it("opens Stories as task-focused pages with summary details and linked task actions", () => {

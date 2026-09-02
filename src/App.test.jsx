@@ -544,9 +544,10 @@ describe("App create-task modal lifecycle integration", () => {
       (node) => node.type === "nav" && node.props?.["aria-label"] === "Primary navigation"
     );
     const navigationText = textContent(primaryNavigation);
-    for (const label of ["Dashboard", "For you", "Recent", "Starred", "Inbox", "My Tasks", "Projects", "Calendar"]) {
+    for (const label of ["Dashboard", "For you", "Recent", "Starred", "Inbox", "My Tasks", "Projects"]) {
       expect(navigationText).toContain(label);
     }
+    expect(navigationText).not.toContain("Calendar");
     for (const hiddenLabel of ["Planning", "Timeline", "Board", "Lists", "Goals", "Issues", "Reminders", "Project pages", "Settings"]) {
       expect(navigationText).not.toContain(hiddenLabel);
     }

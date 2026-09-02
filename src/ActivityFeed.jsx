@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import ActivityRow from "./ActivityRow";
+import CommentRow from "./CommentRow";
+import { profileMap } from "./domain/identityDomain";
 import {
+  deleteTaskComment,
+  getTaskComments,
   getProjectActivity,
   getTaskActivity,
   subscribeToProjectActivity,
+  subscribeToTaskComments,
   subscribeToTaskActivity,
+  updateTaskComment,
 } from "./application/projectService";
 
 const activityGroup = (value) => {
@@ -18,8 +24,26 @@ const activityGroup = (value) => {
   return "Earlier";
 };
 
-export default function ActivityFeed({ userId, projectId, taskId = null, compact = false }) {
+const activityTimestamp = (value) => {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+};
+
+const sortActivityItems = (items) => items
+  .map((item, index) => ({ item, index, timestamp: activityTimestamp(item.createdAt) }))
+  .sort((left, right) => {
+    if (left.timestamp !== null && right.timestamp !== null && left.timestamp !== right.timestamp) {
+      return right.timestamp - left.timestamp;
+    }
+    if (left.timestamp !== null && right.timestamp === null) return -1;
+    if (left.timestamp === null && right.timestamp !== null) return 1;
+    return left.index - right.index;
+  })
+  .map(({ item }) => item);
+
+export default function ActivityFeed({ userId, projectId, taskId = null, compact = false, includeComments = false, members = [] }) {
   const [activity, setActivity] = useState([]);
+  const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -29,7 +53,17 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
   const loadActivity = useCallback(async () => {
     setError("");
     try {
-      setActivity(taskId ? await getTaskActivity(userId, taskId, 20) : await getProjectActivity(userId, projectId, 30));
+      if (taskId && includeComments) {
+        const [activityItems, commentItems] = await Promise.all([
+          getTaskActivity(userId, taskId, 30),
+          getTaskComments(userId, taskId),
+        ]);
+        setActivity(activityItems);
+        setComments(commentItems);
+      } else {
+        setActivity(taskId ? await getTaskActivity(userId, taskId, 20) : await getProjectActivity(userId, projectId, 30));
+        setComments([]);
+      }
       return true;
     } catch {
       setError("We couldn't load recent activity.");
@@ -37,7 +71,7 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
     } finally {
       setLoading(false);
     }
-  }, [projectId, taskId, userId]);
+  }, [includeComments, projectId, taskId, userId]);
 
   const refreshActivity = async () => {
     if (refreshing) return;
@@ -58,22 +92,47 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
       }
     };
     try {
-      return taskId
-        ? subscribeToTaskActivity(taskId, () => void loadActivity(), onStatus)
-        : subscribeToProjectActivity(projectId, () => void loadActivity(), onStatus);
+      if (taskId) {
+        const unsubscribeActivity = subscribeToTaskActivity(taskId, () => void loadActivity(), onStatus);
+        const unsubscribeComments = includeComments
+          ? subscribeToTaskComments(taskId, () => void loadActivity(), onStatus)
+          : undefined;
+        return () => {
+          unsubscribeActivity?.();
+          unsubscribeComments?.();
+        };
+      }
+      return subscribeToProjectActivity(projectId, () => void loadActivity(), onStatus);
     } catch {
       setLiveNotice("Live updates are paused. Refresh to check for new activity.");
       return undefined;
     }
-  }, [loadActivity, projectId, taskId]);
+  }, [includeComments, loadActivity, projectId, taskId]);
 
-  const visible = compact ? activity.slice(0, 8) : activity;
+  const activeCommentIds = new Set(comments.map((comment) => comment.id));
+  const mergedActivity = sortActivityItems([
+    ...activity.filter((item) => !(
+      ["comment_added", "comment_updated"].includes(item.type)
+      && activeCommentIds.has(item.metadata?.commentId)
+    )),
+    ...comments.map((comment) => ({ ...comment, itemKind: "comment" })),
+  ]);
+  const visible = compact ? mergedActivity.slice(0, 8) : mergedActivity;
   const groups = visible.reduce((result, item) => {
     const label = activityGroup(item.createdAt);
     result[label] ||= [];
     result[label].push(item);
     return result;
   }, {});
+  const profilesById = profileMap([...members, ...comments]);
+  const updateComment = async (commentId, content) => {
+    await updateTaskComment(userId, commentId, content);
+    await loadActivity();
+  };
+  const removeComment = async (commentId) => {
+    await deleteTaskComment(userId, commentId);
+    await loadActivity();
+  };
   return (
     <section className="settings-section task-history-panel" aria-labelledby={`activity-${taskId || projectId}`}>
       <div className="collaboration-panel-heading">
@@ -83,7 +142,7 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
       </div>
       {liveNotice && <p className="form-hint" role="status">{liveNotice}</p>}
       {refreshNotice && <p className="form-success collaboration-refresh-notice" role="status">{refreshNotice}</p>}
-      {loading ? <div className="task-collaboration-state" role="status"><span className="state-spinner" /><p>Loading…</p></div> : error ? <p className="form-error" role="alert">{error}</p> : visible.length === 0 ? <p className="task-collaboration-empty">No activity</p> : <div className="settings-list task-history-list">{Object.entries(groups).map(([label, items]) => <section key={label}><h4>{label}</h4>{items.map((item) => <ActivityRow key={item.id} activity={item} />)}</section>)}</div>}
+      {loading ? <div className="task-collaboration-state" role="status"><span className="state-spinner" /><p>Loading…</p></div> : error ? <p className="form-error" role="alert">{error}</p> : visible.length === 0 ? <p className="task-collaboration-empty">No activity</p> : <div className="settings-list task-history-list">{Object.entries(groups).map(([label, items]) => <section key={label}><h4>{label}</h4>{items.map((item) => item.itemKind === "comment" ? <CommentRow key={`comment-${item.id}`} comment={item} currentUserId={userId} profilesById={profilesById} mentionCandidates={members} onUpdate={updateComment} onDelete={removeComment} /> : <ActivityRow key={item.id} activity={item} />)}</section>)}</div>}
     </section>
   );
 }

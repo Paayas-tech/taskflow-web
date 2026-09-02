@@ -1586,7 +1586,6 @@ function App() {
               </div>
             )}
           </section>
-          {navigationItems.filter((item) => item.label === "Calendar").map(renderNavigationItem)}
         </nav>
 
         {signOutState.error && <p className="signout-error sidebar-signout-error" role="alert">{signOutState.error}</p>}
@@ -1823,6 +1822,7 @@ function App() {
           <ProjectOverviewPage
             userId={user.uid}
             projectId={selectedProjectId}
+            project={selectedProject}
             onBack={() => navigate(projectPath(selectedProjectId))}
             onOpenTask={(itemId) => {
               setProjectItemOpenRequest({ projectId: selectedProjectId, itemId, request: Date.now() });

@@ -66,6 +66,7 @@ export default function ProjectTasksPage({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [mutationError, setMutationError] = useState("");
+  const [panelNotice, setPanelNotice] = useState("");
   const [pendingIds, setPendingIds] = useState(new Set());
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [storyReturnId, setStoryReturnId] = useState(null);
@@ -184,13 +185,9 @@ export default function ProjectTasksPage({
       setStoryReturnId(null);
     }
   }, [openItemRequest, projectId, tasks]);
-  const boardTasks = useMemo(() => activeTasks.filter((task) => {
-    if (storyFilter === "none") return !task.storyId;
-    return storyFilter === "all" || task.storyId === storyFilter;
-  }), [activeTasks, storyFilter]);
-  const filteredTasks = useMemo(() => {
+  const taskFilterMatches = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
-    const matches = activeTasks.filter((task) => {
+    return activeTasks.filter((task) => {
       if (statusFilter === "active" && isTaskComplete(task)) return false;
       if (statusFilter === "completed" && !isTaskComplete(task)) return false;
       if (assigneeFilter === "unassigned" && task.assigneeId) return false;
@@ -202,8 +199,12 @@ export default function ProjectTasksPage({
         String(value || "").toLowerCase().includes(query)
       );
     });
-    return sortProjectTasks(matches, sort);
-  }, [activeTasks, assigneeFilter, searchTerm, sort, statusFilter, storyFilter]);
+  }, [activeTasks, assigneeFilter, searchTerm, statusFilter, storyFilter]);
+  const boardTasks = taskFilterMatches;
+  const filteredTasks = useMemo(
+    () => sortProjectTasks(taskFilterMatches, sort),
+    [sort, taskFilterMatches]
+  );
   const listTasksByColumn = useMemo(
     () => groupProjectTasksByColumn(columns, filteredTasks, { preserveTaskOrder: true }),
     [columns, filteredTasks]
@@ -236,8 +237,12 @@ export default function ProjectTasksPage({
   }, [columns, filteredTasks, listTasksByColumn, stories, storyFilter]);
   const selectedTask = [...activeTasks, ...stories].find((task) => task.id === selectedTaskId);
   const canEditTasks = ["owner", "editor"].includes(project?.viewerRole);
-  const storyFilteredBulkEnabled = canEditTasks && storyFilter !== "all" && storyFilter !== "none";
-  const visibleBulkTasks = view === "board" ? boardTasks : filteredTasks;
+  const taskViewActive = view === "board" || view === "list";
+  const storyFilteredBulkEnabled = taskViewActive && canEditTasks && storyFilter !== "all" && storyFilter !== "none";
+  const visibleBulkTasks = useMemo(
+    () => (view === "board" ? boardTasks : view === "list" ? filteredTasks : []),
+    [boardTasks, filteredTasks, view]
+  );
   const allVisibleBulkTasksSelected = visibleBulkTasks.length > 0
     && visibleBulkTasks.every((task) => filteredSelectedTaskIds.has(task.id));
   const editableProjects = projects.filter((candidate) =>
@@ -516,6 +521,7 @@ export default function ProjectTasksPage({
   const openEditor = (task, triggerElement) => {
     editTriggerRef.current = triggerElement || null;
     setStoryReturnId(null);
+    setPanelNotice("");
     setSelectedTaskId(task.id);
     onItemOpened?.(task);
   };
@@ -523,7 +529,8 @@ export default function ProjectTasksPage({
     if (selectedTask?.workType === "story") setStoryReturnId(selectedTask.id);
     setSelectedTaskId(task.id);
   };
-  const closeSelectedItem = () => {
+  const closeSelectedItem = (options = {}) => {
+    if (options?.attachmentNotice) setPanelNotice(options.attachmentNotice);
     if (storyReturnId) {
       setSelectedTaskId(storyReturnId);
       setStoryReturnId(null);
@@ -688,105 +695,79 @@ export default function ProjectTasksPage({
         </div>
       </header>
 
-      <div className="project-resources-grid">
-        <AttachmentSection
-          projectId={projectId}
-          entityType="project"
-          entityId={projectId}
-          userId={userId}
-          uploaderName={members.find((member) => member.userId === userId)?.displayName || "TaskFlow user"}
-          canManage={canEditTasks}
-          compact
-        />
-
-        <section className="project-stories" aria-labelledby="project-stories-title">
-        <header>
-          <div>
-            <h3 id="project-stories-title">Stories <span className="project-story-count" aria-label={`${stories.length} Stories`}>{stories.length}</span></h3>
-            <p className="project-stories-help">Group related tasks.</p>
-          </div>
-          <div className="project-stories-actions">
-            {canEditTasks && <button className="primary-btn compact-btn" type="button" onClick={openStoryCreate}>+ New Story</button>}
-          </div>
-        </header>
-        <div className="project-story-list">
-          {stories.map((story) => {
-            const storyTasks = activeTasks.filter((task) => task.storyId === story.id);
-            const completedCount = storyTasks.filter(isTaskComplete).length;
-            return (
-              <button
-                key={story.id}
-                className={selectedTaskId === story.id ? "is-selected" : ""}
-                type="button"
-                title="Open Story and view its tasks"
-                aria-pressed={selectedTaskId === story.id}
-                onClick={(event) => openEditor(story, event.currentTarget)}
-              >
-                <span className="project-story-icon" aria-hidden="true">▱</span>
-                <span><strong>{story.title}</strong><small>{completedCount}/{storyTasks.length} tasks completed</small></span>
-                <span aria-hidden="true">→</span>
-              </button>
-            );
-          })}
-          {stories.length === 0 && (
-            <p className="project-story-empty">No Stories yet</p>
-          )}
-        </div>
-        {archivedStories.length > 0 && (
-          <details className="project-archived-stories">
-            <summary>Archived Stories <span>{archivedStories.length}</span></summary>
-            <div>
-              {archivedStories.map((story) => (
-                <div key={story.id}>
-                  <span className="project-story-icon" aria-hidden="true">▱</span>
-                  <strong>{story.title}</strong>
-                  {canEditTasks && <button className="ghost-btn compact-btn" type="button" onClick={() => void handleRestoreStory(story.id)} disabled={Boolean(storyActionId)}>{storyActionId === story.id ? "Restoring..." : "Restore"}</button>}
-                </div>
-              ))}
-            </div>
-          </details>
-        )}
-        </section>
-      </div>
-
       {showEmbeddedTaskViews && <>
       <header className="project-workspace-heading">
         <div>
-          <h3>Tasks</h3>
-          <p>Plan and track project work.</p>
+          <h3>{view === "stories" ? "Stories" : view === "attachments" ? "Attachments" : "Tasks"}</h3>
+          <p>{view === "stories" ? "Group related tasks." : view === "attachments" ? "Files for this project." : "Plan and track project work."}</p>
         </div>
-        <span>{activeTasks.filter((task) => task.workType !== "story").length} tasks</span>
+        <span>{view === "stories" ? `${stories.length} ${stories.length === 1 ? "Story" : "Stories"}` : taskViewActive ? `${activeTasks.length} tasks` : null}</span>
       </header>
       <div className="project-view-toolbar">
-        <div className="project-view-primary-controls">
-          <div className="project-view-switcher" role="group" aria-label="Project view">
-            {["board", "list"].map((option) => (
-              <button
-                key={option}
-                type="button"
-                className={view === option ? "active" : ""}
-                aria-pressed={view === option}
-                onClick={() => {
-                  setView(option);
-                  onViewChange?.(option);
-                  setQuickCreateTarget(null);
-                }}
-              >
-                {option[0].toUpperCase() + option.slice(1)}
-              </button>
-            ))}
-          </div>
-          <label className="project-story-filter"><span>Story</span><select aria-label="Filter project tasks by story" value={storyFilter} onChange={(event) => setStoryFilter(event.target.value)}><option value="all">All stories</option><option value="none">No Story</option>{stories.map((story) => <option key={story.id} value={story.id}>{story.title}</option>)}</select></label>
+        <div className="project-view-switcher" role="tablist" aria-label="Project view">
+          {["board", "list", "stories", "attachments"].map((option) => (
+            <button
+              key={option}
+              type="button"
+              role="tab"
+              className={view === option ? "active" : ""}
+              aria-selected={view === option}
+              onClick={() => {
+                setView(option);
+                if (option === "board" || option === "list") onViewChange?.(option);
+                setQuickCreateTarget(null);
+              }}
+            >
+              {option[0].toUpperCase() + option.slice(1)}
+            </button>
+          ))}
         </div>
-        {view === "list" && (<>
+      </div>
+      {taskViewActive && (
+        <div className="project-task-filter-toolbar" role="group" aria-label="Task filters">
+          <label className="project-story-filter"><span>Story:</span><select aria-label="Filter project tasks by story" value={storyFilter} onChange={(event) => setStoryFilter(event.target.value)}><option value="all">All stories</option><option value="none">No Story</option>{stories.map((story) => <option key={story.id} value={story.id}>{story.title}</option>)}</select></label>
           <div className="project-list-controls">
             <input aria-label="Search project tasks" type="search" placeholder="Search tasks" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} />
             <select aria-label="Filter project task status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">All statuses</option><option value="active">Active</option><option value="completed">Completed</option></select>
             <select aria-label="Filter project tasks by assignee" value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}><option value="all">All assignees</option><option value="unassigned">Unassigned</option>{members.map((member) => <option key={member.userId} value={member.userId}>{member.displayName || "TaskFlow user"}</option>)}</select>
             <select aria-label="Sort project tasks" value={sort} onChange={(event) => setSort(event.target.value)}><option value="created">Newest</option><option value="due">Due date</option><option value="priority">Priority</option></select>
           </div>
-        </>)}
-      </div>
+        </div>
+      )}
+
+      {view === "stories" && (
+        <section className="project-stories project-view-content" aria-labelledby="project-stories-title">
+          <header>
+            <h3 id="project-stories-title" className="sr-only">Project Stories</h3>
+            {canEditTasks && <button className="primary-btn compact-btn" type="button" onClick={openStoryCreate}>+ New Story</button>}
+          </header>
+          <div className="project-story-list">
+            {stories.map((story) => {
+              const storyTasks = activeTasks.filter((task) => task.storyId === story.id);
+              const completedCount = storyTasks.filter(isTaskComplete).length;
+              return (
+                <button key={story.id} className={selectedTaskId === story.id ? "is-selected" : ""} type="button" title="Open Story and view its tasks" aria-pressed={selectedTaskId === story.id} onClick={(event) => openEditor(story, event.currentTarget)}>
+                  <span className="project-story-icon" aria-hidden="true">▱</span>
+                  <span><strong>{story.title}</strong><small>{completedCount}/{storyTasks.length} tasks completed</small></span>
+                  <span aria-hidden="true">→</span>
+                </button>
+              );
+            })}
+            {stories.length === 0 && <p className="project-story-empty">No Stories yet</p>}
+          </div>
+          {archivedStories.length > 0 && (
+            <details className="project-archived-stories"><summary>Archived Stories <span>{archivedStories.length}</span></summary><div>{archivedStories.map((story) => <div key={story.id}><span className="project-story-icon" aria-hidden="true">▱</span><strong>{story.title}</strong>{canEditTasks && <button className="ghost-btn compact-btn" type="button" onClick={() => void handleRestoreStory(story.id)} disabled={Boolean(storyActionId)}>{storyActionId === story.id ? "Restoring..." : "Restore"}</button>}</div>)}</div></details>
+          )}
+        </section>
+      )}
+
+      {view === "attachments" && (
+        <div className="project-attachments-view project-view-content">
+          <AttachmentSection projectId={projectId} entityType="project" entityId={projectId} userId={userId} uploaderName={members.find((member) => member.userId === userId)?.displayName || "TaskFlow user"} canManage={canEditTasks} />
+        </div>
+      )}
+
+      {taskViewActive && <>
 
       {storyFilteredBulkEnabled && visibleBulkTasks.length > 0 && (
         <div className="project-filtered-bulk-tools">
@@ -814,6 +795,7 @@ export default function ProjectTasksPage({
       {filteredBulkMessage && <p className={filteredBulkMessage.error ? "form-error story-bulk-message project-filtered-bulk-message" : "form-success story-bulk-message project-filtered-bulk-message"} role={filteredBulkMessage.error ? "alert" : "status"}>{filteredBulkMessage.text}</p>}
 
       {mutationError && <div className="inline-error" role="alert"><p>{mutationError}</p><button className="ghost-btn compact-btn" type="button" onClick={() => setMutationError("")}>Dismiss</button></div>}
+      {panelNotice && <div className="form-success project-panel-notice" role="status"><span>{panelNotice}</span><button className="ghost-btn compact-btn" type="button" onClick={() => setPanelNotice("")}>Dismiss</button></div>}
       {loadError && activeTasks.length > 0 && <div className="inline-error" role="alert"><p>{loadError}</p><button className="ghost-btn compact-btn" type="button" onClick={loadWorkspace}>Try again</button></div>}
 
       {loadError && activeTasks.length === 0 ? (
@@ -876,6 +858,7 @@ export default function ProjectTasksPage({
         </div>
       )}
 
+      </>}
       </>}
 
       {showCreate && (

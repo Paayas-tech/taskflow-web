@@ -17,7 +17,7 @@ const initials = (name) => String(name || "TaskFlow user").trim().split(/\s+/).s
 
 export default function AttachmentSection({
   projectId, entityType, entityId, userId, uploaderName = "TaskFlow user",
-  canManage = false, compact = false, allowDrop = false, onCountChange,
+  canManage = false, compact = false, allowDrop = false, onCountChange, onMutation,
 }) {
   const [attachments, setAttachments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -65,7 +65,8 @@ export default function AttachmentSection({
         projectId, entityType, entityId, file, userId, uploaderName,
       });
       updateItems([created, ...attachments]);
-      setMessage("Attachment uploaded.");
+      setMessage("Uploaded · saved automatically.");
+      onMutation?.("upload", created);
     } catch (uploadError) { setError(uploadError.message); setErrorKind("action"); }
     finally {
       setUploadingName("");
@@ -98,7 +99,8 @@ export default function AttachmentSection({
       await attachmentService.remove(attachment);
       updateItems(attachments.filter((item) => item.id !== attachment.id));
       setConfirmingDeleteId("");
-      setMessage("Attachment deleted.");
+      setMessage("Deleted · saved automatically.");
+      onMutation?.("delete", attachment);
     } catch (deleteError) { setError(deleteError.message); setErrorKind("action"); }
     finally { setDeletingId(""); }
   };

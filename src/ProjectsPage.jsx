@@ -373,12 +373,9 @@ export default function ProjectsPage({
                   </select>
                 </label>
               </div>
-            </div>
-
-            <div className="projects-list-actions">
               <button
                 ref={createTriggerRef}
-                className="primary-btn compact-btn"
+                className="primary-btn compact-btn projects-add-button"
                 type="button"
                 onClick={openCreateProject}
                 aria-haspopup="dialog"
