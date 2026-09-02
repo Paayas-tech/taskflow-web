@@ -475,7 +475,7 @@ describe("App create-task modal lifecycle integration", () => {
     expect(textContent(runner.output)).toContain("TaskFlow");
     expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Search TaskFlow")).toBeDefined();
     expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Help")).toBeDefined();
-    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Settings")).toBeUndefined();
+    expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Settings")).toBeDefined();
     expect(findElement(runner.output, (node) => node.props?.["aria-label"] === "Account menu")).toBeDefined();
 
     sidebarToggle.props.onClick();
@@ -544,10 +544,11 @@ describe("App create-task modal lifecycle integration", () => {
       (node) => node.type === "nav" && node.props?.["aria-label"] === "Primary navigation"
     );
     const navigationText = textContent(primaryNavigation);
-    for (const label of ["Dashboard", "Tasks", "Projects", "Calendar", "Reminders"]) {
+    for (const label of ["Dashboard", "For you", "Recent", "Starred", "Inbox", "My Tasks", "Projects"]) {
       expect(navigationText).toContain(label);
     }
-    for (const hiddenLabel of ["Planning", "Timeline", "Board", "Lists", "Goals", "Issues", "Starred", "For you", "Recent", "Project pages", "Settings"]) {
+    expect(navigationText).not.toContain("Calendar");
+    for (const hiddenLabel of ["Planning", "Timeline", "Board", "Lists", "Goals", "Issues", "Reminders", "Project pages", "Settings"]) {
       expect(navigationText).not.toContain(hiddenLabel);
     }
     expect(navigationText).toContain("Launch");

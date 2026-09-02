@@ -121,7 +121,7 @@ describe("TaskFlow route presentation", () => {
       { label: "Issues", path: "/planning/issues", enabled: true, icon: "issues", group: "planning" },
       { label: "Dashboard", path: "/", enabled: true, icon: "dashboard" },
       { label: "Inbox", path: "/inbox", enabled: true, icon: "inbox" },
-      { label: "Tasks", path: "/tasks", enabled: true, icon: "tasks" },
+      { label: "My Tasks", path: "/tasks", enabled: true, icon: "tasks" },
       { label: "Projects", path: "/projects", enabled: true, icon: "projects" },
       { label: "Calendar", path: "/calendar", enabled: true, icon: "calendar" },
       { label: "Reminders", enabled: false, icon: "reminders" },
@@ -160,7 +160,7 @@ describe("TaskFlow route presentation", () => {
         selectedProject: null,
         projectsLoading: false,
       })
-    ).toEqual({ title: "Tasks", subtitle: "1 task" });
+    ).toEqual({ title: "My Tasks", subtitle: "1 task" });
   });
 
   it.each([

@@ -13,14 +13,14 @@ export const createProjectOverviewService = (repository = projectOverviewReposit
   async load(userId, projectId) {
     if (!userId || !projectId) throw new Error("You don’t have access to this project.");
     try {
-      const project = await repository.getProject(userId, projectId);
-      if (!project) return null;
-      const [metrics, statusDistribution, overdueTasks, recentlyCompletedTasks] = await Promise.all([
+      const [project, metrics, statusDistribution, overdueTasks, recentlyCompletedTasks] = await Promise.all([
+        repository.getProject(userId, projectId),
         repository.getProjectOverviewMetrics(projectId),
         repository.getProjectStatusDistribution(projectId),
         repository.getOverdueTasks(projectId, 10),
         repository.getRecentlyCompletedTasks(projectId, 10),
       ]);
+      if (!project) return null;
       return {
         project: { ...project, healthStatus: normalizeProjectHealth(project.healthStatus) },
         metrics, statusDistribution, overdueTasks, recentlyCompletedTasks,

@@ -36,10 +36,14 @@ const hookRuntime = vi.hoisted(() => {
 });
 
 const projectService = vi.hoisted(() => ({
+  deleteTaskComment: vi.fn(),
+  getTaskComments: vi.fn(),
   getProjectActivity: vi.fn(),
   getTaskActivity: vi.fn(),
   subscribeToProjectActivity: vi.fn(),
+  subscribeToTaskComments: vi.fn(),
   subscribeToTaskActivity: vi.fn(),
+  updateTaskComment: vi.fn(),
 }));
 
 vi.mock("react", () => ({
@@ -50,6 +54,9 @@ vi.mock("react", () => ({
 vi.mock("./application/projectService", () => projectService);
 vi.mock("./ActivityRow", () => ({
   default: ({ activity }) => <div>{activity.displayName}: {activity.eventType}</div>,
+}));
+vi.mock("./CommentRow", () => ({
+  default: ({ comment }) => <div>Comment: {comment.content}</div>,
 }));
 
 import ActivityFeed from "./ActivityFeed";
@@ -129,7 +136,9 @@ beforeEach(() => {
     createdAt: new Date().toISOString(),
   }]);
   projectService.getTaskActivity.mockReset().mockResolvedValue([]);
+  projectService.getTaskComments.mockReset().mockResolvedValue([]);
   projectService.subscribeToProjectActivity.mockReset();
+  projectService.subscribeToTaskComments.mockReset();
   projectService.subscribeToTaskActivity.mockReset();
 });
 
@@ -205,5 +214,43 @@ describe("ActivityFeed realtime fallback", () => {
       expect.any(Function)
     );
     expect(projectService.subscribeToProjectActivity).not.toHaveBeenCalled();
+  });
+
+  it("interleaves real comments with system activity without duplicate comment events", async () => {
+    const cleanupActivity = vi.fn();
+    const cleanupComments = vi.fn();
+    projectService.getTaskActivity.mockResolvedValue([
+      { id: "event-new", eventType: "task_updated", type: "task_updated", displayName: "Taylor", createdAt: "2026-09-02T10:00:00Z" },
+      { id: "event-comment", eventType: "comment_added", type: "comment_added", metadata: { commentId: "comment-a" }, createdAt: "2026-09-02T09:00:00Z" },
+    ]);
+    projectService.getTaskComments.mockResolvedValue([
+      { id: "comment-a", content: "Ready for review", userId: "user-a", displayName: "Taylor", createdAt: "2026-09-02T09:00:00Z" },
+    ]);
+    projectService.subscribeToTaskActivity.mockReturnValue(cleanupActivity);
+    projectService.subscribeToTaskComments.mockReturnValue(cleanupComments);
+    const runner = createRunner({ userId: "user-a", projectId: "project-a", taskId: "task-a", includeComments: true });
+    await flush(runner);
+
+    expect(textContent(runner.output)).toContain("Taylor: task_updated");
+    expect(textContent(runner.output)).toContain("Comment: Ready for review");
+    expect(textContent(runner.output)).not.toContain("Taylor: comment_added");
+    runner.unmount();
+    expect(cleanupActivity).toHaveBeenCalledOnce();
+    expect(cleanupComments).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a stable fallback order when activity timestamps are equal or missing", async () => {
+    projectService.getTaskActivity.mockResolvedValue([
+      { id: "event-first", eventType: "task_updated", type: "task_updated", displayName: "First", createdAt: null },
+      { id: "event-second", eventType: "status_changed", type: "status_changed", displayName: "Second", createdAt: null },
+    ]);
+    projectService.getTaskComments.mockResolvedValue([]);
+    projectService.subscribeToTaskActivity.mockReturnValue(vi.fn());
+    projectService.subscribeToTaskComments.mockReturnValue(vi.fn());
+    const runner = createRunner({ userId: "user-a", projectId: "project-a", taskId: "task-a", includeComments: true });
+    await flush(runner);
+
+    const output = textContent(runner.output);
+    expect(output.indexOf("First: task_updated")).toBeLessThan(output.indexOf("Second: status_changed"));
   });
 });

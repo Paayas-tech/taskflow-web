@@ -123,10 +123,10 @@ export default function NotificationsPanel({ userId, onNavigate }) {
         <section id={dialogId} ref={dialogRef} className="confirmation-dialog notification-dialog" role="dialog" aria-label="Notifications" tabIndex={-1}>
           <div className="section-heading-row notification-dialog-header"><h3>Notifications</h3><div className="notification-dialog-actions"><button className="ghost-btn compact-btn notification-read-all" type="button" onClick={() => void markAllRead()} disabled={!unreadCount}>Mark all read</button><button className="notification-dialog-close" type="button" onClick={() => { setOpen(false); triggerRef.current?.focus(); }} aria-label="Close notifications">×</button></div></div>
           {liveNotice && <p className="form-hint" role="status">{liveNotice}</p>}
-          {loading ? <p className="notification-empty-state" role="status">Loading…</p> : error ? <div><p className="form-error" role="alert">{error}</p><button className="ghost-btn compact-btn" type="button" onClick={() => void load()}>Retry</button></div> : notifications.length === 0 ? <div className="notification-empty-state"><span className="notification-empty-icon" aria-hidden="true">✓</span><strong>All caught up</strong><p>No notifications.</p></div> : (
+          {loading ? <p className="notification-empty-state" role="status">Loading…</p> : error ? <div><p className="form-error" role="alert">{error}</p><button className="ghost-btn compact-btn" type="button" onClick={() => void load()}>Retry</button></div> : notifications.length === 0 ? <p className="notification-empty-state">No notifications</p> : (
             <div className="settings-list">
               {notifications.map((notification) => (
-                <article className="settings-card" key={notification.id}>
+                <article className="notification-row" key={notification.id}>
                   <button className="task-title-button" type="button" onClick={() => void openNotification(notification)}><strong>{notificationLabel(notification)}</strong></button>
                   <p className="form-hint">{notification.createdAt ? new Date(notification.createdAt).toLocaleString() : "Just now"}</p>
                   <button className="ghost-btn compact-btn" type="button" onClick={() => void dismissNotification(notification.id)} aria-label={`Dismiss notification: ${notificationLabel(notification)}`}>Dismiss</button>

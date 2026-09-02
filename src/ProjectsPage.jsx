@@ -257,6 +257,7 @@ export default function ProjectsPage({
         <button
           className="project-row-primary"
           type="button"
+          aria-pressed={viewingProject?.id === project.id}
           onClick={() => {
             setViewingProject(project);
             void prefetchProjectWorkspace(userId, project.id)?.catch(() => {});
@@ -334,9 +335,7 @@ export default function ProjectsPage({
         </div>
       ) : projects.length === 0 ? (
         <div className="projects-state projects-empty-state">
-          <span className="projects-empty-icon" aria-hidden="true">◇</span>
           <h3>No projects yet</h3>
-          <p>Create a workspace for related work.</p>
           <button className="primary-btn" type="button" onClick={openCreateProject}>
             Create your first project
           </button>
@@ -374,12 +373,9 @@ export default function ProjectsPage({
                   </select>
                 </label>
               </div>
-            </div>
-
-            <div className="projects-list-actions">
               <button
                 ref={createTriggerRef}
-                className="primary-btn compact-btn"
+                className="primary-btn compact-btn projects-add-button"
                 type="button"
                 onClick={openCreateProject}
                 aria-haspopup="dialog"
@@ -396,10 +392,7 @@ export default function ProjectsPage({
               <div className="project-table-body">
                 {visibleProjects.map(renderProjectCard)}
                 {visibleProjects.length === 0 && (
-                  <div className="project-table-empty">
-                    <strong>No matching projects</strong>
-                    <span>Try changing your search or filters.</span>
-                  </div>
+                  <p className="project-table-empty">No matching projects</p>
                 )}
               </div>
             </div>

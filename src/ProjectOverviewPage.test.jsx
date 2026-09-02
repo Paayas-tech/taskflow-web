@@ -23,7 +23,7 @@ describe("ProjectOverviewContent", () => {
     const onOpenTask = vi.fn();
     const tree = ProjectOverviewContent({ data, onHealthChange: vi.fn(), onOpenTask, onBack: vi.fn() });
     expect(text(tree)).toContain("Launch");
-    expect(text(tree)).toContain("Total8");
+    expect(text(tree)).toContain("8Total");
     expect(text(tree)).toContain("Fix launch blocker");
     expect(text(tree)).toContain("Publish docs");
     let taskButton;

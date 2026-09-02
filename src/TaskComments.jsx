@@ -96,7 +96,7 @@ export default function TaskComments({ userId, taskId, members = [] }) {
         <span className="collaboration-count" aria-label={`${comments.length} comments`}>{comments.length}</span>
       </div>
       {liveNotice && <p className="form-hint" role="status">{liveNotice}</p>}
-      {loading ? <div className="task-collaboration-state" role="status"><span className="state-spinner" /><p>Loading…</p></div> : comments.length === 0 ? <div className="task-collaboration-empty"><span aria-hidden="true">↩</span><strong>No comments</strong><p>Start the conversation.</p></div> : (
+      {loading ? <div className="task-collaboration-state" role="status"><span className="state-spinner" /><p>Loading…</p></div> : comments.length === 0 ? <p className="task-collaboration-empty">No comments</p> : (
         <div className="settings-list task-comment-list">
           {comments.map((comment) => <CommentRow key={comment.id} comment={comment} currentUserId={userId} profilesById={profilesById} mentionCandidates={members} onUpdate={updateComment} onDelete={deleteComment} />)}
         </div>

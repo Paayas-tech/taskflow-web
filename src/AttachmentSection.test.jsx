@@ -102,3 +102,25 @@ describe.each(contexts)("AttachmentSection %s load errors", (entityType) => {
     expect(service.list).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("AttachmentSection immediate persistence feedback", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("reports that a successful upload is saved automatically", async () => {
+    const onMutation = vi.fn();
+    const file = { name: "brief.pdf", size: 128, type: "application/pdf" };
+    service.list.mockResolvedValue([]);
+    service.upload.mockResolvedValue({ id: "attachment-1", fileName: file.name, sizeBytes: file.size });
+    const view = createRunner({ ...propsFor("task"), canManage: true, onMutation });
+    let tree = await view.mount();
+    const input = findAll(tree, (node) => node.type === "input" && node.props?.type === "file")[0];
+
+    input.props.onChange({ target: { files: [file] } });
+    await settle();
+    tree = view.render();
+
+    expect(service.upload).toHaveBeenCalled();
+    expect(onMutation).toHaveBeenCalledWith("upload", expect.objectContaining({ id: "attachment-1" }));
+    expect(text(tree)).toContain("saved automatically");
+  });
+});
