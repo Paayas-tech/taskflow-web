@@ -94,29 +94,6 @@ describe("ProjectOverviewTab", () => {
     await flush();
   });
 
-  it("renders the four headline stats and tones overdue work", async () => {
-    const { tree } = await mount(baseProps());
-    const stats = findAll(tree, (node) => hasClass(node, "stat"));
-
-    expect(stats.map((stat) => textContent(stat))).toEqual([
-      "8 Total",
-      "3 Completed",
-      "2 In progress",
-      "1 Overdue",
-    ]);
-    expect(hasClass(stats[3], "is-danger")).toBe(true);
-  });
-
-  it("keeps the overdue stat neutral when nothing is late", async () => {
-    projectOverviewService.load.mockResolvedValue(
-      overview({ metrics: { total: 4, completed: 4, inProgress: 0, overdue: 0 } })
-    );
-    const { tree } = await mount(baseProps());
-    const stats = findAll(tree, (node) => hasClass(node, "stat"));
-
-    expect(hasClass(stats[3], "is-danger")).toBe(false);
-  });
-
   it("charts the status distribution in a stable order", async () => {
     const { tree } = await mount(baseProps());
     const bars = findAll(tree, (node) => hasClass(node, "bar-row"));

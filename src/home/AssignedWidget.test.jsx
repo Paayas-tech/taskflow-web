@@ -73,6 +73,17 @@ describe("AssignedWidget", () => {
     expect(row.onOpen).toBeTypeOf("function");
   });
 
+  it("forwards the go-to-project handler to every row", () => {
+    const onOpenProject = vi.fn();
+    const tree = AssignedWidget(baseProps({ onOpenProject }));
+
+    expect(rows(tree).map((row) => props(row).onOpenProject)).toEqual([
+      onOpenProject,
+      onOpenProject,
+      onOpenProject,
+    ]);
+  });
+
   it("shows at most six rows", () => {
     const many = Array.from({ length: 9 }, (_, index) =>
       task({ id: `t${index}`, title: `Task ${index}`, dueDate: todayKey })

@@ -93,6 +93,7 @@ export default function MyTasksPage({
   projects = [],
   taskActions,
   onOpenTask,
+  onOpenProject,
   selectedTaskId = null,
   onNewTask,
   formatSettings,
@@ -253,6 +254,7 @@ export default function MyTasksPage({
       busy={Boolean(pendingIds?.has?.(task.id))}
       showProject={groupBy !== "project"}
       onOpen={handleOpen}
+      onOpenProject={onOpenProject}
       onToggleComplete={handleToggleComplete}
       onArchive={task.projectId ? undefined : handleArchive}
       formatSettings={formatSettings}
@@ -457,6 +459,7 @@ export default function MyTasksPage({
               initiallyCollapsedIds={["completed"]}
               onMove={handleMove}
               onOpen={handleOpen}
+              onOpenProject={onOpenProject}
               onQuickCreate={createFromBoard}
               onOpenDetails={openDetailsFromBoard}
               formatSettings={formatSettings}

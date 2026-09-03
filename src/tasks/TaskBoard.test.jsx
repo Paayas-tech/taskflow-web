@@ -173,4 +173,12 @@ describe("BoardColumn", () => {
 
     expect(props(tree).className).toContain("is-over");
   });
+
+  it("forwards the go-to-project handler to every card", () => {
+    const onOpenProject = vi.fn();
+    const tree = BoardColumn(columnProps({ onOpenProject }));
+    const card = find(tree, (node) => node.type?.name === "TaskCard");
+
+    expect(props(card).onOpenProject).toBe(onOpenProject);
+  });
 });

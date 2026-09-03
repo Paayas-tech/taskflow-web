@@ -47,17 +47,24 @@ const renderCard = ({ task: taskOverrides, ...rest } = {}) =>
   TaskCard({ task: buildTask(taskOverrides), todayKey, ...rest });
 
 describe("TaskCard", () => {
-  it("makes the whole card the drag handle and opens from the inner button", () => {
+  it("makes the whole card the drag handle and opens from click or keyboard", () => {
     const onOpen = vi.fn();
     const card = renderCard({ onOpen });
 
     expect(sortable.calls.at(-1)).toEqual({ id: "task:task-a", disabled: false });
     expect(props(card).role).toBe("button");
+    expect(props(card).tabIndex).toBe(0);
+    expect(props(card)["aria-label"]).toBe("Prepare release");
     expect(props(card).onPointerDown).toBeTypeOf("function");
 
-    const openButton = find(card, (node) => props(node).className === "task-card-open");
-    props(openButton).onClick({ currentTarget: "card-element" });
+    props(card).onClick({ currentTarget: "card-element" });
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: "task-a" }), "card-element");
+
+    const preventDefault = vi.fn();
+    props(card).onKeyDown({ key: "Enter", preventDefault, currentTarget: "card-element" });
+    expect(preventDefault).toHaveBeenCalled();
+    expect(onOpen).toHaveBeenCalledTimes(2);
+    expect(find(card, (node) => props(node).className === "task-card-body")).toBeTruthy();
   });
 
   it("disables sorting for viewers", () => {
@@ -102,5 +109,42 @@ describe("TaskCard", () => {
 
     props(input).onChange({});
     expect(onToggleSelect).toHaveBeenCalledWith("task-a");
+  });
+
+  it("opens a linked project from its badge without opening the card", () => {
+    const onOpen = vi.fn();
+    const onOpenProject = vi.fn();
+    const project = { id: "project-1", name: "Launch", color: "#5b5bd6" };
+    const card = render(
+      renderCard({
+        task: { projectId: project.id },
+        context: { projectsById: new Map([[project.id, project]]) },
+        onOpen,
+        onOpenProject,
+      })
+    );
+    const badge = find(card, (node) =>
+      String(props(node).className || "").includes("task-badge-project")
+    );
+    const stopPropagation = vi.fn();
+
+    expect(badge.type).toBe("button");
+    expect(props(badge).title).toBe("Open project");
+    props(badge).onClick({ stopPropagation });
+
+    expect(stopPropagation).toHaveBeenCalled();
+    expect(onOpenProject).toHaveBeenCalledWith(expect.objectContaining({ id: "task-a" }));
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("keeps the project badge non-interactive without a project handler", () => {
+    const card = render(
+      renderCard({ task: { projectId: "project-1", projectName: "Launch" } })
+    );
+    const badge = find(card, (node) =>
+      String(props(node).className || "").includes("task-badge-project")
+    );
+
+    expect(badge.type).toBe("span");
   });
 });

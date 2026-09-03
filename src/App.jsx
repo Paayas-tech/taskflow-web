@@ -1117,6 +1117,22 @@ function App() {
   const openProject = (projectId) =>
     navigate(projectPath(projectId, readProjectTab(projectId)));
 
+  /**
+   * "Go to project" from a task shown outside its project (My Tasks, Home,
+   * Calendar, Archived, the detail panel): close the global panel, ask the
+   * workspace to open the same task, then navigate to the project.
+   */
+  const openTaskInProject = (task) => {
+    if (!task?.projectId) return;
+    setSelectedTaskId(null);
+    setProjectItemOpenRequest({
+      projectId: task.projectId,
+      itemId: task.id,
+      request: Date.now(),
+    });
+    openProject(task.projectId);
+  };
+
   const openProfileSettings = () => {
     setProfileSettingsRequest((request) => request + 1);
     navigate("/settings");
@@ -1177,12 +1193,7 @@ function App() {
     }
     const task = item.task;
     if (task.projectId) {
-      setProjectItemOpenRequest({
-        projectId: task.projectId,
-        itemId: task.id,
-        request: Date.now(),
-      });
-      openProject(task.projectId);
+      openTaskInProject(task);
       return;
     }
     setSelectedTaskId(task.id);
@@ -1267,6 +1278,7 @@ function App() {
           projects={projects}
           taskActions={taskActions}
           onOpenTask={openTaskDetail}
+          onOpenProject={openTaskInProject}
           selectedTaskId={selectedTaskId}
           onNewTask={openComposer}
           formatSettings={settings.time}
@@ -1286,6 +1298,7 @@ function App() {
           onRetry={loadTasks}
           taskActions={taskActions}
           onOpenTask={openTaskDetail}
+          onOpenProject={openTaskInProject}
           selectedTaskId={selectedTaskId}
           onNewTask={openComposer}
           formatSettings={settings.time}
@@ -1404,6 +1417,7 @@ function App() {
           onRetry={loadTasks}
           taskActions={taskActions}
           onOpenTask={openTaskDetail}
+          onOpenProject={openTaskInProject}
           onBack={() => navigate("/settings")}
           projects={projects}
           formatSettings={settings.time}
@@ -1432,6 +1446,7 @@ function App() {
         notificationsLoading={notifications.loading}
         taskActions={taskActions}
         onOpenTask={openTaskDetail}
+        onOpenProject={openTaskInProject}
         selectedTaskId={selectedTaskId}
         onNewTask={openComposer}
         onNewProject={openProjectCreate}
@@ -1507,6 +1522,7 @@ function App() {
           projects={editableProjects}
           taskActions={taskActions}
           onClose={() => setSelectedTaskId(null)}
+          onOpenProject={openTaskInProject}
           formatSettings={settings.time}
           browserNotificationsEnabled={settings.reminder.enableBrowserNotifications}
           defaultReminderMinutes={settings.reminder.defaultTime}

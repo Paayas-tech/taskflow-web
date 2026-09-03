@@ -404,6 +404,19 @@ describe("MyTasksPage rows", () => {
     expect(props(projectRow).onArchive).toBeUndefined();
   });
 
+  it("forwards the go-to-project handler to every row and to the board", () => {
+    const onOpenProject = vi.fn();
+    const { tree } = mountPage({ onOpenProject });
+
+    expect(props(rows(tree())[0]).onOpenProject).toBe(onOpenProject);
+
+    storage.set(VIEW_KEY, "board");
+    const board = mountPage({ onOpenProject });
+    expect(
+      props(find(board.tree(), (node) => node.type === "task-board")).onOpenProject
+    ).toBe(onOpenProject);
+  });
+
   it("marks pending rows busy and highlights the selected task", () => {
     const { tree } = mountPage({
       selectedTaskId: "t-today",

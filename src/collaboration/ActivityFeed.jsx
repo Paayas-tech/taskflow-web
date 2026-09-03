@@ -149,7 +149,12 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
           {refreshing ? "Refreshing…" : "Refresh"}
         </Button>
       </div>
-      {liveNotice ? <InlineNotice tone="info">{liveNotice}</InlineNotice> : null}
+      {liveNotice ? (
+        <p className="collab-live-note muted" role="status">
+          <Icon name="info" size={14} />
+          {liveNotice}
+        </p>
+      ) : null}
       {refreshNotice ? <InlineNotice tone="success">{refreshNotice}</InlineNotice> : null}
       {loading ? (
         <p className="activity-state" role="status">
@@ -167,6 +172,8 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
         >
           {error}
         </InlineNotice>
+      ) : visible.length === 0 && compact ? (
+        <p className="activity-state">No activity yet</p>
       ) : visible.length === 0 ? (
         <EmptyState icon="activity" title="No activity yet" description="Changes show up here." />
       ) : (

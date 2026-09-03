@@ -71,6 +71,7 @@ const baseProps = (overrides = {}) => ({
   notifications: [],
   taskActions: { pendingIds: new Set(), createPersonal: vi.fn(), toggleComplete: vi.fn() },
   onOpenTask: vi.fn(),
+  onOpenProject: vi.fn(),
   onNewTask: vi.fn(),
   onNewProject: vi.fn(),
   onNavigate: vi.fn(),
@@ -151,6 +152,8 @@ describe("HomePage widgets", () => {
     const assigned = props(widget(tree, AssignedWidget));
     expect(assigned.userId).toBe("user-1");
     expect(assigned.context).toBe(myTasks.context);
+    expect(myTasks.onOpenProject).toBe(pageProps.onOpenProject);
+    expect(assigned.onOpenProject).toBe(pageProps.onOpenProject);
 
     const projectsWidget = props(widget(tree, ProjectsWidget));
     expect(projectsWidget.projects).toBe(pageProps.projects);

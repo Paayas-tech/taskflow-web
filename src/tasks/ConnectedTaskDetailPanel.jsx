@@ -12,6 +12,7 @@ export function ConnectedTaskDetailPanel({
   projects = [],
   taskActions,
   onClose,
+  onOpenProject,
   ...passthrough
 }) {
   const projectId = task?.projectId || null;
@@ -54,6 +55,7 @@ export function ConnectedTaskDetailPanel({
       contextLoading={context.loading}
       readOnly={readOnly}
       onClose={onClose}
+      onOpenProject={onOpenProject ? () => onOpenProject(task) : undefined}
       onUpdate={onUpdate}
       onToggleComplete={
         taskActions?.toggleComplete ? () => taskActions.toggleComplete(task) : undefined

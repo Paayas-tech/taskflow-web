@@ -23,7 +23,8 @@
   overflow: hidden;
 }
 
-.app-menu-toggle {
+.btn.app-menu-toggle {
+  display: none;
   position: absolute;
   top: 10px;
   left: var(--space-3);
@@ -432,6 +433,10 @@
 }
 
 @media (max-width: 899px) {
+  .btn.app-menu-toggle {
+    display: inline-flex;
+  }
+
   .app-shell,
   .app-shell.is-collapsed {
     grid-template-columns: minmax(0, 1fr);

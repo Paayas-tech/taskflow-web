@@ -37,6 +37,7 @@ export function BoardColumn({
   tasks = [],
   context,
   onOpen,
+  onOpenProject,
   onQuickCreate,
   onOpenDetails,
   readOnly = false,
@@ -107,6 +108,7 @@ export function BoardColumn({
                   task={task}
                   context={context}
                   onOpen={onOpen}
+                  onOpenProject={onOpenProject}
                   readOnly={readOnly}
                   selected={selectedTaskId === task.id}
                   selectable={selectable}
@@ -153,6 +155,7 @@ export function TaskBoard({
   context,
   onMove,
   onOpen,
+  onOpenProject,
   onQuickCreate,
   onOpenDetails,
   readOnly = false,
@@ -219,6 +222,7 @@ export function TaskBoard({
             tasks={tasksByColumn.get(column.id) || []}
             context={context}
             onOpen={onOpen}
+            onOpenProject={onOpenProject}
             onQuickCreate={onQuickCreate}
             onOpenDetails={onOpenDetails}
             readOnly={readOnly}

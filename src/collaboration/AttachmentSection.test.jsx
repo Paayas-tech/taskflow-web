@@ -189,4 +189,19 @@ describe("AttachmentSection row actions", () => {
     expect(findAll(tree, (node) => node.props?.className === "attachment-dropzone")).toHaveLength(1);
     expect(tree.props.onDrop).toBeTypeOf("function");
   });
+
+  it("uses one compact empty drop target instead of a second empty state", async () => {
+    service.list.mockResolvedValue([]);
+    const view = createRunner({
+      ...propsFor("task"),
+      allowDrop: true,
+      canManage: true,
+      compact: true,
+    });
+    const tree = await view.mount();
+
+    expect(text(tree)).toContain("Attachments");
+    expect(text(tree)).toContain("Drop a file here · 10 MB max");
+    expect(text(tree)).not.toContain("No attachments");
+  });
 });

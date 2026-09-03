@@ -16,6 +16,7 @@ export function AssignedWidget({
   context,
   taskActions,
   onOpenTask,
+  onOpenProject,
   selectedTaskId = null,
   onNavigate,
   todayKey,
@@ -55,6 +56,7 @@ export function AssignedWidget({
               selected={task.id === selectedTaskId}
               busy={Boolean(pendingIds?.has?.(task.id))}
               onOpen={onOpenTask}
+              onOpenProject={onOpenProject}
               onToggleComplete={taskActions?.toggleComplete}
               formatSettings={formatSettings}
             />

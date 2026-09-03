@@ -874,3 +874,136 @@ are assets, not components, and nothing bundles them.
 **Docs** — `README.md` gained a Routes table and lost the `/today` reference in the Vercel
 section; `CHANGELOG.md` gained the `v2.0.0 — UI redesign` entry. `vercel.json` enumerates
 no routes (one catch-all rewrite), so it needed no change.
+
+## F3 wiring
+
+Owned files: `src/App.jsx` (+test), `src/pages/{HomePage,MyTasksPage,CalendarPage,
+ArchivedTasksPage}.jsx` (+tests), `src/home/{MyTasksWidget,AssignedWidget}.jsx` (+tests)
+and `src/dev/*`. `src/project/*` and `ProjectWorkspacePage.jsx` needed no edit (see below).
+
+**`App.jsx` — `openTaskInProject(task)`.** New handler next to `openProject`: it no-ops
+for a personal task, otherwise clears `selectedTaskId` (closing the global panel), sets
+`projectItemOpenRequest = { projectId, itemId: task.id, request: Date.now() }` and
+navigates to `projectPath(projectId, readProjectTab(projectId))`, so the workspace opens
+the same task on its remembered tab. It is passed as **`onOpenProject`** to `HomePage`,
+`MyTasksPage`, `CalendarPage`, `ArchivedTasksPage` and `ConnectedTaskDetailPanel`.
+`handleSearchSelect` now delegates to it instead of repeating the request/navigate pair
+(the only behavior change there is that the global panel closes first).
+
+**Pages forward `onOpenProject` verbatim** to every `TaskRow` / `TaskBoard` they render:
+`HomePage` → `MyTasksWidget` + `AssignedWidget` → their rows; `MyTasksPage` → list rows
+**and** the board; `ArchivedTasksPage` → its rows; `CalendarPage` → the month view's day
+agenda rows, `undefined` for Google events (they have no project, and the row already
+drops `onToggleComplete` for them). **Nothing inside the project workspace passes it** —
+`ProjectWorkspacePage`, `ProjectBoardTab` and `ProjectListTab` are unchanged, since the
+viewer is already in the project.
+
+* **Still missing (for P2-a/P4 or whoever owns `src/calendar/*`):** `CalendarAgendaView`,
+  `CalendarWeekView` and `CalendarDayView` render their own `TaskRow`s and do not take
+  `onOpenProject`, so Week/Day/Agenda rows have no "go to project" affordance yet.
+  `CalendarPage` already holds the handler; forwarding it is a one-line change in each of
+  the three views plus the page.
+
+**Preview harness (`src/dev/*`) — three fixes.**
+
+* **Every sidebar project now opens** (feedback 4b). Root cause: `PreviewApp.navigate`
+  only read the *tab* out of `/projects/:id/:tab` and always rendered `PREVIEW_PROJECT`,
+  and the `Sidebar` was handed a constant `selectedProjectId`, so clicking any project
+  but the first looked inert. There is now a `previewProjectId` state; `navigate` parses
+  the id with `projectIdFromPath` / `projectTabFromPath` and `openProjectWorkspace(id,
+  tab)` falls back to the first fixture project for an unknown id (e.g. the invitation's
+  `project-nebula`). The `workspace-*` screens, the Overview `ProjectHeader`, the sidebar
+  highlight and `ProjectsPage.onOpenProject` all follow it, and `ProjectWorkspacePage` is
+  keyed by project id so a switch remounts cleanly.
+* **Theme follows the settings** (feedback 6). Root cause: `PreviewApp` wrote
+  `document.documentElement.dataset.theme` from its own `theme` state, so saving Theme in
+  the Settings screen changed `state.settings` and nothing else. The document theme is now
+  derived from `state.settings.theme.mode` through `resolveThemeMode` (same effect shape as
+  `App.jsx`, which was already correct and is untouched); the index Light/Dark button and
+  `?theme=dark` both write that field, and the URL param is kept in sync from it.
+* **`onOpenProject` is wired like `App.jsx`**: `openTaskInProject` sets a preview-level
+  `projectItemOpenRequest`, switches to that project's workspace screen and hands the
+  request to `ProjectWorkspacePage` as `openItemRequest`, so the workspace opens its own
+  panel on the task. `TaskDetailPanel` in the harness gets the `() => void` form.
+* **Fixtures**: `src/dev/fixtures.js` gained six tasks for Orbit and Atlas
+  (`otherProjectTasks`) so those two workspaces have a populated board and list. They are
+  deliberately **not** in the exported `tasks` array — that array stands in for App's
+  personal ∪ assigned-to-me list, and unassigned project work does not belong there.
+  `createPreviewWorkspaceLoader` already filtered by `projectId` and already returned the
+  shared `members` / `columns` for any project, so it needed no change.
+
+**Tests**: `App.test.jsx` gained a "go to project" describe (panel → request + navigation
+to the remembered tab; the handler reaching My Tasks, Calendar and Archived; a personal
+task navigating nowhere). Page and widget tests assert the prop is forwarded to the row /
+board. `src/dev/*` stays untested by design — it was verified by serving the app
+(`npx vite --port 5199`) and curling `/src/dev/PreviewApp.jsx`, `/src/App.jsx` and the
+edited pages for 200s.
+
+## F1 task panel
+
+`TaskDetailPanel` is now a 560px detail surface with a project/story breadcrumb, a visible
+auto-growing title and description, a compact two-column property grid when the panel is
+at least 520px wide, and separate Attachments and Activity sections. The old three-pill
+tab bar is gone; Activity uses a small `Comments | All` text switch. Personal tasks stop
+after Description. The project crumb becomes a button only when `onOpenProject` is wired,
+and `ConnectedTaskDetailPanel` binds the current task into that callback.
+
+The missing project-task title was CSS shrinkage, not bad task data: the panel body's flex
+items were allowed to collapse when collaboration content overflowed. Direct children no
+longer shrink, and both textareas also auto-grow from `scrollHeight`. Re-seeding now always
+resets dirty state when the task id changes while preserving an in-progress field across a
+refresh of the same task. Tests cover initial project titles, task switches, dirty refreshes
+and the project crumb contract.
+
+`TaskComments` and `ActivityFeed` show a failed live subscription as a muted informational
+line instead of a full notice. Attachment count propagation now preserves
+`(entityId, count)`, matching `ProjectWorkspacePage`'s cache callback.
+
+## F2 rows & cards
+
+`TaskRow`, `TaskCard` and `TaskBoard` accept `onOpenProject(task)`. A linked project's badge
+is a propagation-safe button when the callback exists and remains presentational otherwise.
+`TaskBoard` passes the callback through its columns to every card. The calendar Agenda view
+also forwards the handler to task rows (and deliberately omits it for Google events),
+resolving the F3 handoff note above; Week and Day events open the same detail panel, whose
+project crumb provides the project action.
+
+The whole `TaskCard` article is now mouse- and keyboard-activatable (Enter/Space), while
+bulk selection and project-badge controls remain isolated from open/drag behavior. Task
+rows establish an inline-size container and switch to a two-line title/badge/meta layout
+below 460px, with bounded badge overflow and no colliding metadata. Filter chips and their
+labels no longer shrink or wrap. The desktop menu toggle now wins over the generic `.btn`
+display rule in both `ui.css` and `shell.css`, with the mobile override restored below
+900px.
+
+## F4 project overview cleanup
+
+Removed the four headline statistic cards (Total, Completed, In progress and Overdue) from
+`ProjectOverviewTab`, including their loading placeholders and now-unused responsive CSS.
+The overview begins directly with its two-column content grid; the Status card retains the
+total count and distribution, while Overdue tasks retains the actionable overdue count.
+
+## F5 compact task collaboration
+
+The task panel's lower section is intentionally denser. `AttachmentSection compact` owns
+its heading, count and Upload action in one toolbar; an empty editable section renders one
+40px drop target and omits the duplicate illustrated empty state. Once files exist, the
+drop target disappears and the compact file list starts directly below the toolbar.
+
+`TaskComments compact` replaces its illustrated empty state with a muted line. The composer
+starts as a one-line, auto-growing input, moves member shortcuts into a `Mention` menu, and
+only reveals the character counter near the 4,000-character limit. `ActivityFeed compact`
+uses the same quiet empty-state treatment and limits the All feed to eight entries.
+
+## F6 narrow calendar row correction
+
+The task row itself now permits wrapping at every width, with a 4px row gap. Its existing
+460px container query can therefore move metadata onto a second line. A container cannot
+apply its own container-query rule to itself, so the previous `.task-row { flex-wrap:
+wrap }` inside that query never matched; the metadata's 100% basis instead squeezed the
+title column to zero and painted the due date over it in the calendar day agenda.
+
+The shared `.tab` primitive now explicitly resets its background to transparent. Without
+that reset, the browser's native button face showed through as four large gray blocks in
+dark mode; project tabs are once again quiet text/icon controls with the accent underline
+as the selected-state treatment.

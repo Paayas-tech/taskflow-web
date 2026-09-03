@@ -15,6 +15,7 @@ export default function ArchivedTasksPage({
   onRetry,
   taskActions,
   onOpenTask,
+  onOpenProject,
   onBack,
   projects = [],
   formatSettings,
@@ -118,6 +119,7 @@ export default function ArchivedTasksPage({
             context={context}
             busy={pendingTaskId === task.id}
             onOpen={onOpenTask}
+            onOpenProject={onOpenProject}
             onRestore={handleRestore}
             onDeletePermanently={setTaskToDelete}
             formatSettings={formatSettings}

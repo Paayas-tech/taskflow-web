@@ -83,6 +83,7 @@ const createProps = (overrides = {}) => ({
     createPersonal: vi.fn().mockResolvedValue({ id: "new-task" }),
   },
   onOpenTask: vi.fn(),
+  onOpenProject: vi.fn(),
   selectedTaskId: null,
   onNewTask: vi.fn(),
   formatSettings: { format: "24-hour", dateFormat: "YYYY-MM-DD" },
@@ -299,6 +300,7 @@ describe("CalendarPage day agenda", () => {
     expect(props(row).dense).toBe(true);
     expect(props(row).todayKey).toBe(todayKey);
     expect(props(row).context.projectsById.get("project-1").name).toBe("Launch");
+    expect(props(row).onOpenProject).toBe(pageProps.onOpenProject);
 
     props(row).onOpen(props(row).task, "row-element");
     expect(pageProps.onOpenTask).toHaveBeenCalledWith(
@@ -325,6 +327,7 @@ describe("CalendarPage day agenda", () => {
     expect(props(googleRow).task.title).toBe("Design sync");
     expect(props(googleRow).readOnly).toBe(true);
     expect(props(googleRow).onToggleComplete).toBeUndefined();
+    expect(props(googleRow).onOpenProject).toBeUndefined();
 
     props(googleRow).onOpen(props(googleRow).task, null);
     expect(openSpy).toHaveBeenCalledWith(

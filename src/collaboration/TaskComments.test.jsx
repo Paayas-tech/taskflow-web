@@ -71,9 +71,9 @@ describe("TaskComments structured mention UI", () => {
   it("offers only supplied project members and stores the selected member ID", async () => {
     const view = runner(() => TaskComments({ userId: "owner", taskId: "task", members: [memberA, memberB] }));
     let tree = view.render();
-    const mentionButtons = findAll(tree, (node) => node.type === "button" && text(node) === "@Alex");
-    expect(mentionButtons).toHaveLength(2);
-    mentionButtons[1].props.onClick();
+    const mentionItems = menuItems(tree);
+    expect(mentionItems.map((item) => item.label)).toEqual(["@Alex", "@Alex"]);
+    mentionItems[1].onSelect();
     tree = view.render();
     const textarea = byLabel(tree, "Write a comment");
     expect(textarea.props.value).toBe("@Alex ");

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import CommentRow from "./CommentRow";
-import { Button, EmptyState, InlineNotice, Spinner, Textarea } from "../ui";
+import { Button, EmptyState, Icon, InlineNotice, Menu, Spinner, Textarea } from "../ui";
 import { profileMap, safeDisplayName } from "../domain/identityDomain";
 import { insertMention, reconcileMentions, serializeMentionContent } from "../domain/mentionDomain";
 import {
@@ -17,7 +17,7 @@ const autoGrow = (element) => {
   element.style.height = `${element.scrollHeight}px`;
 };
 
-export default function TaskComments({ userId, taskId, members = [] }) {
+export default function TaskComments({ userId, taskId, members = [], compact = false }) {
   const [comments, setComments] = useState([]);
   const [content, setContent] = useState("");
   const [mentions, setMentions] = useState([]);
@@ -94,12 +94,19 @@ export default function TaskComments({ userId, taskId, members = [] }) {
 
   return (
     <section className="comment-thread" aria-label="Comments">
-      {liveNotice ? <InlineNotice tone="info">{liveNotice}</InlineNotice> : null}
+      {liveNotice ? (
+        <p className="collab-live-note muted" role="status">
+          <Icon name="info" size={14} />
+          {liveNotice}
+        </p>
+      ) : null}
       {loading ? (
         <p className="comment-thread-state" role="status">
           <Spinner size="sm" />
           Loading comments…
         </p>
+      ) : comments.length === 0 && compact ? (
+        <p className="comment-thread-state">No comments yet</p>
       ) : comments.length === 0 ? (
         <EmptyState
           icon="message-circle"
@@ -132,28 +139,38 @@ export default function TaskComments({ userId, taskId, members = [] }) {
           }}
           placeholder="Write a comment"
           aria-label="Write a comment"
-          rows={2}
+          rows={1}
           maxLength={4000}
           disabled={posting}
         />
-        {members.length > 0 ? (
-          <div className="menu comment-mentions" role="group" aria-label="Mention a project member">
-            {members.map((member) => (
-              <button
-                key={member.userId}
-                className="menu-item"
-                type="button"
-                onClick={() => addMention(member)}
-                disabled={posting}
-              >
-                @{safeDisplayName(member)}
-              </button>
-            ))}
-          </div>
-        ) : null}
         {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
         <div className="comment-composer-actions">
-          <span className="comment-counter">{String(content || "").length}/4000</span>
+          {members.length > 0 ? (
+            <Menu
+              className="comment-mention-menu"
+              align="start"
+              trigger={(triggerProps) => (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<Icon name="users" size={14} />}
+                  disabled={posting}
+                  {...triggerProps}
+                >
+                  Mention
+                </Button>
+              )}
+              items={members.map((member) => ({
+                id: member.userId,
+                label: `@${safeDisplayName(member)}`,
+                onSelect: () => addMention(member),
+              }))}
+            />
+          ) : null}
+          {String(content || "").length > 3600 ? (
+            <span className="comment-counter">{String(content || "").length}/4000</span>
+          ) : null}
+          <span className="toolbar-spacer" />
           <Button
             type="submit"
             variant="primary"

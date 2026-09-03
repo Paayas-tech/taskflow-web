@@ -70,7 +70,7 @@ describe("TaskDetailPanel header", () => {
     const runner = mount({ onToggleComplete });
     const header = headerOf(runner);
 
-    expect(textContent(find(header, (node) => props(node).className.includes("panel-breadcrumb")))).toBe(
+    expect(textContent(find(header, (node) => props(node).className === "panel-crumbs"))).toBe(
       "My tasks"
     );
     expect(textContent(header)).toContain("Mark complete");
@@ -84,8 +84,30 @@ describe("TaskDetailPanel header", () => {
     });
 
     expect(
-      textContent(find(headerOf(runner), (node) => props(node).className.includes("panel-breadcrumb")))
+      textContent(find(headerOf(runner), (node) => props(node).className === "panel-crumbs"))
     ).toBe("Launch › Billing");
+  });
+
+  it("turns the project crumb into a go-to-project button only when wired", () => {
+    const onOpenProject = vi.fn();
+    const projectTask = task({ projectId: "project-1", projectName: "Launch" });
+    const linked = mount({ task: projectTask, onOpenProject });
+    const crumb = find(
+      headerOf(linked),
+      (node) => node.type === "button" && props(node).className?.includes?.("panel-crumb-link")
+    );
+
+    expect(crumb).toBeTruthy();
+    props(crumb).onClick();
+    expect(onOpenProject).toHaveBeenCalledOnce();
+
+    const unlinked = mount({ task: projectTask });
+    expect(
+      find(
+        headerOf(unlinked),
+        (node) => node.type === "button" && props(node).className?.includes?.("panel-crumb-link")
+      )
+    ).toBeUndefined();
   });
 
   it("labels the button Completed once the task is done", () => {
@@ -114,6 +136,24 @@ describe("TaskDetailPanel header", () => {
 });
 
 describe("TaskDetailPanel auto-save", () => {
+  it("shows the stored title when a project task mounts", () => {
+    const runner = mount({ task: task({ projectId: "project-1", title: "Project title" }) });
+
+    expect(props(titleField(runner)).value).toBe("Project title");
+  });
+
+  it("re-seeds the title when the panel switches to another task", () => {
+    const runner = mount({ task: task({ projectId: "project-1", title: "First title" }) });
+
+    runner.render({
+      task: task({ id: "task-2", projectId: "project-1", title: "Second title" }),
+      onClose: vi.fn(),
+    });
+    runner.render();
+
+    expect(props(titleField(runner)).value).toBe("Second title");
+  });
+
   it("saves a trimmed title on Enter and reports the save state", async () => {
     const onUpdate = vi.fn().mockResolvedValue(undefined);
     const runner = mount({ onUpdate });
@@ -368,21 +408,27 @@ describe("TaskDetailPanel story and collaboration sections", () => {
     expect(textContent(render(panelOf(runner), 3))).toContain("1 of 2 tasks updated");
   });
 
-  it("gives project tasks comment, activity and attachment tabs", () => {
+  it("shows attachments and a small Comments/All activity switch for project tasks", () => {
     const runner = mount({ task: task({ projectId: "project-1" }), userId: "user-a" });
-    const tabs = find(render(panelOf(runner), 1), (node) => Array.isArray(props(node).items));
+    const body = render(panelOf(runner), 4);
+    const switcher = find(body, (node) => props(node).role === "tablist");
+    const tabs = findAll(switcher, (node) => props(node).role === "tab");
 
-    expect(props(tabs).items.map((item) => item.label)).toEqual([
-      "Comments",
-      "Activity",
-      "Attachments",
-    ]);
-    expect(textContent(render(panelOf(runner), 4))).toContain("comments");
+    expect(tabs.map((tab) => textContent(tab))).toEqual(["Comments", "All"]);
+    expect(textContent(body)).toContain("attachments");
+    expect(textContent(body)).toContain("comments");
+
+    props(tabs[1]).onClick();
+    runner.render();
+    expect(textContent(render(panelOf(runner), 4))).toContain("activity");
   });
 
-  it("shows no collaboration tabs for a personal task", () => {
+  it("shows no collaboration sections for a personal task", () => {
     const runner = mount({ userId: "user-a" });
+    const body = render(panelOf(runner), 4);
 
-    expect(find(render(panelOf(runner), 1), (node) => Array.isArray(props(node).items))).toBeUndefined();
+    expect(find(body, (node) => props(node).role === "tablist")).toBeUndefined();
+    expect(textContent(body)).not.toContain("attachments");
+    expect(textContent(body)).not.toContain("comments");
   });
 });

@@ -25,6 +25,7 @@ export function TaskCard({
   task,
   context = {},
   onOpen,
+  onOpenProject,
   selected = false,
   selectable = false,
   selectedForBulk = false,
@@ -39,14 +40,22 @@ export function TaskCard({
     id: `task:${task.id}`,
     disabled: readOnly,
   });
-  const { membersById } = context;
+  const { projectsById, membersById } = context;
   const completed = isTaskComplete(task);
   const dueDate = typeof task.dueDate === "string" ? task.dueDate.trim() : "";
   const dueLabel = formatDueLabel(dueDate, todayKey);
   const tone = dueDateTone(dueDate, todayKey, completed);
   const member = membersById?.get?.(task.assigneeId);
+  const project = task.projectId ? projectsById?.get?.(task.projectId) : null;
+  const projectName = project?.name || task.projectName || "";
   const assigneeName =
     task.assigneeName || (member ? safeDisplayName(member) : "TaskFlow user");
+
+  const open = (element) => onOpen?.(task, element);
+  const openProject = (event) => {
+    event.stopPropagation();
+    onOpenProject?.(task);
+  };
 
   return (
     <article
@@ -57,11 +66,21 @@ export function TaskCard({
         selected && "is-selected",
         completed && "is-complete",
         selectedForBulk && "is-bulk-selected",
+        readOnly && "is-read-only",
         className
       )}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes}
       {...listeners}
+      role="button"
+      tabIndex={0}
+      aria-label={task.title}
+      onClick={(event) => open(event.currentTarget)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        open(event.currentTarget);
+      }}
       {...rest}
     >
       {selectable ? (
@@ -74,14 +93,39 @@ export function TaskCard({
         </span>
       ) : null}
 
-      <button
-        type="button"
-        className="task-card-open"
-        onClick={(event) => onOpen?.(task, event.currentTarget)}
-        disabled={!onOpen}
-      >
+      <div className="task-card-body">
         <span className="task-card-title">{task.title}</span>
-      </button>
+      </div>
+
+      {projectName ? (
+        onOpenProject && task.projectId ? (
+          <button
+            type="button"
+            className="task-badge task-badge-project is-link"
+            title="Open project"
+            aria-label={`Open ${projectName} project`}
+            onClick={openProject}
+            onPointerDown={stopPointer}
+            onKeyDown={stopKeys}
+          >
+            <span
+              className="task-badge-dot"
+              style={{ backgroundColor: project?.color || "var(--color-accent)" }}
+              aria-hidden="true"
+            />
+            {projectName}
+          </button>
+        ) : (
+          <span className="task-badge task-badge-project" title={projectName}>
+            <span
+              className="task-badge-dot"
+              style={{ backgroundColor: project?.color || "var(--color-accent)" }}
+              aria-hidden="true"
+            />
+            {projectName}
+          </span>
+        )
+      ) : null}
 
       {task.storyName ? (
         <span className="task-badge task-badge-story" title={`Story: ${task.storyName}`}>

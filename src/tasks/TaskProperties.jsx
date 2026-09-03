@@ -112,7 +112,9 @@ export function TaskProperties({
   rows.push({
     id: "status",
     label: "Status",
+    labelIcon: <Icon name="circle-dot" />,
     icon: <StatusIcon status={values.status || "todo"} size={14} />,
+    slotIcon: <StatusIcon status={values.status || "todo"} size={14} />,
     control: (
       <Select
         id={`${fieldId}-status`}
@@ -133,7 +135,9 @@ export function TaskProperties({
   rows.push({
     id: "priority",
     label: "Priority",
+    labelIcon: <Icon name="flag" />,
     icon: <PriorityIcon priority={values.priority || "medium"} size={14} />,
+    slotIcon: <PriorityIcon priority={values.priority || "medium"} size={14} />,
     control: (
       <Select
         id={`${fieldId}-priority`}
@@ -154,6 +158,7 @@ export function TaskProperties({
   rows.push({
     id: "dueDate",
     label: "Due date",
+    labelIcon: <Icon name="calendar" />,
     icon: <Icon name="calendar" size={14} />,
     error: errors.dueDate,
     control: (
@@ -185,6 +190,7 @@ export function TaskProperties({
     rows.push({
       id: "assigneeId",
       label: "Assignee",
+      labelIcon: <Icon name="user" />,
       icon: values.assigneeId ? (
         <Avatar
           size="sm"
@@ -220,6 +226,7 @@ export function TaskProperties({
     rows.push({
       id: "storyId",
       label: "Story",
+      labelIcon: <Icon name="book" />,
       icon: <Icon name="book" size={14} />,
       control: (
         <Select
@@ -244,6 +251,7 @@ export function TaskProperties({
     rows.push({
       id: "projectId",
       label: "Project",
+      labelIcon: <Icon name="folder" />,
       icon: <Icon name="folder" size={14} />,
       error: errors.projectId,
       control: (
@@ -272,6 +280,7 @@ export function TaskProperties({
     rows.push({
       id: "reminder",
       label: "Reminder",
+      labelIcon: <Icon name="bell" />,
       icon: <Icon name="bell" size={14} />,
       error: presetError || reminderError,
       control: (
@@ -342,9 +351,23 @@ export function TaskProperties({
     <div className={cx("props", "props-grid", className)} {...rest}>
       {rows.map((row) => (
         <div className={cx("prop-row", `prop-row-${row.id}`)} key={row.id}>
-          <span className="prop-label">{row.label}</span>
+          <span className="prop-label">
+            <span className="prop-label-icon" aria-hidden="true">
+              {row.labelIcon}
+            </span>
+            <span className="prop-label-text">{row.label}</span>
+          </span>
           <div className="prop-control">
-            {row.control}
+            {row.slotIcon ? (
+              <span className="prop-select">
+                <span className="prop-select-icon" aria-hidden="true">
+                  {row.slotIcon}
+                </span>
+                {row.control}
+              </span>
+            ) : (
+              row.control
+            )}
             {row.error ? (
               <p className="prop-error" role="alert">
                 {row.error}

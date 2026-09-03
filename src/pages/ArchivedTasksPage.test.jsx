@@ -55,6 +55,7 @@ const mountPage = (overrides = {}) => {
     onRetry: vi.fn(),
     taskActions: buildActions(),
     onOpenTask: vi.fn(),
+    onOpenProject: vi.fn(),
     onBack: vi.fn(),
     projects: [],
     ...overrides,
@@ -106,6 +107,7 @@ describe("ArchivedTasksPage", () => {
     expect(props(first).onRestore).toBeTypeOf("function");
     expect(props(first).onDeletePermanently).toBeTypeOf("function");
     expect(props(first).onOpen).toBe(pageProps.onOpenTask);
+    expect(props(first).onOpenProject).toBe(pageProps.onOpenProject);
     expect(props(first).busy).toBe(false);
   });
 

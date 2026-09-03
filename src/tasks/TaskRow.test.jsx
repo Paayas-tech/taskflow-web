@@ -100,6 +100,36 @@ describe("TaskRow", () => {
     );
   });
 
+  it("opens a linked project from its badge without opening the row", () => {
+    const onOpen = vi.fn();
+    const onOpenProject = vi.fn();
+    const project = { id: "project-1", name: "Launch", color: "#5b5bd6" };
+    const row = render(
+      renderRow({
+        task: { projectId: project.id },
+        context: { projectsById: new Map([[project.id, project]]) },
+        onOpen,
+        onOpenProject,
+      })
+    );
+    const badge = find(row, (node) => hasClass(node, "task-badge-project"));
+    const stopPropagation = vi.fn();
+
+    expect(badge.type).toBe("button");
+    expect(props(badge).title).toBe("Open project");
+    props(badge).onClick({ stopPropagation });
+
+    expect(stopPropagation).toHaveBeenCalled();
+    expect(onOpenProject).toHaveBeenCalledWith(expect.objectContaining({ id: "task-1" }));
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it("keeps the project badge non-interactive without a project handler", () => {
+    const row = render(renderRow({ task: { projectId: "project-1", projectName: "Launch" } }));
+
+    expect(find(row, (node) => hasClass(node, "task-badge-project")).type).toBe("span");
+  });
+
   it("hides the project badge when the list is already scoped to one project", () => {
     const row = render(
       renderRow({

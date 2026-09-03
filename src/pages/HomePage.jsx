@@ -49,6 +49,7 @@ export function HomePage({
   notificationsLoading = false,
   taskActions,
   onOpenTask,
+  onOpenProject,
   selectedTaskId = null,
   onNewTask,
   onNewProject,
@@ -153,6 +154,7 @@ export function HomePage({
               context={context}
               taskActions={taskActions}
               onOpenTask={onOpenTask}
+              onOpenProject={onOpenProject}
               selectedTaskId={selectedTaskId}
               onNewTask={onNewTask}
               onNavigate={onNavigate}
@@ -168,6 +170,7 @@ export function HomePage({
               context={context}
               taskActions={taskActions}
               onOpenTask={onOpenTask}
+              onOpenProject={onOpenProject}
               selectedTaskId={selectedTaskId}
               onNavigate={onNavigate}
               todayKey={todayKey}

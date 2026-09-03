@@ -108,6 +108,13 @@ describe("MyTasksWidget", () => {
     expect(row.onToggleComplete).toBe(taskActions.toggleComplete);
   });
 
+  it("forwards the go-to-project handler to every row", () => {
+    const onOpenProject = vi.fn();
+    const tree = MyTasksWidget(baseProps({ onOpenProject }));
+
+    expect(props(rows(tree)[0]).onOpenProject).toBe(onOpenProject);
+  });
+
   it("creates a personal task due today from the quick add", async () => {
     const widgetProps = baseProps();
     const tree = MyTasksWidget(widgetProps);

@@ -404,10 +404,84 @@ export const tasks = [
   }),
 ];
 
-/** Apollo's board/list content: the two stories plus every Apollo task. */
+/**
+ * Work that only exists inside Orbit and Atlas. It is deliberately kept out of
+ * `tasks` (the personal ∪ assigned-to-me list App builds) so the other two
+ * project workspaces have a populated board without unassigned project work
+ * leaking into My Tasks.
+ */
+const otherProjectTasks = [
+  task("task-launch-post", {
+    title: "Write the launch announcement",
+    description: "Blog post plus the in-app changelog entry.",
+    status: "todo",
+    priority: "high",
+    dueDate: daysFromToday(3),
+    projectId: "project-orbit",
+    assigneeId: "user-priya",
+    assigneeName: "Priya Raman",
+    position: 0,
+    createdAt: isoFromToday(-12),
+    updatedAt: isoFromToday(-2),
+  }),
+  task("task-changelog-page", {
+    title: "Design the changelog page",
+    status: "in-progress",
+    priority: "medium",
+    dueDate: daysFromToday(8),
+    projectId: "project-orbit",
+    position: 1,
+    createdAt: isoFromToday(-15),
+    updatedAt: isoFromToday(-1),
+  }),
+  task("task-pricing-feedback", {
+    title: "Collect pricing feedback from the beta",
+    status: "todo",
+    priority: "low",
+    projectId: "project-orbit",
+    position: 2,
+    createdAt: isoFromToday(-5),
+    updatedAt: isoFromToday(-5),
+  }),
+  task("task-cold-start", {
+    title: "Fix the crash on cold start",
+    description: "Only reproduces on Android 13 after an update.",
+    status: "in-progress",
+    priority: "high",
+    dueDate: daysFromToday(-2),
+    projectId: "project-atlas",
+    assigneeId: "user-priya",
+    assigneeName: "Priya Raman",
+    position: 0,
+    createdAt: isoFromToday(-21),
+    updatedAt: isoFromToday(-1),
+  }),
+  task("task-release-checklist", {
+    title: "Update the 2.4 release checklist",
+    status: "todo",
+    priority: "medium",
+    dueDate: daysFromToday(5),
+    projectId: "project-atlas",
+    position: 1,
+    createdAt: isoFromToday(-9),
+    updatedAt: isoFromToday(-4),
+  }),
+  task("task-beta-triage", {
+    title: "Triage the beta feedback inbox",
+    status: "todo",
+    priority: "low",
+    projectId: "project-atlas",
+    position: 2,
+    createdAt: isoFromToday(-4),
+    updatedAt: isoFromToday(-4),
+  }),
+];
+
+/** Every project's board/list content: the two stories plus each project's tasks. */
 export const projectTasks = [
   ...stories,
   ...tasks.filter((item) => item.projectId === "project-apollo"),
+  ...otherProjectTasks,
 ];
 
 export const notifications = [

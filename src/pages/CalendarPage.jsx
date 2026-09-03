@@ -92,6 +92,7 @@ export function CalendarPage({
   onRetry,
   taskActions = {},
   onOpenTask,
+  onOpenProject,
   selectedTaskId = null,
   onNewTask,
   formatSettings = {},
@@ -395,6 +396,7 @@ export function CalendarPage({
                 readOnly={googleEvent}
                 formatSettings={formatSettings}
                 onOpen={openTask}
+                onOpenProject={googleEvent ? undefined : onOpenProject}
                 onToggleComplete={googleEvent ? undefined : toggleComplete}
               />
             );
@@ -427,6 +429,7 @@ export function CalendarPage({
           }}
           onToggleComplete={toggleComplete}
           onOpenTask={openTask}
+          onOpenProject={onOpenProject}
         />
       );
     }

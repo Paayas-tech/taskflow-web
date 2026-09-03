@@ -638,6 +638,65 @@ describe("App task data", () => {
   });
 });
 
+describe("App go to project", () => {
+  it("closes the panel, asks the workspace for the task and navigates there", async () => {
+    projectService.getProjects.mockResolvedValue([
+      { id: "project-a", name: "Launch", status: "active", viewerRole: "owner" },
+    ]);
+    projectService.getAssignedProjectTasks.mockResolvedValue([assignedTask()]);
+    window.localStorage.setItem("taskflow:project-tab:project-a", "list");
+    const runner = await mountApp();
+
+    const projectTask = captures.home.tasks[0];
+    captures.home.onOpenTask(projectTask);
+    runner.render();
+    expect(captures.panel.task.id).toBe("project-task-1");
+    expect(captures.panel.onOpenProject).toBe(captures.home.onOpenProject);
+
+    captures.panel.onOpenProject(projectTask);
+    runner.render();
+
+    expect(window.history.pushState).toHaveBeenCalledWith(
+      {},
+      "",
+      "/projects/project-a/list"
+    );
+    expect(captures.workspace.openItemRequest).toEqual(
+      expect.objectContaining({ projectId: "project-a", itemId: "project-task-1" })
+    );
+    expect(captures.workspace.projectId).toBe("project-a");
+  });
+
+  it("gives every task list a handler and ignores a personal task", async () => {
+    taskService.getTasks.mockResolvedValue([personalTask()]);
+    projectService.getProjects.mockResolvedValue([
+      { id: "project-a", name: "Launch", status: "active", viewerRole: "owner" },
+    ]);
+    const runner = await mountApp();
+
+    captures.home.onOpenProject(captures.home.tasks[0]);
+    runner.render();
+    expect(window.history.pushState).not.toHaveBeenCalled();
+
+    for (const [path, capture] of [
+      ["/tasks", "myTasks"],
+      ["/calendar", "calendar"],
+      ["/archived-tasks", "archived"],
+    ]) {
+      captures.sidebar.onNavigate(path);
+      runner.render();
+
+      captures[capture].onOpenProject({ id: "project-task-1", projectId: "project-a" });
+      runner.render();
+      expect(window.history.pushState).toHaveBeenLastCalledWith(
+        {},
+        "",
+        "/projects/project-a/overview"
+      );
+    }
+  });
+});
+
 describe("App task detail panel host", () => {
   it("opens the panel for the selected task and closes it when the task disappears", async () => {
     taskService.getTasks.mockResolvedValue([personalTask()]);

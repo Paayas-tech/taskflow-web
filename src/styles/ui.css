@@ -61,6 +61,7 @@
   margin-bottom: var(--space-4);
 }
 
+.btn.menu-toggle,
 .menu-toggle {
   display: none;
 }
@@ -476,6 +477,7 @@
   padding: 0 var(--space-2);
   border: 0;
   border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--color-text-2);
   font-size: var(--text-md);
   font-weight: 500;
@@ -1052,6 +1054,7 @@
 /* ---------- Small screens ---------- */
 
 @media (max-width: 899px) {
+  .btn.menu-toggle,
   .menu-toggle {
     display: inline-flex;
   }

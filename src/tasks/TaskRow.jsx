@@ -30,6 +30,7 @@ export function TaskRow({
   context = {},
   selected = false,
   onOpen,
+  onOpenProject,
   onToggleComplete,
   onArchive,
   onRestore,
@@ -61,6 +62,10 @@ export function TaskRow({
   const attachmentLabel = `${attachmentCount} ${attachmentCount === 1 ? "attachment" : "attachments"}`;
 
   const open = (element) => onOpen?.(task, element);
+  const openProject = (event) => {
+    event.stopPropagation();
+    onOpenProject?.(task);
+  };
 
   const menuItems = [
     onOpen && { id: "open", label: "Open", icon: <Icon name="external-link" />, onSelect: () => open(null) },
@@ -140,14 +145,32 @@ export function TaskRow({
         {(showProject && projectName) || (showStory && task.storyName) ? (
           <span className="task-row-badges">
             {showProject && projectName ? (
-              <span className="task-badge task-badge-project" title={projectName}>
-                <span
-                  className="task-badge-dot"
-                  style={{ backgroundColor: project?.color || "var(--color-accent)" }}
-                  aria-hidden="true"
-                />
-                {projectName}
-              </span>
+              onOpenProject && task.projectId ? (
+                <button
+                  type="button"
+                  className="task-badge task-badge-project is-link"
+                  title="Open project"
+                  aria-label={`Open ${projectName} project`}
+                  onClick={openProject}
+                  onKeyDown={stopKeys}
+                >
+                  <span
+                    className="task-badge-dot"
+                    style={{ backgroundColor: project?.color || "var(--color-accent)" }}
+                    aria-hidden="true"
+                  />
+                  {projectName}
+                </button>
+              ) : (
+                <span className="task-badge task-badge-project" title={projectName}>
+                  <span
+                    className="task-badge-dot"
+                    style={{ backgroundColor: project?.color || "var(--color-accent)" }}
+                    aria-hidden="true"
+                  />
+                  {projectName}
+                </span>
+              )
             ) : null}
             {showStory && task.storyName ? (
               <span className="task-badge task-badge-story" title={`Story: ${task.storyName}`}>

@@ -6,7 +6,6 @@ import { Checkbox } from "../ui/Field";
 import { Icon } from "../ui/icons";
 import { InlineNotice } from "../ui/InlineNotice";
 import { SidePanel } from "../ui/SidePanel";
-import { Tabs } from "../ui/Tabs";
 import { cx } from "../ui/cx";
 import ActivityFeed from "../collaboration/ActivityFeed";
 import AttachmentSection from "../collaboration/AttachmentSection";
@@ -27,6 +26,17 @@ const seedValues = (task) => ({
   assigneeId: task.assigneeId || "",
   assigneeName: task.assigneeName || "",
 });
+
+/**
+ * Grow a textarea to fit its content. `field-sizing: content` does the same in
+ * browsers that support it; this keeps the title and description readable
+ * everywhere else (and never leaves a collapsed, seemingly empty box).
+ */
+const autoGrow = (element) => {
+  if (!element?.style) return;
+  element.style.height = "auto";
+  element.style.height = `${element.scrollHeight}px`;
+};
 
 const savePatchFor = (patch, values) => {
   const saved = {};
@@ -76,6 +86,7 @@ export function TaskDetailPanel({
   onDelete,
   onSetAssignee,
   onClose,
+  onOpenProject,
   returnFocusElement,
   relatedTasks = [],
   onOpenRelatedTask,
@@ -100,15 +111,17 @@ export function TaskDetailPanel({
   const [confirmingStoryArchive, setConfirmingStoryArchive] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
-  const [activeTab, setActiveTab] = useState("comments");
-  const [attachmentCount, setAttachmentCount] = useState(() => Number(task.attachmentCount) || 0);
+  const [activityView, setActivityView] = useState("comments");
   const [selectedRelatedIds, setSelectedRelatedIds] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkMessage, setBulkMessage] = useState(null);
   const [relatedQuickAddOpen, setRelatedQuickAddOpen] = useState(false);
 
   const dirtyFieldRef = useRef(null);
+  const seededTaskIdRef = useRef(task.id);
   const lastPatchRef = useRef(null);
+  const titleRef = useRef(null);
+  const descriptionRef = useRef(null);
   const returnFocusRef = useRef(returnFocusElement);
   returnFocusRef.current = returnFocusElement;
 
@@ -118,22 +131,36 @@ export function TaskDetailPanel({
   const isPersonal = !task.projectId;
   const canCollaborate = Boolean(userId && task.projectId);
   const storyName = task.storyName || projectStories.find((story) => story.id === task.storyId)?.title || "";
-  const breadcrumb = task.projectId
-    ? [project?.name || task.projectName || "Project", !isStory && storyName ? storyName : null]
-        .filter(Boolean)
-        .join(" › ")
+  const projectCrumb = task.projectId
+    ? project?.name || task.projectName || "Project"
     : "My tasks";
+  const storyCrumb = !isStory && task.projectId ? storyName : "";
+  const canOpenProject = Boolean(onOpenProject && task.projectId);
   const allRelatedSelected =
     relatedTasks.length > 0 && relatedTasks.every((related) => selectedRelatedIds.has(related.id));
 
   useEffect(() => {
+    // A different task always wins; an edit in flight only survives a refresh of
+    // the task it belongs to, so switching tasks can never show a stale (or
+    // half-typed, or emptied) title.
+    const sameTask = seededTaskIdRef.current === task.id;
+    seededTaskIdRef.current = task.id;
+    if (!sameTask) {
+      dirtyFieldRef.current = null;
+      setTitleError("");
+    }
+    const dirty = dirtyFieldRef.current;
     const next = seedValues(task);
-    setValues((current) => {
-      const dirty = dirtyFieldRef.current;
-      if (!dirty) return next;
-      return { ...next, [dirty]: current[dirty] };
-    });
+    setValues((current) => (dirty ? { ...next, [dirty]: current[dirty] } : next));
   }, [task]);
+
+  useEffect(() => {
+    autoGrow(titleRef.current);
+  }, [values.title]);
+
+  useEffect(() => {
+    autoGrow(descriptionRef.current);
+  }, [values.description]);
 
   useEffect(() => {
     const visibleIds = new Set(relatedTasks.map((related) => related.id));
@@ -320,9 +347,8 @@ export function TaskDetailPanel({
     }
   };
 
-  const handleAttachmentCount = (count) => {
-    setAttachmentCount(count);
-    onAttachmentCountChange?.(count);
+  const handleAttachmentCount = (entityId, count) => {
+    onAttachmentCountChange?.(entityId, count);
   };
 
   const saveStateText =
@@ -336,9 +362,32 @@ export function TaskDetailPanel({
 
   const header = (
     <div className="panel-head">
-      <p className="panel-breadcrumb truncate" title={breadcrumb}>
-        {breadcrumb}
-      </p>
+      <div className="panel-crumbs">
+        {canOpenProject ? (
+          <button
+            type="button"
+            className="panel-crumb panel-crumb-link truncate"
+            title={projectCrumb}
+            onClick={() => onOpenProject()}
+          >
+            {projectCrumb}
+          </button>
+        ) : (
+          <span className="panel-crumb truncate" title={projectCrumb}>
+            {projectCrumb}
+          </span>
+        )}
+        {storyCrumb ? (
+          <>
+            <span className="panel-crumb-separator" aria-hidden="true">
+              ›
+            </span>
+            <span className="panel-crumb truncate" title={storyCrumb}>
+              {storyCrumb}
+            </span>
+          </>
+        ) : null}
+      </div>
       <div className="panel-head-actions">
         {readOnly ? (
           <Badge tone="neutral">View only</Badge>
@@ -346,9 +395,10 @@ export function TaskDetailPanel({
           <>
             {onToggleComplete ? (
               <Button
+                variant="secondary"
                 size="sm"
                 className={cx("panel-complete", completed && "is-complete")}
-                icon={<Icon name={completed ? "circle-check" : "circle"} />}
+                icon={<Icon name="check" />}
                 loading={completeBusy}
                 onClick={handleToggleComplete}
               >
@@ -397,37 +447,53 @@ export function TaskDetailPanel({
       >
         {lifecycleError ? <InlineNotice tone="error">{lifecycleError}</InlineNotice> : null}
 
-        <textarea
-          className="panel-title"
-          rows={1}
-          aria-label={isStory ? "Story title" : "Task title"}
-          value={values.title}
-          disabled={readOnly}
-          onChange={(event) => {
-            dirtyFieldRef.current = "title";
-            setTitleError("");
-            setValues((current) => ({ ...current, title: event.target.value }));
-          }}
-          onBlur={commitTitle}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              commitTitle();
-              return;
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              dirtyFieldRef.current = null;
-              setTitleError("");
-              setValues((current) => ({ ...current, title: task.title || "" }));
-            }
-          }}
-        />
-        {titleError ? (
-          <p className="panel-error" role="alert">
-            {titleError}
+        <div className="panel-heading">
+          <p className="panel-save-state" role="status" aria-live="polite">
+            {saveStateText}
+            {saveState === "error" ? (
+              <>
+                <span className="panel-save-error">{saveError}</span>
+                <Button variant="ghost" size="sm" onClick={retrySave}>
+                  Retry
+                </Button>
+              </>
+            ) : null}
           </p>
-        ) : null}
+
+          <textarea
+            ref={titleRef}
+            className="panel-title"
+            rows={1}
+            placeholder="Untitled task"
+            aria-label={isStory ? "Story title" : "Task title"}
+            value={values.title ?? ""}
+            disabled={readOnly}
+            onChange={(event) => {
+              dirtyFieldRef.current = "title";
+              setTitleError("");
+              setValues((current) => ({ ...current, title: event.target.value }));
+            }}
+            onBlur={commitTitle}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commitTitle();
+                return;
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                dirtyFieldRef.current = null;
+                setTitleError("");
+                setValues((current) => ({ ...current, title: task.title || "" }));
+              }
+            }}
+          />
+          {titleError ? (
+            <p className="panel-error" role="alert">
+              {titleError}
+            </p>
+          ) : null}
+        </div>
 
         <TaskProperties
           values={values}
@@ -443,26 +509,15 @@ export function TaskDetailPanel({
           onChange={handlePropertyChange}
         />
 
-        <p className="panel-save-state" role="status" aria-live="polite">
-          {saveStateText}
-          {saveState === "error" ? (
-            <>
-              <span className="panel-save-error">{saveError}</span>
-              <Button variant="ghost" size="sm" onClick={retrySave}>
-                Retry
-              </Button>
-            </>
-          ) : null}
-        </p>
-
         <label className="panel-description-field">
-          <span className="sr-only">Description</span>
+          <span className="panel-section-label">Description</span>
           <textarea
+            ref={descriptionRef}
             className="panel-description"
             placeholder="Add a description…"
             maxLength={1000}
             rows={3}
-            value={values.description}
+            value={values.description ?? ""}
             disabled={readOnly}
             onChange={(event) => {
               dirtyFieldRef.current = "description";
@@ -476,121 +531,145 @@ export function TaskDetailPanel({
         </label>
 
         {isStory ? (
-          <section className="panel-section" aria-label={`Tasks in ${task.title}`}>
-            <StoryProgress tasks={relatedTasks} columns={projectColumns} />
+          <>
+            <div className="divider" />
+            <section className="panel-section" aria-label={`Tasks in ${task.title}`}>
+              <StoryProgress tasks={relatedTasks} columns={projectColumns} />
 
-            <div className="panel-section-header">
-              <h3 className="section-title">Tasks</h3>
-              <span className="section-meta">{relatedTasks.length}</span>
-              {!readOnly && onBulkUpdateRelatedTasks && relatedTasks.length > 0 ? (
-                <Checkbox
-                  className="panel-select-all"
-                  label="Select all"
-                  checked={allRelatedSelected}
-                  disabled={bulkBusy}
-                  onChange={toggleAllRelated}
+              <div className="panel-section-header">
+                <h3 className="section-title">Tasks</h3>
+                <span className="section-meta">{relatedTasks.length}</span>
+                {!readOnly && onBulkUpdateRelatedTasks && relatedTasks.length > 0 ? (
+                  <Checkbox
+                    className="panel-select-all"
+                    label="Select all"
+                    checked={allRelatedSelected}
+                    disabled={bulkBusy}
+                    onChange={toggleAllRelated}
+                  />
+                ) : null}
+              </div>
+
+              {!readOnly && onBulkUpdateRelatedTasks ? (
+                <BulkActionBar
+                  selectedCount={selectedRelatedIds.size}
+                  members={projectMembers}
+                  stories={projectStories}
+                  currentStoryId={task.id}
+                  busy={bulkBusy}
+                  onAction={runBulkUpdate}
+                  onClear={() => {
+                    setSelectedRelatedIds(new Set());
+                    setBulkMessage(null);
+                  }}
                 />
               ) : null}
-            </div>
 
-            {!readOnly && onBulkUpdateRelatedTasks ? (
-              <BulkActionBar
-                selectedCount={selectedRelatedIds.size}
-                members={projectMembers}
-                stories={projectStories}
-                currentStoryId={task.id}
-                busy={bulkBusy}
-                onAction={runBulkUpdate}
-                onClear={() => {
-                  setSelectedRelatedIds(new Set());
-                  setBulkMessage(null);
-                }}
-              />
-            ) : null}
+              {bulkMessage ? (
+                <p
+                  className={cx("panel-bulk-message", bulkMessage.error && "is-error")}
+                  role={bulkMessage.error ? "alert" : "status"}
+                >
+                  {bulkMessage.text}
+                </p>
+              ) : null}
 
-            {bulkMessage ? (
-              <p
-                className={cx("panel-bulk-message", bulkMessage.error && "is-error")}
-                role={bulkMessage.error ? "alert" : "status"}
-              >
-                {bulkMessage.text}
-              </p>
-            ) : null}
+              <div className="row-list">
+                {relatedTasks.map((related) => (
+                  <TaskRow
+                    key={related.id}
+                    task={related}
+                    dense
+                    showProject={false}
+                    showStory={false}
+                    readOnly={readOnly}
+                    selectable={!readOnly && Boolean(onBulkUpdateRelatedTasks)}
+                    selectedForBulk={selectedRelatedIds.has(related.id)}
+                    onToggleSelect={toggleRelatedSelection}
+                    onOpen={onOpenRelatedTask ? (openedTask) => onOpenRelatedTask(openedTask) : undefined}
+                    todayKey={todayKey}
+                    formatSettings={formatSettings}
+                    context={{ membersById: new Map(projectMembers.map((member) => [member.userId, member])) }}
+                  />
+                ))}
+              </div>
 
-            <div className="row-list">
-              {relatedTasks.map((related) => (
-                <TaskRow
-                  key={related.id}
-                  task={related}
-                  dense
-                  showProject={false}
-                  showStory={false}
-                  readOnly={readOnly}
-                  selectable={!readOnly && Boolean(onBulkUpdateRelatedTasks)}
-                  selectedForBulk={selectedRelatedIds.has(related.id)}
-                  onToggleSelect={toggleRelatedSelection}
-                  onOpen={onOpenRelatedTask ? (openedTask) => onOpenRelatedTask(openedTask) : undefined}
-                  todayKey={todayKey}
-                  formatSettings={formatSettings}
-                  context={{ membersById: new Map(projectMembers.map((member) => [member.userId, member])) }}
-                />
-              ))}
-            </div>
-
-            {!readOnly && onCreateRelatedTask ? (
-              relatedQuickAddOpen ? (
-                <QuickAdd
-                  contextLabel={task.title}
-                  onCreate={(title) => onCreateRelatedTask(title)}
-                  onCancel={() => setRelatedQuickAddOpen(false)}
-                />
-              ) : (
-                <QuickAddTrigger onClick={() => setRelatedQuickAddOpen(true)} />
-              )
-            ) : null}
-          </section>
+              {!readOnly && onCreateRelatedTask ? (
+                relatedQuickAddOpen ? (
+                  <QuickAdd
+                    contextLabel={task.title}
+                    onCreate={(title) => onCreateRelatedTask(title)}
+                    onCancel={() => setRelatedQuickAddOpen(false)}
+                  />
+                ) : (
+                  <QuickAddTrigger onClick={() => setRelatedQuickAddOpen(true)} />
+                )
+              ) : null}
+            </section>
+          </>
         ) : null}
 
         {canCollaborate ? (
-          <section className="panel-section" aria-label="Task collaboration">
-            <Tabs
-              ariaLabel="Task detail sections"
-              value={activeTab}
-              onChange={setActiveTab}
-              items={[
-                { id: "comments", label: "Comments" },
-                { id: "activity", label: "Activity" },
-                { id: "attachments", label: "Attachments", count: attachmentCount },
-              ]}
-            />
-            {activeTab === "comments" ? (
-              <TaskComments userId={userId} taskId={task.id} members={projectMembers} />
-            ) : null}
-            {activeTab === "activity" ? (
-              <ActivityFeed
-                userId={userId}
-                projectId={task.projectId}
-                taskId={task.id}
-                includeComments={false}
-                members={projectMembers}
-              />
-            ) : null}
-            {activeTab === "attachments" ? (
+          <>
+            <div className="divider" />
+            <div className="panel-section panel-attachments">
               <AttachmentSection
                 projectId={task.projectId}
                 entityType={isStory ? "story" : "task"}
                 entityId={task.id}
                 userId={userId}
-                uploaderName={
-                  safeDisplayName(projectMembers.find((member) => member.userId === userId))
-                }
+                uploaderName={safeDisplayName(projectMembers.find((member) => member.userId === userId))}
                 canManage={!readOnly}
                 compact
                 allowDrop={!isStory}
                 onCountChange={handleAttachmentCount}
               />
-            ) : null}
-          </section>
+            </div>
+
+            <div className="divider" />
+            <section className="panel-section panel-activity" aria-label="Activity">
+              <div className="panel-section-header">
+                <h3 className="section-title">Activity</h3>
+                <div className="text-switch" role="tablist" aria-label="Activity view">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activityView === "comments"}
+                    className={cx("text-switch-option", activityView === "comments" && "is-active")}
+                    onClick={() => setActivityView("comments")}
+                  >
+                    Comments
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activityView === "all"}
+                    className={cx("text-switch-option", activityView === "all" && "is-active")}
+                    onClick={() => setActivityView("all")}
+                  >
+                    All
+                  </button>
+                </div>
+              </div>
+              {activityView === "comments" ? (
+                <TaskComments
+                  userId={userId}
+                  taskId={task.id}
+                  members={projectMembers}
+                  compact
+                />
+              ) : (
+                <ActivityFeed
+                  userId={userId}
+                  projectId={task.projectId}
+                  taskId={task.id}
+                  includeComments
+                  compact
+                  members={projectMembers}
+                />
+              )}
+            </section>
+          </>
         ) : null}
       </SidePanel>
 

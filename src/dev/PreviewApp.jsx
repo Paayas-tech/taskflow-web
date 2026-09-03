@@ -3,10 +3,14 @@
  * backend. `src/main.jsx` loads this file only when `import.meta.env.DEV`, so
  * none of `src/dev/*` reaches a production bundle.
  *
- * Pick a screen from the left index (or `?screen=<id>`); `?theme=dark` starts
- * in dark mode. Task actions resolve after 300ms and mutate fixture state, so
- * completing, editing, archiving and creating tasks all work. Screens that need
- * a real service (the project Overview tab) render a note instead.
+ * Pick a screen from the left index (or `?screen=<id>`); `?theme=dark` seeds
+ * `settings.theme.mode`, which is what the document theme is derived from — so
+ * the index toggle and the Settings screen switch the preview the same way.
+ * The four `workspace-*` screens follow the project last opened from the
+ * sidebar, the Projects page or search. Task actions resolve after 300ms and
+ * mutate fixture state, so completing, editing, archiving and creating tasks
+ * all work. Screens that need a real service (the project Overview tab) render
+ * a note instead.
  */
 
 import { Component, useEffect, useMemo, useRef, useState } from "react";
@@ -29,9 +33,9 @@ import Login from "../auth/Login";
 import Onboarding from "../auth/Onboarding";
 import ConfigurationErrorScreen from "../auth/ConfigurationErrorScreen";
 import { Button, Icon, IconButton, InlineNotice } from "../ui";
-import { projectPath } from "../app/appRoutes";
+import { projectIdFromPath, projectPath, projectTabFromPath } from "../app/appRoutes";
 import { dateOnlyKey, isArchived } from "../domain/taskDomain";
-import { weekStartIndex } from "../domain/settingsDomain";
+import { resolveThemeMode, weekStartIndex } from "../domain/settingsDomain";
 import {
   columns,
   createPreviewState,
@@ -262,12 +266,23 @@ function PreviewNote({ title, description, points = [] }) {
   );
 }
 
+/** `?theme=dark` seeds the same settings field the Settings screen writes. */
+const initialPreviewState = () => {
+  const initial = createPreviewState();
+  if (initialTheme !== "dark") return initial;
+  return {
+    ...initial,
+    settings: { ...initial.settings, theme: { ...initial.settings.theme, mode: "dark" } },
+  };
+};
+
 export default function PreviewApp() {
   const [screenId, setScreenId] = useState(initialScreenId);
-  const [theme, setTheme] = useState(initialTheme);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [state, setState] = useState(createPreviewState);
+  const [state, setState] = useState(initialPreviewState);
+  const [previewProjectId, setPreviewProjectId] = useState(PREVIEW_PROJECT.id);
+  const [projectItemOpenRequest, setProjectItemOpenRequest] = useState(null);
   const [panelTaskId, setPanelTaskId] = useState(null);
   const [composerValues, setComposerValues] = useState(null);
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
@@ -277,12 +292,33 @@ export default function PreviewApp() {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  /**
+   * The document theme comes from the settings the Settings screen saves, so
+   * changing Theme there switches the preview (the index toggle writes the same
+   * field). The URL keeps `?theme=dark` in sync for reloads and screenshots.
+   */
+  const themeMode = state.settings.theme.mode;
+
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const resolved = resolveThemeMode(themeMode, Boolean(mediaQuery?.matches));
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.style.colorScheme = resolved;
+    };
+
+    applyTheme();
+    if (themeMode !== "system") return undefined;
+
+    mediaQuery?.addEventListener?.("change", applyTheme);
+    return () => mediaQuery?.removeEventListener?.("change", applyTheme);
+  }, [themeMode]);
+
+  useEffect(() => {
     try {
       const url = new URL(window.location.href);
       url.searchParams.set("screen", screenId);
-      if (theme === "dark") url.searchParams.set("theme", "dark");
+      if (themeMode === "dark") url.searchParams.set("theme", "dark");
       else url.searchParams.delete("theme");
       if (barVisible) url.searchParams.delete("bar");
       else url.searchParams.set("bar", "0");
@@ -290,7 +326,7 @@ export default function PreviewApp() {
     } catch {
       /* the harness still works without history support */
     }
-  }, [barVisible, screenId, theme]);
+  }, [barVisible, screenId, themeMode]);
 
   useEffect(() => {
     const toggleBar = (event) => {
@@ -314,6 +350,9 @@ export default function PreviewApp() {
   );
 
   const screen = SCREENS.find((item) => item.id === screenId) || SCREENS[0];
+  const previewProject =
+    state.projects.find((project) => project.id === previewProjectId) || PREVIEW_PROJECT;
+  const workspaceTab = screen.view === "project" ? screen.id.replace("workspace-", "") : "board";
   const todayKey = dateOnlyKey(new Date());
   const activeTasks = state.tasks.filter((task) => !isArchived(task));
   const archivedTasks = state.tasks.filter((task) => isArchived(task));
@@ -360,10 +399,32 @@ export default function PreviewApp() {
     setScreenId(nextId);
   };
 
+  /**
+   * Opens the workspace for one fixture project. An unknown id (a project the
+   * fixtures do not carry) falls back to the first one so the screen still
+   * renders.
+   */
+  const openProjectWorkspace = (projectId, tab = "board") => {
+    const known = stateRef.current.projects.some((project) => project.id === projectId);
+    setPreviewProjectId(known ? projectId : PREVIEW_PROJECT.id);
+    selectScreen(SCREEN_IDS.has(`workspace-${tab}`) ? `workspace-${tab}` : "workspace-overview");
+  };
+
+  /** "Go to project" from a task row outside its project, as `App.jsx` wires it. */
+  const openTaskInProject = (task) => {
+    if (!task?.projectId) return;
+    setProjectItemOpenRequest({
+      projectId: task.projectId,
+      itemId: task.id,
+      request: Date.now(),
+    });
+    openProjectWorkspace(task.projectId);
+  };
+
   const selectSearchItem = (item) => {
     setSearchOpen(false);
-    if (item.type === "project") return selectScreen("workspace-board");
-    if (item.task?.projectId) return selectScreen("workspace-board");
+    if (item.type === "project") return openProjectWorkspace(item.project.id);
+    if (item.task?.projectId) return openTaskInProject(item.task);
     return setPanelTaskId(item.task?.id || null);
   };
 
@@ -375,9 +436,9 @@ export default function PreviewApp() {
     if (path === "/projects") return selectScreen("projects");
     if (path === "/settings") return selectScreen("settings");
     if (path === "/archived-tasks") return selectScreen("archived");
-    if (String(path).startsWith("/projects/")) {
-      const tab = String(path).split("/")[3] || "overview";
-      return selectScreen(SCREEN_IDS.has(`workspace-${tab}`) ? `workspace-${tab}` : "workspace-overview");
+    const projectId = projectIdFromPath(String(path));
+    if (projectId) {
+      return openProjectWorkspace(projectId, projectTabFromPath(String(path)));
     }
     return undefined;
   };
@@ -388,6 +449,13 @@ export default function PreviewApp() {
 
   const openTask = (task) => {
     if (task?.id) setPanelTaskId(task.id);
+  };
+
+  const setThemeMode = (mode) => {
+    setState((current) => ({
+      ...current,
+      settings: { ...current.settings, theme: { ...current.settings.theme, mode } },
+    }));
   };
 
   const saveSettings = async (nextSettings) => {
@@ -435,6 +503,7 @@ export default function PreviewApp() {
         onSetAssignee={(assigneeId) => taskActions.setAssignee(task, assigneeId)}
         onClose={() => (panelTaskId ? setPanelTaskId(null) : selectScreen("tasks-list"))}
         relatedTasks={relatedTasks}
+        onOpenProject={task.projectId ? () => openTaskInProject(task) : undefined}
         onOpenRelatedTask={(related) => setPanelTaskId(related.id)}
         onCreateRelatedTask={(title) =>
           taskActions.createInProject(task.projectId, { title, storyId: task.id })
@@ -458,6 +527,7 @@ export default function PreviewApp() {
       notifications={empty ? [] : state.notifications}
       taskActions={taskActions}
       onOpenTask={openTask}
+      onOpenProject={openTaskInProject}
       selectedTaskId={panelTaskId}
       onNewTask={openComposer}
       onNewProject={() => setProjectDialogOpen(true)}
@@ -473,6 +543,7 @@ export default function PreviewApp() {
       projects={empty ? [] : state.projects}
       taskActions={taskActions}
       onOpenTask={openTask}
+      onOpenProject={openTaskInProject}
       selectedTaskId={panelTaskId}
       onNewTask={openComposer}
       formatSettings={formatSettings}
@@ -487,7 +558,7 @@ export default function PreviewApp() {
       onCreateProject={projectActions.create}
       onUpdateProject={projectActions.update}
       onDeleteProject={projectActions.remove}
-      onOpenProject={() => selectScreen("workspace-board")}
+      onOpenProject={(projectId) => openProjectWorkspace(projectId)}
       invitations={empty ? [] : state.invitations}
       onAcceptInvitation={invitationActions.accept}
       onDeclineInvitation={invitationActions.decline}
@@ -496,12 +567,14 @@ export default function PreviewApp() {
 
   const renderWorkspace = (tab) => (
     <ProjectWorkspacePage
+      key={previewProject.id}
       userId={user.uid}
-      projectId={PREVIEW_PROJECT.id}
-      project={PREVIEW_PROJECT}
+      projectId={previewProject.id}
+      project={previewProject}
       projects={state.projects}
       tab={tab}
       onTabChange={(next) => selectScreen(`workspace-${next}`)}
+      openItemRequest={projectItemOpenRequest}
       onProjectTasksChanged={() => {}}
       onUpdateProject={projectActions.update}
       onDeleteProject={projectActions.remove}
@@ -525,6 +598,7 @@ export default function PreviewApp() {
             externalEvents={[]}
             taskActions={taskActions}
             onOpenTask={openTask}
+            onOpenProject={openTaskInProject}
             selectedTaskId={panelTaskId}
             onNewTask={openComposer}
             formatSettings={formatSettings}
@@ -552,6 +626,7 @@ export default function PreviewApp() {
             tasks={archivedTasks}
             taskActions={taskActions}
             onOpenTask={openTask}
+            onOpenProject={openTaskInProject}
             onBack={() => selectScreen("settings")}
             projects={state.projects}
           />
@@ -581,14 +656,14 @@ export default function PreviewApp() {
           <div className="page workspace">
             <ProjectHeader
               userId={user.uid}
-              project={PREVIEW_PROJECT}
+              project={previewProject}
               members={members}
               stories={stories}
               tab="overview"
               onTabChange={(next) => selectScreen(`workspace-${next}`)}
               canEdit
-              onNewTask={() => openComposer({ projectId: PREVIEW_PROJECT.id })}
-              onNewStory={() => openComposer({ projectId: PREVIEW_PROJECT.id })}
+              onNewTask={() => openComposer({ projectId: previewProject.id })}
+              onNewStory={() => openComposer({ projectId: previewProject.id })}
               onUpdateProject={projectActions.update}
               onDeleteProject={projectActions.remove}
               onBack={() => selectScreen("projects")}
@@ -732,10 +807,10 @@ export default function PreviewApp() {
           <Button
             size="sm"
             variant="ghost"
-            icon={<Icon name={theme === "dark" ? "sun" : "moon"} />}
-            onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            icon={<Icon name={themeMode === "dark" ? "sun" : "moon"} />}
+            onClick={() => setThemeMode(themeMode === "dark" ? "light" : "dark")}
           >
-            {theme === "dark" ? "Light" : "Dark"}
+            {themeMode === "dark" ? "Light" : "Dark"}
           </Button>
           <IconButton
             size="sm"
@@ -778,12 +853,12 @@ export default function PreviewApp() {
                 onToggleCollapsed={() => setCollapsed((current) => !current)}
                 currentPath={
                   screen.view === "project"
-                    ? projectPath(PREVIEW_PROJECT.id, screen.id.replace("workspace-", ""))
+                    ? projectPath(previewProject.id, workspaceTab)
                     : screen.path || "/"
                 }
                 currentView={screen.view || "home"}
                 projects={state.projects}
-                selectedProjectId={screen.view === "project" ? PREVIEW_PROJECT.id : null}
+                selectedProjectId={screen.view === "project" ? previewProject.id : null}
                 unreadCount={unreadCount}
                 invitationCount={state.invitations.length}
                 onNavigate={navigate}

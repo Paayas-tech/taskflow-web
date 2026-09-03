@@ -131,12 +131,10 @@ export default function AttachmentSection({
       {...dropHandlers}
     >
       <div className="attachment-toolbar">
-        {compact ? null : (
-          <h3 className="section-title">
-            Attachments
-            <span className="section-meta">{attachments.length}</span>
-          </h3>
-        )}
+        <h3 className="section-title">Attachments</h3>
+        {attachments.length > 0 ? (
+          <span className="section-meta">{attachments.length}</span>
+        ) : null}
         <span className="toolbar-spacer" />
         {canManage ? (
           <>
@@ -162,8 +160,11 @@ export default function AttachmentSection({
         ) : null}
       </div>
 
-      {allowDrop && canManage ? (
-        <p className="attachment-dropzone">Drop a file here, or choose Upload. 10 MB max.</p>
+      {allowDrop && canManage && (!compact || (!loading && attachments.length === 0)) ? (
+        <p className="attachment-dropzone">
+          {compact ? <Icon name="paperclip" size={14} /> : null}
+          <span>{compact ? "Drop a file here · 10 MB max" : "Drop a file here, or choose Upload. 10 MB max."}</span>
+        </p>
       ) : null}
       {uploadingName ? (
         <InlineNotice tone="info">{`Uploading ${uploadingName}…`}</InlineNotice>
@@ -183,6 +184,8 @@ export default function AttachmentSection({
 
       {loading ? (
         <p className="attachment-state" role="status">Loading attachments…</p>
+      ) : attachments.length === 0 && compact ? (
+        allowDrop && canManage ? null : <p className="attachment-state">No attachments</p>
       ) : attachments.length === 0 ? (
         <EmptyState
           icon="paperclip"

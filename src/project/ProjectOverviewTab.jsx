@@ -58,14 +58,6 @@ function OverviewSkeleton() {
       role="status"
       aria-label="Loading project overview"
     >
-      <div className="overview-stats">
-        {[0, 1, 2, 3].map((index) => (
-          <div className="stat" key={index}>
-            <span className="skeleton overview-skeleton-value" />
-            <span className="skeleton overview-skeleton-line" />
-          </div>
-        ))}
-      </div>
       <div className="overview-grid">
         {[0, 1].map((column) => (
           <div className="stack-4" key={column}>
@@ -116,8 +108,8 @@ function OverviewTaskRow({ task, dateValue, tone, statusBadge = false, onOpenTas
 }
 
 /**
- * Project overview tab: headline metrics, status distribution, overdue and
- * recently completed work, project details and members.
+ * Project overview tab: status distribution, overdue and recently completed
+ * work, project details and members.
  */
 export function ProjectOverviewTab({
   userId,
@@ -206,13 +198,6 @@ export function ProjectOverviewTab({
   const visibleMembers = members.slice(0, MEMBER_LIMIT);
   const hiddenMembers = members.length - visibleMembers.length;
 
-  const stats = [
-    { id: "total", label: "Total", value: metrics.total },
-    { id: "completed", label: "Completed", value: metrics.completed },
-    { id: "in-progress", label: "In progress", value: metrics.inProgress },
-    { id: "overdue", label: "Overdue", value: metrics.overdue, danger: metrics.overdue > 0 },
-  ];
-
   return (
     <section className="overview-tab" aria-label="Project overview">
       {healthError ? (
@@ -220,15 +205,6 @@ export function ProjectOverviewTab({
           {healthError}
         </InlineNotice>
       ) : null}
-
-      <div className="overview-stats">
-        {stats.map((stat) => (
-          <div className={cx("stat", stat.danger && "is-danger")} key={stat.id}>
-            <span className="stat-value">{stat.value}</span>
-            <span className="stat-label">{stat.label}</span>
-          </div>
-        ))}
-      </div>
 
       <div className="overview-grid">
         <div className="stack-4">

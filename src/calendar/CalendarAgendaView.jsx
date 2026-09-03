@@ -32,6 +32,7 @@ export function CalendarAgendaView({
   onSelectDate,
   onToggleComplete,
   onOpenTask,
+  onOpenProject,
   formatSettings = {},
 }) {
   const groups = useMemo(
@@ -111,6 +112,7 @@ export function CalendarAgendaView({
                         readOnly={googleEvent}
                         formatSettings={formatSettings}
                         onOpen={onOpenTask}
+                        onOpenProject={googleEvent ? undefined : onOpenProject}
                         onToggleComplete={googleEvent ? undefined : onToggleComplete}
                       />
                     </div>

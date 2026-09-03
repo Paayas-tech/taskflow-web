@@ -256,6 +256,7 @@ describe("CalendarAgendaView", () => {
     onSelectDate: vi.fn(),
     onToggleComplete: vi.fn(),
     onOpenTask: vi.fn(),
+    onOpenProject: vi.fn(),
     formatSettings,
     ...overrides,
   });
@@ -285,8 +286,10 @@ describe("CalendarAgendaView", () => {
     expect(props(today).selected).toBe(true);
     expect(props(today).busy).toBe(true);
     expect(props(today).context.projectsById.get("project-1").name).toBe("Launch");
+    expect(props(today).onOpenProject).toBeTypeOf("function");
     expect(props(google).readOnly).toBe(true);
     expect(props(google).onToggleComplete).toBeUndefined();
+    expect(props(google).onOpenProject).toBeUndefined();
   });
 
   it("shows the schedule time beside each row and selects a date group", () => {

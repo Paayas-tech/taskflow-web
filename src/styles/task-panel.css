@@ -11,10 +11,38 @@
   min-width: 0;
 }
 
-.panel-breadcrumb {
+.panel-crumbs {
+  display: flex;
   flex: 1;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
   color: var(--color-text-3);
   font-size: var(--text-md);
+}
+
+.panel-crumb {
+  min-width: 0;
+  max-width: 220px;
+}
+
+.panel-crumb-link {
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  transition: color var(--transition);
+}
+
+.panel-crumb-link:hover {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
+.panel-crumb-separator {
+  flex: none;
 }
 
 .panel-head-actions {
@@ -38,8 +66,29 @@
   gap: var(--space-4);
 }
 
+.task-panel {
+  container-type: inline-size;
+}
+
+/* Every block sizes itself. Without this, a body taller than the panel shrinks
+   its children (flex items default to `flex-shrink: 1`), and a textarea — a
+   scroll container, so its automatic minimum size is 0 — collapses to an empty
+   strip. That is what emptied `.panel-title` on project tasks, whose comments
+   and attachments make the body overflow. */
+.task-panel .side-panel-body > * {
+  flex: none;
+}
+
+.panel-heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 .panel-title {
   width: 100%;
+  min-height: 26px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -48,8 +97,16 @@
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.01em;
+  /* The auto-grow effect in TaskDetailPanel owns the height; `field-sizing`
+     keeps it right in browsers that support it even before the effect runs. */
+  overflow: hidden;
   resize: none;
   field-sizing: content;
+}
+
+.panel-title::placeholder {
+  color: var(--color-text-3);
+  font-weight: 500;
 }
 
 .panel-title:disabled {
@@ -65,7 +122,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 18px;
+  min-height: 16px;
   color: var(--color-text-3);
   font-size: var(--text-sm);
 }
@@ -74,15 +131,22 @@
   color: var(--color-danger);
 }
 
+.panel-section-label {
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
 .panel-description-field {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  min-width: 0;
 }
 
 .panel-description {
   width: 100%;
-  min-height: 72px;
+  min-height: 56px;
   padding: var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -90,16 +154,19 @@
   color: var(--color-text);
   font-size: var(--text-base);
   line-height: var(--leading);
-  resize: vertical;
+  overflow: hidden;
+  resize: none;
   field-sizing: content;
+  transition: background-color var(--transition), border-color var(--transition);
 }
 
 .panel-description:hover:not(:disabled) {
-  border-color: var(--color-border);
+  background-color: var(--color-surface-2);
 }
 
 .panel-description:focus {
-  border-color: var(--color-border-strong);
+  border-color: var(--color-accent);
+  background-color: var(--color-surface);
 }
 
 .panel-char-count {
@@ -112,8 +179,21 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border);
+  min-width: 0;
+}
+
+.task-panel .panel-attachments,
+.task-panel .panel-activity {
+  gap: var(--space-2);
+}
+
+.task-panel .comment-thread,
+.task-panel .comment-list {
+  gap: var(--space-3);
+}
+
+.task-panel .comment {
+  gap: var(--space-2);
 }
 
 .panel-section-header {
@@ -136,25 +216,88 @@
   color: var(--color-danger);
 }
 
+/* Two text buttons instead of a pill tab bar (Comments | All). */
+.text-switch {
+  display: inline-flex;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+.text-switch-option {
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: none;
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: color var(--transition);
+}
+
+.text-switch-option:hover {
+  color: var(--color-text-2);
+}
+
+.text-switch-option.is-active {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+/* The panel names the Activity section itself, so the feed's own heading would
+   read twice (src/styles/collaboration.css belongs to another package). */
+.task-panel .activity-feed .activity-header {
+  justify-content: flex-end;
+}
+
+.task-panel .activity-feed .activity-header .section-title {
+  display: none;
+}
+
+/* ---------- Live-updates note ----------
+   src/collaboration/TaskComments.jsx and ActivityFeed.jsx render this line in
+   place of a full notice box; collaboration.css belongs to another package. */
+
+.collab-live-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-md);
+}
+
 /* ---------- Property grid ---------- */
 
 .props-grid {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  --prop-label-w: 112px;
+
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1) var(--space-4);
 }
 
 .prop-row {
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
+  grid-template-columns: var(--prop-label-w) minmax(0, 1fr);
   align-items: center;
   gap: var(--space-2);
   min-height: var(--control-h);
 }
 
 .prop-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
   color: var(--color-text-3);
   font-size: var(--text-sm);
+}
+
+.prop-label-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.prop-label-text {
+  min-width: 0;
 }
 
 .prop-control {
@@ -169,10 +312,61 @@
   width: 100%;
 }
 
+/* Controls read as text until they are touched. */
+.props-grid .select,
+.props-grid .input {
+  border-color: transparent;
+  background-color: transparent;
+  font-size: var(--text-md);
+}
+
+.props-grid .select:hover:not(:disabled),
+.props-grid .input:hover:not(:disabled) {
+  background-color: var(--color-surface-2);
+}
+
+.props-grid .select:focus,
+.props-grid .input:focus {
+  border-color: var(--color-accent);
+  background-color: var(--color-surface);
+}
+
+.props-grid .select:disabled,
+.props-grid .input:disabled {
+  background-color: transparent;
+}
+
+.prop-select {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.prop-select-icon {
+  position: absolute;
+  top: 50%;
+  left: var(--space-2);
+  display: inline-flex;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.prop-select .select {
+  padding-left: 26px;
+}
+
 .prop-date {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+}
+
+.prop-date .input {
+  min-width: 0;
+}
+
+.prop-date .btn {
+  flex: none;
 }
 
 .prop-reminder {
@@ -185,6 +379,22 @@
 .prop-error {
   color: var(--color-danger);
   font-size: var(--text-sm);
+}
+
+/* Two property columns once the panel itself, rather than the viewport, is
+   wide enough for them. */
+@container (min-width: 520px) {
+  .task-panel .props-grid {
+    --prop-label-w: 96px;
+
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .task-panel .prop-row-storyId,
+  .task-panel .prop-row-projectId,
+  .task-panel .prop-row-reminder {
+    grid-column: 1 / -1;
+  }
 }
 
 /* ---------- Property chips (composer) ---------- */

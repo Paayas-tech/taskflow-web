@@ -51,14 +51,17 @@
 
 .task-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
   min-height: 40px;
   padding: var(--space-2) var(--space-3);
   background: var(--color-surface);
   text-align: left;
   cursor: pointer;
   transition: background var(--transition);
+  container-type: inline-size;
 }
 
 .task-row:hover {
@@ -85,13 +88,16 @@
 
 .task-row-main {
   display: flex;
-  flex: 1;
-  align-items: baseline;
+  flex: 1 1 auto;
+  align-items: center;
   gap: var(--space-2);
   min-width: 0;
+  flex-wrap: nowrap;
 }
 
 .task-row-title {
+  flex: 1 1 auto;
+  min-width: 60px;
   font-size: var(--text-base);
   color: var(--color-text);
 }
@@ -107,9 +113,11 @@
 
 .task-row-badges {
   display: inline-flex;
-  flex: none;
+  flex: 0 1 auto;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .task-badge {
@@ -124,7 +132,25 @@
   text-overflow: ellipsis;
 }
 
+button.task-badge {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+}
+
+.task-badge.is-link {
+  cursor: pointer;
+}
+
+.task-badge.is-link:hover {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
 .task-badge-dot {
+  flex: none;
   width: 8px;
   height: 8px;
   border-radius: var(--radius-full);
@@ -181,6 +207,25 @@
 .task-row:hover .task-row-menu,
 .task-row:focus-within .task-row-menu {
   opacity: 1;
+}
+
+@container (max-width: 460px) {
+  .task-row-main {
+    flex-basis: calc(100% - 40px);
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+  }
+
+  .task-row-title {
+    flex-basis: 100%;
+  }
+
+  .task-row-meta {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    padding-left: 28px;
+  }
 }
 
 /* ---------- Quick add ---------- */
@@ -341,6 +386,10 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.task-card:not(.is-read-only):hover {
   cursor: grab;
 }
 
@@ -362,10 +411,8 @@
   display: inline-flex;
 }
 
-.task-card-open {
-  padding: 0;
-  border: 0;
-  background: transparent;
+.task-card-body {
+  min-width: 0;
   text-align: left;
 }
 
@@ -431,6 +478,12 @@
   background: var(--color-surface);
   color: var(--color-text-2);
   font-size: var(--text-md);
+  flex: none;
+}
+
+.filter-select-label {
+  flex: none;
+  white-space: nowrap;
 }
 
 .filter-select.is-active {

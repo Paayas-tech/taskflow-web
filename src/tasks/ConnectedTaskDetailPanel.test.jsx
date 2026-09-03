@@ -106,6 +106,19 @@ describe("ConnectedTaskDetailPanel", () => {
     expect(props(panel).readOnly).toBe(true);
   });
 
+  it("binds the selected task into the go-to-project handler", () => {
+    const onOpenProject = vi.fn();
+    const panel = ConnectedTaskDetailPanel({
+      task: projectTask,
+      userId: "user-1",
+      taskActions: taskActions(),
+      onOpenProject,
+    });
+
+    props(panel).onOpenProject();
+    expect(onOpenProject).toHaveBeenCalledWith(projectTask);
+  });
+
   it("binds the task into every task action", async () => {
     const actions = taskActions();
     const panel = ConnectedTaskDetailPanel({
