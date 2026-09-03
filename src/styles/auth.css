@@ -1,0 +1,232 @@
+/* Auth screens: Login, Onboarding, Recover, AuthBrand and the configuration error screen. */
+
+.auth-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-6);
+  background: var(--color-bg);
+}
+
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 400px;
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.auth-card-centered {
+  align-items: center;
+  text-align: center;
+}
+
+.auth-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4) calc(-1 * var(--space-2));
+}
+
+.auth-step {
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+}
+
+/* ---------- Brand ---------- */
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+
+.auth-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+}
+
+.auth-wordmark {
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- Headings ---------- */
+
+.auth-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.auth-title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+.auth-subtitle {
+  margin-top: var(--space-1);
+  color: var(--color-text-2);
+  font-size: var(--text-md);
+}
+
+/* ---------- Mode switch ---------- */
+
+.auth-modes {
+  display: flex;
+  margin-top: var(--space-5);
+}
+
+.auth-modes .segmented-option {
+  flex: 1;
+  height: var(--control-h-sm);
+  justify-content: center;
+  font-size: var(--text-md);
+}
+
+/* ---------- Form ---------- */
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+
+.auth-submit {
+  width: 100%;
+  height: var(--control-h-lg);
+}
+
+.auth-forgot {
+  display: flex;
+  justify-content: flex-end;
+  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) 0 0;
+}
+
+.auth-otp-input {
+  height: var(--control-h-lg);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  letter-spacing: 0.4em;
+  text-align: center;
+  text-indent: 0.4em;
+}
+
+.auth-alt-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.auth-form + .auth-alt-actions {
+  margin-top: var(--space-4);
+}
+
+/* ---------- Onboarding choices ---------- */
+
+.choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.choice-card {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  text-align: left;
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.choice-card:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-2);
+}
+
+.choice-card.is-selected {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.choice-card-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-2);
+}
+
+.choice-card.is-selected .choice-card-icon {
+  background: var(--color-surface);
+  color: var(--color-accent-text);
+}
+
+.choice-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.choice-card-label {
+  color: var(--color-text);
+  font-size: var(--text-base);
+  font-weight: 500;
+}
+
+.choice-card-description {
+  color: var(--color-text-2);
+  font-size: var(--text-md);
+}
+
+.choice-card-check {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  margin-left: auto;
+  color: var(--color-accent);
+}
+
+/* ---------- Small screens ---------- */
+
+@media (max-width: 479px) {
+  .auth-page {
+    padding: var(--space-4);
+  }
+
+  .auth-card {
+    padding: var(--space-5);
+  }
+}

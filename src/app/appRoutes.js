@@ -1,135 +1,92 @@
+/**
+ * Routing table for the TaskFlow shell: sidebar navigation, path normalization,
+ * project paths (with their tab) and the document title for a view.
+ */
+
 export const navigationItems = [
-  { label: "For you", path: "/for-you", enabled: true, icon: "for-you", group: "workspace" },
-  { label: "Recent", path: "/recent", enabled: true, icon: "recent", group: "workspace" },
-  { label: "Starred", path: "/starred", enabled: true, icon: "starred", group: "workspace" },
-  { label: "Timeline", path: "/planning/timeline", enabled: true, icon: "timeline", group: "planning" },
-  { label: "Board", path: "/planning/board", enabled: true, icon: "board", group: "planning" },
-  { label: "Lists", path: "/planning/lists", enabled: true, icon: "lists", group: "planning" },
-  { label: "Goals", path: "/planning/goals", enabled: true, icon: "goals", group: "planning" },
-  { label: "Issues", path: "/planning/issues", enabled: true, icon: "issues", group: "planning" },
-  { label: "Dashboard", path: "/", enabled: true, icon: "dashboard" },
-  { label: "Inbox", path: "/inbox", enabled: true, icon: "inbox" },
-  { label: "My Tasks", path: "/tasks", enabled: true, icon: "tasks" },
-  { label: "Projects", path: "/projects", enabled: true, icon: "projects" },
-  { label: "Calendar", path: "/calendar", enabled: true, icon: "calendar" },
-  { label: "Reminders", enabled: false, icon: "reminders" },
-  { label: "Settings", path: "/settings", enabled: true, icon: "settings" },
+  { label: "Home", path: "/", icon: "home" },
+  { label: "My Tasks", path: "/tasks", icon: "check-square" },
+  { label: "Calendar", path: "/calendar", icon: "calendar" },
+  { label: "Inbox", path: "/inbox", icon: "inbox" },
+  { label: "Projects", path: "/projects", icon: "folders" },
 ];
 
 export const routeViews = {
-  "/": "dashboard",
-  "/for-you": "for-you",
-  "/recent": "recent",
-  "/starred": "starred",
-  "/planning/timeline": "planning-timeline",
-  "/planning/board": "planning-board",
-  "/planning/lists": "planning-lists",
-  "/planning/goals": "planning-goals",
-  "/planning/issues": "planning-issues",
-  "/inbox": "inbox",
+  "/": "home",
   "/tasks": "tasks",
-  "/calendar": "tasks",
+  "/calendar": "calendar",
+  "/inbox": "inbox",
   "/projects": "projects",
   "/settings": "settings",
   "/archived-tasks": "archived",
   "/recover": "recover",
 };
 
-export const projectIdFromPath = (pathname) => {
-  if (!pathname.startsWith("/projects/")) return null;
+/** Tabs of the project workspace, in the order the header shows them. */
+export const projectTabs = ["overview", "board", "list", "stories"];
 
-  const segments = pathname.slice("/projects/".length).split("/");
-  if (!segments[0] || segments.length > 2 || (segments[1] && segments[1] !== "overview")) return null;
-  const encodedProjectId = segments[0];
+const PROJECTS_PREFIX = "/projects/";
+
+const projectSegments = (pathname) =>
+  typeof pathname === "string" && pathname.startsWith(PROJECTS_PREFIX)
+    ? pathname.slice(PROJECTS_PREFIX.length).split("/")
+    : null;
+
+export const projectIdFromPath = (pathname) => {
+  const segments = projectSegments(pathname);
+  if (!segments || !segments[0]) return null;
 
   try {
-    const projectId = decodeURIComponent(encodedProjectId);
+    const projectId = decodeURIComponent(segments[0]);
     return projectId && !projectId.includes("/") ? projectId : null;
   } catch {
     return null;
   }
 };
 
-export const projectPath = (projectId) =>
-  `/projects/${encodeURIComponent(projectId)}`;
-export const projectOverviewPath = (projectId) => `${projectPath(projectId)}/overview`;
+export const projectTabFromPath = (pathname) => {
+  if (!projectIdFromPath(pathname)) return "overview";
+  const tab = projectSegments(pathname)?.[1];
+  return projectTabs.includes(tab) ? tab : "overview";
+};
+
+export const projectPath = (projectId, tab = "overview") =>
+  `${PROJECTS_PREFIX}${encodeURIComponent(projectId)}/${
+    projectTabs.includes(tab) ? tab : "overview"
+  }`;
 
 export const normalizePath = (pathname) => {
   const withoutTrailingSlash =
     pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
-  if (withoutTrailingSlash === "/today") return "/";
-  if (withoutTrailingSlash === "/plans") return "/planning/timeline";
   if (routeViews[withoutTrailingSlash]) return withoutTrailingSlash;
 
   const projectId = projectIdFromPath(withoutTrailingSlash);
-  return projectId ? (withoutTrailingSlash.endsWith("/overview") ? projectOverviewPath(projectId) : projectPath(projectId)) : "/";
+  return projectId
+    ? projectPath(projectId, projectTabFromPath(withoutTrailingSlash))
+    : "/";
 };
 
 export const routeViewFromPath = (pathname) =>
-  projectIdFromPath(pathname) ? (pathname.endsWith("/overview") ? "project-overview" : "project") : routeViews[pathname];
+  projectIdFromPath(pathname) ? "project" : routeViews[pathname];
 
 export const isNavigationItemActive = (itemPath, currentPath, currentView) =>
   itemPath === currentPath ||
-  (itemPath === "/tasks" && currentPath === "/tasks") ||
-  (itemPath === "/projects" && ["project", "project-overview"].includes(currentView)) ||
+  (itemPath === "/projects" && currentView === "project") ||
   (itemPath === "/settings" && currentView === "archived");
 
-export const pageMetadata = ({
-  currentView,
-  taskCount,
-  archivedTaskCount,
-  projectCount,
-  selectedProject,
-  projectsLoading,
-}) => ({
-  title:
-    currentView === "tasks"
-      ? "My Tasks"
-      : currentView === "for-you"
-        ? "For you"
-        : currentView === "recent"
-          ? "Recent"
-          : currentView === "starred"
-            ? "Starred"
-            : currentView?.startsWith("planning-")
-                ? currentView.replace("planning-", "").replace(/^./, (value) => value.toUpperCase())
-      : currentView === "inbox"
-        ? "Inbox"
-      : currentView === "archived"
-          ? "Archived Tasks"
-          : currentView === "settings"
-              ? "Settings"
-              : currentView === "projects"
-                ? "Projects"
-                : ["project", "project-overview"].includes(currentView)
-                  ? selectedProject?.name || "Project"
-                  : "Dashboard",
-  subtitle:
-    currentView === "tasks"
-      ? `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`
-      : currentView === "for-you"
-        ? "Assigned and upcoming work."
-        : currentView === "recent"
-          ? "Recently opened work."
-          : currentView === "starred"
-            ? "Saved work."
-            : currentView?.startsWith("planning-")
-                ? "Plan across projects."
-      : currentView === "inbox"
-        ? "Updates and mentions."
-      : currentView === "archived"
-          ? `${archivedTaskCount} ${
-              archivedTaskCount === 1 ? "archived task" : "archived tasks"
-            }`
-          : currentView === "settings"
-              ? "Preferences and account."
-              : currentView === "projects"
-                ? `${projectCount} ${projectCount === 1 ? "project" : "projects"}`
-                : ["project", "project-overview"].includes(currentView)
-                  ? selectedProject
-                    ? "Project work and planning."
-                    : projectsLoading
-                      ? "Loading project..."
-                      : "Project unavailable"
-                  : "Work that needs attention.",
-});
+const viewTitles = {
+  home: "Home",
+  tasks: "My Tasks",
+  calendar: "Calendar",
+  inbox: "Inbox",
+  projects: "Projects",
+  settings: "Settings",
+  archived: "Archived tasks",
+  recover: "Password recovery",
+};
+
+/** Title used for `document.title` only — pages render their own headings. */
+export const pageTitle = (view, selectedProject) => {
+  if (view === "project") return selectedProject?.name || "Project";
+  return viewTitles[view] || "TaskFlow";
+};

@@ -1,9 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
+
+const runtime = await vi.hoisted(async () => {
+  const { createHookRuntime } = await import("../test/hookRuntime");
+  return createHookRuntime();
+});
+
+vi.mock("react", () => runtime.react);
+
+import { find, findAll, props, render, textContent } from "../test/elementTree";
 import { DEFAULT_SETTINGS } from "../domain/settingsDomain";
 import { CALENDAR_PROVIDERS } from "../domain/calendarConnectionDomain";
 import CalendarConnectionSection from "./CalendarConnectionSection";
 import ProfileSettingsPanel from "./ProfileSettingsPanel";
 import SettingsSignOutSection from "./SettingsSignOutSection";
+import {
+  SelectionRows,
+  SettingsGroup,
+  SettingsRow,
+  ToggleRow,
+} from "./SettingsControls";
 import {
   AccountSettingsSection,
   PreferencesSettingsSection,
@@ -11,78 +26,94 @@ import {
   TaskflowSettingsSection,
 } from "./SettingsOverviewSections";
 
-function childrenOf(node) {
-  const children = node?.props?.children;
-  return (Array.isArray(children) ? children : [children]).filter(
-    (child) => child !== null && child !== undefined && child !== false
-  );
-}
+const tree = (node) => render(node, 8);
 
-function resolveNode(node) {
-  if (Array.isArray(node)) return node.map(resolveNode);
-  if (!node || typeof node !== "object") return node;
-  if (typeof node.type === "function") return resolveNode(node.type(node.props));
-  return {
-    ...node,
-    props: { ...node.props, children: childrenOf(node).map(resolveNode) },
-  };
-}
+const button = (root, label) =>
+  find(root, (node) => node.type === "button" && textContent(node).trim() === label);
 
-function walk(node, visitor) {
-  if (Array.isArray(node)) {
-    node.forEach((child) => walk(child, visitor));
-    return;
-  }
-  if (!node || typeof node !== "object") return;
-  visitor(node);
-  childrenOf(node).forEach((child) => walk(child, visitor));
-}
+const checkboxes = (root) =>
+  findAll(root, (node) => node.type === "input" && props(node).type === "checkbox");
 
-function findElement(root, predicate) {
-  let match;
-  walk(root, (node) => {
-    if (!match && predicate(node)) match = node;
+describe("settings controls", () => {
+  it("renders a navigating row with its value and a chevron", () => {
+    const onClick = vi.fn();
+    const row = tree(SettingsRow({ label: "Theme", value: "Light", onClick }));
+
+    expect(props(row).className).toBe("settings-row");
+    expect(textContent(row)).toBe("Theme Light");
+    expect(find(row, (node) => props(node).className === "icon settings-row-chevron")).toBeDefined();
+    props(row).onClick();
+    expect(onClick).toHaveBeenCalledOnce();
   });
-  return match;
-}
 
-function findElements(root, predicate) {
-  const matches = [];
-  walk(root, (node) => {
-    if (predicate(node)) matches.push(node);
+  it("groups rows under an uppercase title that labels the group", () => {
+    const group = tree(SettingsGroup({ title: "Preferences", children: "rows" }));
+    const heading = find(group, (node) => node.type === "h2");
+
+    expect(props(group)["aria-labelledby"]).toBe(props(heading).id);
+    expect(textContent(heading)).toBe("Preferences");
+    expect(props(heading).className).toBe("settings-group-title");
   });
-  return matches;
-}
 
-function textContent(node) {
-  if (Array.isArray(node)) return node.map(textContent).join("");
-  if (typeof node === "string" || typeof node === "number") return String(node);
-  return childrenOf(node).map(textContent).join("");
-}
+  it("renders a toggle row as a labelled switch and reports the checked state", () => {
+    const onChange = vi.fn();
+    const row = tree(
+      ToggleRow({ label: "Reminder sound", description: "Play a sound.", checked: true, onChange })
+    );
+    const [input] = checkboxes(row);
+    const control = find(row, (node) => props(node).className === "checkbox switch");
 
-function button(root, label) {
-  return findElement(
-    root,
-    (node) => node.type === "button" && textContent(node).startsWith(label)
-  );
-}
+    expect(control).toBeDefined();
+    expect(props(input)["aria-label"]).toBe("Reminder sound");
+    expect(props(input).checked).toBe(true);
+    props(input).onChange({ target: { checked: false } });
+    expect(onChange).toHaveBeenCalledWith(false);
+  });
 
-describe("focused settings sections", () => {
+  it("marks the selected option row with a check and reports the chosen value", () => {
+    const onSelect = vi.fn();
+    const list = tree(
+      SelectionRows({
+        ariaLabel: "Theme",
+        value: "light",
+        onSelect,
+        options: [
+          ["light", "Light", "Always light"],
+          ["dark", "Dark", "Always dark"],
+        ],
+      })
+    );
+    const rows = findAll(list, (node) => String(props(node).className || "").startsWith("option-row"));
+    const dark = find(list, (node) => props(node).type === "radio" && props(node).value === "dark");
+
+    expect(props(list).role).toBe("radiogroup");
+    expect(props(list)["aria-label"]).toBe("Theme");
+    expect(rows.map((row) => props(row).className)).toEqual([
+      "option-row is-selected",
+      "option-row",
+    ]);
+    expect(find(rows[0], (node) => props(node).className === "icon option-check")).toBeDefined();
+    expect(find(rows[1], (node) => props(node).className === "icon option-check")).toBeUndefined();
+    props(dark).onChange();
+    expect(onSelect).toHaveBeenCalledWith("dark");
+  });
+});
+
+describe("settings overview sections", () => {
   it("renders account navigation and forwards each account action", () => {
     const callbacks = {
       onOpenProfile: vi.fn(),
       onOpenArchivedTasks: vi.fn(),
-      onOpenImportData: vi.fn(),
+      onExportData: vi.fn(),
     };
-    const output = resolveNode(
-      AccountSettingsSection({ displayName: "TaskFlow User", ...callbacks })
-    );
+    const output = tree(AccountSettingsSection({ displayName: "Priya Shah", ...callbacks }));
 
-    expect(textContent(findElement(output, (node) => node.type === "h2"))).toBe("account");
-    expect(textContent(output)).toContain("TaskFlow User");
-    button(output, "My Profile").props.onClick();
-    button(output, "Archived Tasks").props.onClick();
-    button(output, "Import Data").props.onClick();
+    expect(textContent(find(output, (node) => node.type === "h2"))).toBe("Account");
+    expect(textContent(output)).toContain("Priya Shah");
+    expect(textContent(output)).not.toContain("Import data");
+    button(output, "Profile Priya Shah").props.onClick();
+    button(output, "Archived tasks").props.onClick();
+    button(output, "Export data JSON").props.onClick();
     Object.values(callbacks).forEach((callback) => expect(callback).toHaveBeenCalledOnce());
   });
 
@@ -90,7 +121,7 @@ describe("focused settings sections", () => {
     const onOpenProjectReminders = vi.fn();
     const onOpenArchivedProjects = vi.fn();
     const onOpenProjectCreate = vi.fn();
-    const output = resolveNode(
+    const output = tree(
       ProjectsSettingsSection({
         defaultReminderTime: 30,
         archivedProjectCount: 2,
@@ -101,227 +132,138 @@ describe("focused settings sections", () => {
     );
 
     expect(textContent(output)).toContain("30 min");
-    expect(textContent(output)).toContain("Archived Projects2");
-    button(output, "Project Reminders").props.onClick();
-    button(output, "Archived Projects").props.onClick();
-    button(output, "Create a New Project").props.onClick();
+    expect(textContent(output)).toContain("Archived projects 2");
+    button(output, "Project reminders 30 min").props.onClick();
+    button(output, "Archived projects 2").props.onClick();
+    button(output, "New project").props.onClick();
     expect(onOpenProjectReminders).toHaveBeenCalledOnce();
     expect(onOpenArchivedProjects).toHaveBeenCalledOnce();
     expect(onOpenProjectCreate).toHaveBeenCalledOnce();
   });
 
-  it("preserves preference labels, navigation callbacks, and notification payload", () => {
+  it("keeps the preference rows the redesign kept and drops the retired ones", () => {
     const onOpenTheme = vi.fn();
     const onToggleBrowserNotifications = vi.fn();
-    const output = resolveNode(
+    const output = tree(
       PreferencesSettingsSection({
-        myDayLabel: "Midnight",
+        myDayLabel: "12:00 AM",
         connectedCalendarCount: 1,
         themeLabel: "Dark",
-        backgroundLabel: "Calm",
         browserNotificationsEnabled: true,
-        defaultViewLabel: "Dashboard",
-        defaultListLabel: "Inbox",
-        timeSettingsLabel: "12 Hour · Monday",
+        defaultViewLabel: "Home",
+        timeSettingsLabel: "12 hour · Monday",
         languageLabel: "Français",
         onOpenMyDay: vi.fn(),
         onOpenCalendars: vi.fn(),
         onOpenTheme,
-        onOpenBackground: vi.fn(),
         onToggleBrowserNotifications,
         onOpenDefaultView: vi.fn(),
-        onOpenDefaultList: vi.fn(),
         onOpenTimeSettings: vi.fn(),
         onOpenLanguage: vi.fn(),
       })
     );
-    const notificationToggle = findElement(
-      output,
-      (node) => node.props?.type === "checkbox"
-    );
+    const [notificationToggle] = checkboxes(output);
 
     expect(textContent(output)).toContain("1 connected");
-    expect(textContent(output)).toContain("Desktop NotificationsON");
+    expect(textContent(output)).not.toContain("Background");
+    expect(textContent(output)).not.toContain("Default list");
     expect(notificationToggle.props.checked).toBe(true);
-    button(output, "Theme").props.onClick();
+    button(output, "Theme Dark").props.onClick();
     notificationToggle.props.onChange({ target: { checked: false } });
     expect(onOpenTheme).toHaveBeenCalledOnce();
     expect(onToggleBrowserNotifications).toHaveBeenCalledWith(false);
   });
 
-  it("renders TaskFlow information navigation without changing copy", () => {
-    const onOpenWhatsNew = vi.fn();
+  it("renders TaskFlow information navigation without the release notes row", () => {
     const onOpenShortcuts = vi.fn();
     const onOpenAbout = vi.fn();
-    const output = resolveNode(
-      TaskflowSettingsSection({
-        onOpenWhatsNew,
-        onOpenShortcuts,
-        onOpenAbout,
-      })
-    );
+    const output = tree(TaskflowSettingsSection({ onOpenShortcuts, onOpenAbout }));
 
-    expect(textContent(output)).not.toContain("Support");
-    expect(textContent(output)).toContain("About0.0.0");
-    button(output, "What's New?").props.onClick();
-    button(output, "Keyboard Shortcuts").props.onClick();
-    button(output, "About").props.onClick();
-    expect(onOpenWhatsNew).toHaveBeenCalledOnce();
+    expect(textContent(output)).not.toContain("What's new");
+    expect(textContent(output)).toContain("About 0.0.0");
+    button(output, "Keyboard shortcuts").props.onClick();
+    button(output, "About 0.0.0").props.onClick();
     expect(onOpenShortcuts).toHaveBeenCalledOnce();
     expect(onOpenAbout).toHaveBeenCalledOnce();
   });
+});
 
-  it("preserves profile semantics, busy fields, and the full change payload", () => {
+describe("ProfileSettingsPanel", () => {
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    profile: { displayName: "Current", email: "person@example.com" },
+  };
+
+  it("keeps the display-name payload, the read-only email and the busy save button", () => {
     const onChange = vi.fn();
-    const onBack = vi.fn();
-    const settings = {
-      ...DEFAULT_SETTINGS,
-      profile: { displayName: "Current", email: "managed-account" },
-    };
-    const output = resolveNode(
-      ProfileSettingsPanel({ settings, saving: true, onChange, onBack })
-    );
-    const inputs = findElements(output, (node) => node.type === "input");
+    const output = tree(ProfileSettingsPanel({ settings, saving: true, onChange }));
+    const name = find(output, (node) => props(node).id === "settings-display-name");
+    const email = find(output, (node) => props(node).id === "settings-email");
+    const save = button(output, "Save");
 
-    expect(textContent(output)).toContain("My Profile");
-    expect(inputs[0].props.disabled).toBe(true);
-    expect(inputs[1].props.readOnly).toBe(true);
-    expect(button(output, "Saving...").props.disabled).toBe(true);
-    inputs[0].props.onChange({ target: { value: "Updated" } });
+    expect(props(name).disabled).toBe(true);
+    expect(props(name).maxLength).toBe(80);
+    expect(props(email).readOnly).toBe(true);
+    expect(props(email).disabled).toBe(true);
+    expect(props(save).disabled).toBe(true);
+    expect(props(save)["aria-busy"]).toBe(true);
+    props(name).onChange({ target: { value: "Updated" } });
     expect(onChange).toHaveBeenCalledWith({
       ...settings,
       profile: { ...settings.profile, displayName: "Updated" },
     });
-    button(output, "←").props.onClick();
-    expect(onBack).toHaveBeenCalledOnce();
   });
 
-  it("preserves unavailable-provider setup, disconnect, dialog, and busy contracts", () => {
-    const onConnect = vi.fn();
-    const onDisconnect = vi.fn();
-    const onConnectGoogle = vi.fn();
-    const onCloseSetup = vi.fn();
-    const provider = CALENDAR_PROVIDERS[1];
-    const settings = {
-      ...DEFAULT_SETTINGS,
-      calendarConnections: {
-        ...DEFAULT_SETTINGS.calendarConnections,
-        [provider.id]: {
-          ...DEFAULT_SETTINGS.calendarConnections[provider.id],
-          connected: true,
-          accountLabel: "Connected account",
-        },
-      },
-    };
-    const output = resolveNode(
-      CalendarConnectionSection({
+  it("submits the profile form and surfaces a validation error on the field", () => {
+    const onSave = vi.fn();
+    const preventDefault = vi.fn();
+    const output = tree(
+      ProfileSettingsPanel({
         settings,
-        saving: true,
-        selectedProvider: provider,
-        setup: { missingVariables: ["Provider configuration"] },
-        dialogRef: { current: null },
-        onBackdropMouseDown: vi.fn(),
-        onBack: vi.fn(),
-        onConnect,
-        onDisconnect,
-        onConnectGoogle,
-        onCloseSetup,
+        onChange: vi.fn(),
+        onSave,
+        error: "Display name must be 80 characters or fewer.",
       })
     );
-    const dialog = findElement(output, (node) => node.props?.role === "dialog");
-    const disconnect = button(output, "Disconnect");
+    const form = find(output, (node) => node.type === "form");
+    const fieldError = find(output, (node) => props(node).className === "field-error");
 
-    expect(dialog.props["aria-modal"]).toBe("true");
-    expect(textContent(output)).toContain(`Connect ${provider.name}`);
-    expect(disconnect.props.disabled).toBe(true);
-    disconnect.props.onClick();
-    button(output, "Close").props.onClick();
-    expect(onDisconnect).toHaveBeenCalledWith(provider);
-    expect(onCloseSetup).toHaveBeenCalledOnce();
-
-    const disconnectedOutput = resolveNode(
-      CalendarConnectionSection({
-        settings: DEFAULT_SETTINGS,
-        saving: false,
-        selectedProvider: null,
-        setup: null,
-        dialogRef: { current: null },
-        onBackdropMouseDown: vi.fn(),
-        onBack: vi.fn(),
-        onConnect,
-        onDisconnect,
-        onConnectGoogle,
-        onCloseSetup,
-      })
-    );
-    button(disconnectedOutput, "Connect Google").props.onClick();
-    expect(onConnectGoogle).toHaveBeenCalledOnce();
-    button(disconnectedOutput, "Setup required").props.onClick();
-    expect(onConnect).toHaveBeenCalledWith(provider.id);
+    props(form).onSubmit({ preventDefault });
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(onSave).toHaveBeenCalledOnce();
+    expect(textContent(fieldError)).toBe("Display name must be 80 characters or fewer.");
+    expect(props(fieldError).role).toBe("alert");
   });
 
-  it("shows the connected Google account and exposes sync and confirmed disconnect actions", () => {
-    const onSyncGoogle = vi.fn();
-    const onRequestGoogleDisconnect = vi.fn();
-    const onDisconnectGoogle = vi.fn();
-    const output = resolveNode(CalendarConnectionSection({
-      settings: DEFAULT_SETTINGS,
-      googleConnection: {
-        calendar_account_email: "calendar@example.com",
-        last_synced_at: "2026-08-31T12:00:00.000Z",
-      },
-      googleSyncSummary: { calendarCount: 2, eventCount: 7 },
-      selectedProvider: null,
-      setup: null,
-      onSyncGoogle,
-      onRequestGoogleDisconnect,
-      onDisconnectGoogle,
-      onConnect: vi.fn(),
-      onDisconnect: vi.fn(),
-    }));
-    expect(textContent(output)).toContain("calendar@example.com");
-    expect(textContent(output)).toContain("2 calendars · 7 events");
-    button(output, "Sync now").props.onClick();
-    button(output, "Disconnect").props.onClick();
-    expect(onSyncGoogle).toHaveBeenCalledOnce();
-    expect(onRequestGoogleDisconnect).toHaveBeenCalledOnce();
+  it("keeps the account actions inside the profile panel", () => {
+    const output = tree(ProfileSettingsPanel({ settings, onChange: vi.fn() }));
 
-    const confirmation = resolveNode(CalendarConnectionSection({
-      settings: DEFAULT_SETTINGS,
-      googleConnection: { calendar_account_email: "calendar@example.com" },
-      confirmingGoogleDisconnect: true,
-      selectedProvider: null,
-      setup: null,
-      onDisconnectGoogle,
-      onConnect: vi.fn(),
-      onDisconnect: vi.fn(),
-    }));
-    expect(findElement(confirmation, (node) => node.props?.role === "alertdialog")).toBeDefined();
-    const disconnectButtons = findElements(confirmation, (node) => node.type === "button" && textContent(node) === "Disconnect");
-    disconnectButtons.at(-1).props.onClick();
-    expect(onDisconnectGoogle).toHaveBeenCalledOnce();
+    expect(button(output, "Sign out")).toBeDefined();
+    expect(button(output, "Delete account")).toBeDefined();
   });
+});
 
+describe("SettingsSignOutSection", () => {
   it("preserves sign-out pending semantics, error ownership, and action", () => {
     const onSignOut = vi.fn();
-    const output = resolveNode(
+    const output = tree(
       SettingsSignOutSection({ onSignOut, pending: true, error: "Try again." })
     );
-    const signOut = button(output, "Signing out...");
-    const alert = findElement(output, (node) => node.props?.role === "alert");
+    const signOut = button(output, "Sign out");
+    const alert = find(output, (node) => props(node).role === "alert");
 
-    expect(signOut.props.disabled).toBe(true);
-    expect(signOut.props["aria-busy"]).toBe(true);
-    expect(signOut.props["aria-describedby"]).toBe(alert.props.id);
-    expect(textContent(alert)).toBe("Try again.");
-    signOut.props.onClick();
+    expect(props(signOut).disabled).toBe(true);
+    expect(props(signOut)["aria-busy"]).toBe(true);
+    expect(props(signOut)["aria-describedby"]).toBe(props(alert).id);
+    expect(textContent(alert)).toContain("Try again.");
+    props(signOut).onClick();
     expect(onSignOut).toHaveBeenCalledOnce();
   });
 
-  it("shows a permanent-deletion warning before running account deletion", () => {
+  it("confirms account deletion in an alert dialog before running it", () => {
     const onDeleteAccount = vi.fn();
     const onCancelDelete = vi.fn();
-    const output = resolveNode(
+    const output = tree(
       SettingsSignOutSection({
         onSignOut: vi.fn(),
         onDeleteAccount,
@@ -329,14 +271,147 @@ describe("focused settings sections", () => {
         onCancelDelete,
       })
     );
-    const deleteButton = button(output, "Permanently delete account");
-    const dialog = findElement(output, (node) => node.props?.role === "alertdialog");
+    const dialog = find(output, (node) => props(node).role === "alertdialog");
 
-    expect(textContent(dialog)).toContain("All of your account data");
-    expect(deleteButton.props.disabled).toBe(false);
-    deleteButton.props.onClick();
+    expect(props(dialog)["aria-modal"]).toBe("true");
+    expect(props(dialog)["aria-label"]).toBe("Delete your account?");
+    expect(textContent(dialog)).toContain("permanently deleted");
+    button(dialog, "Delete account").props.onClick();
     expect(onDeleteAccount).toHaveBeenCalledOnce();
-    button(output, "Cancel").props.onClick();
+    button(dialog, "Cancel").props.onClick();
     expect(onCancelDelete).toHaveBeenCalledOnce();
+  });
+
+  it("hides the confirmation until deletion is requested", () => {
+    const output = tree(SettingsSignOutSection({ onSignOut: vi.fn() }));
+
+    expect(find(output, (node) => props(node).role === "alertdialog")).toBeUndefined();
+  });
+});
+
+describe("CalendarConnectionSection", () => {
+  const renderSection = (overrides = {}) =>
+    tree(
+      CalendarConnectionSection({
+        settings: DEFAULT_SETTINGS,
+        selectedProvider: null,
+        setup: null,
+        onConnect: vi.fn(),
+        onDisconnect: vi.fn(),
+        onConnectGoogle: vi.fn(),
+        onSyncGoogle: vi.fn(),
+        onRequestGoogleDisconnect: vi.fn(),
+        onCancelGoogleDisconnect: vi.fn(),
+        onDisconnectGoogle: vi.fn(),
+        onRetryGoogle: vi.fn(),
+        onCloseSetup: vi.fn(),
+        ...overrides,
+      })
+    );
+
+  it("offers a Google connect action and a badge while disconnected", () => {
+    const onConnectGoogle = vi.fn();
+    const output = renderSection({ onConnectGoogle });
+    const badge = find(output, (node) => props(node).className === "badge badge-neutral");
+
+    expect(textContent(badge)).toBe("Not connected");
+    button(output, "Connect Google").props.onClick();
+    expect(onConnectGoogle).toHaveBeenCalledOnce();
+  });
+
+  it("shows the connected account and exposes sync and confirmed disconnect", () => {
+    const onSyncGoogle = vi.fn();
+    const onRequestGoogleDisconnect = vi.fn();
+    const onDisconnectGoogle = vi.fn();
+    const output = renderSection({
+      googleConnection: {
+        calendar_account_email: "calendar@example.com",
+        last_synced_at: "2026-08-31T12:00:00.000Z",
+        sync_status: "success",
+      },
+      googleSyncSummary: { calendarCount: 2, eventCount: 7 },
+      onSyncGoogle,
+      onRequestGoogleDisconnect,
+    });
+
+    expect(textContent(output)).toContain("calendar@example.com");
+    expect(textContent(output)).toContain("Up to date");
+    expect(textContent(output)).toContain("Latest result");
+    expect(textContent(output)).toMatch(/2\s+calendars ·\s+7\s+events/);
+    expect(
+      textContent(find(output, (node) => props(node).className === "badge badge-success"))
+    ).toBe("Connected");
+    button(output, "Sync now").props.onClick();
+    button(output, "Disconnect").props.onClick();
+    expect(onSyncGoogle).toHaveBeenCalledOnce();
+    expect(onRequestGoogleDisconnect).toHaveBeenCalledOnce();
+
+    const confirming = renderSection({
+      googleConnection: { calendar_account_email: "calendar@example.com" },
+      confirmingGoogleDisconnect: true,
+      onDisconnectGoogle,
+    });
+    const dialog = find(confirming, (node) => props(node).role === "alertdialog");
+
+    expect(props(dialog)["aria-label"]).toBe("Disconnect Google Calendar?");
+    button(dialog, "Disconnect").props.onClick();
+    expect(onDisconnectGoogle).toHaveBeenCalledOnce();
+  });
+
+  it("retries a failed connection lookup and surfaces the sync error", () => {
+    const onRetryGoogle = vi.fn();
+    const output = renderSection({
+      googleError: "Google Calendar connection status could not be loaded.",
+      onRetryGoogle,
+    });
+    const alert = find(output, (node) => props(node).role === "alert");
+
+    expect(textContent(alert)).toContain("could not be loaded");
+    button(output, "Retry").props.onClick();
+    expect(onRetryGoogle).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the unavailable providers, their setup dialog, and disconnecting one", () => {
+    const provider = CALENDAR_PROVIDERS[1];
+    const onConnect = vi.fn();
+    const onCloseSetup = vi.fn();
+    const output = renderSection({
+      selectedProvider: provider,
+      setup: { missingVariables: ["VITE_MICROSOFT_CALENDAR_CLIENT_ID"] },
+      onConnect,
+      onCloseSetup,
+    });
+    const dialog = find(output, (node) => props(node).role === "dialog");
+
+    expect(props(dialog)["aria-modal"]).toBe("true");
+    expect(props(dialog)["aria-label"]).toBe(`Connect ${provider.name}`);
+    expect(textContent(dialog)).toContain("VITE_MICROSOFT_CALENDAR_CLIENT_ID");
+    expect(props(button(dialog, "Authorization unavailable")).disabled).toBe(true);
+    button(output, "Set up").props.onClick();
+    expect(onConnect).toHaveBeenCalledWith(provider.id);
+    find(output, (node) => props(node)["aria-label"] === "Close").props.onClick();
+    expect(onCloseSetup).toHaveBeenCalledOnce();
+
+    const onDisconnect = vi.fn();
+    const connected = renderSection({
+      saving: true,
+      settings: {
+        ...DEFAULT_SETTINGS,
+        calendarConnections: {
+          ...DEFAULT_SETTINGS.calendarConnections,
+          [provider.id]: {
+            ...DEFAULT_SETTINGS.calendarConnections[provider.id],
+            connected: true,
+            accountLabel: "Connected account",
+          },
+        },
+      },
+      onDisconnect,
+    });
+    const disconnect = button(connected, "Disconnect");
+
+    expect(props(disconnect).disabled).toBe(true);
+    props(disconnect).onClick();
+    expect(onDisconnect).toHaveBeenCalledWith(provider);
   });
 });

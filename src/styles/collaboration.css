@@ -1,0 +1,482 @@
+/* Collaboration components (src/collaboration/*): comments, activity feed, attachments,
+   members, invitations and the profile completion prompt. */
+
+/* ---------- Comments ---------- */
+
+.comment-thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.comment-thread-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+}
+
+.comment {
+  display: flex;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.comment[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+.comment-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.comment-author {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.comment-time {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comment-menu {
+  flex: none;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.comment:hover .comment-menu,
+.comment:focus-within .comment-menu {
+  opacity: 1;
+}
+
+.comment-text {
+  margin: 0;
+  font-size: var(--text-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-mention {
+  border-radius: var(--radius-sm);
+  padding: 0 3px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+  font-weight: 500;
+}
+
+.comment-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--text-md);
+}
+
+.comment-editor,
+.comment-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.comment-composer {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+}
+
+.comment-composer-input {
+  min-height: 40px;
+  max-height: 160px;
+  resize: none;
+}
+
+.comment-mentions {
+  position: static;
+  flex-flow: row wrap;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+  box-shadow: none;
+}
+
+.comment-mentions .menu-item {
+  width: auto;
+  font-size: var(--text-sm);
+}
+
+.comment-editor-actions,
+.comment-composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.comment-counter {
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Activity feed ---------- */
+
+.activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.activity-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.activity-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.activity-group-title {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.activity-row {
+  position: relative;
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-2) 0 var(--space-2) var(--space-1);
+}
+
+.activity-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 7px;
+  width: 1px;
+  background: var(--color-border);
+}
+
+.activity-row:first-of-type::before {
+  top: 12px;
+}
+
+.activity-row:last-of-type::before {
+  bottom: calc(100% - 12px);
+}
+
+.activity-dot {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 7px;
+  border-radius: var(--radius-full);
+  background: var(--color-border-strong);
+  box-shadow: 0 0 0 3px var(--color-surface);
+}
+
+.activity-dot.is-done {
+  background: var(--status-done);
+}
+
+.activity-dot.is-comment {
+  background: var(--color-accent);
+}
+
+.activity-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.activity-text {
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--color-text-2);
+}
+
+.activity-text strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.activity-subject {
+  margin-left: var(--space-1);
+  color: var(--color-text);
+}
+
+.activity-time {
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+}
+
+.activity-list .comment {
+  padding: var(--space-2) 0 var(--space-2) calc(var(--space-1) + 7px + var(--space-3));
+}
+
+/* ---------- Attachments ---------- */
+
+.attachment-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.attachment-section.is-compact {
+  gap: var(--space-2);
+}
+
+.attachment-section.is-compact .attachment-toolbar {
+  min-height: var(--control-h-sm);
+}
+
+.attachment-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.attachment-toolbar .section-meta {
+  margin-left: var(--space-1);
+}
+
+.attachment-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+  text-align: center;
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.attachment-section.is-compact .attachment-dropzone {
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.attachment-section.is-drag-active .attachment-dropzone {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+}
+
+.attachment-state {
+  margin: 0;
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+}
+
+.attachment-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.attachment-section.is-compact .attachment-row {
+  padding: var(--space-1) var(--space-2);
+}
+
+.attachment-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--color-text-3);
+}
+
+.attachment-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.attachment-name {
+  font-size: var(--text-base);
+  font-weight: 500;
+}
+
+.attachment-meta {
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+}
+
+/* ---------- Members and invitations ---------- */
+
+.members-dialog .dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.members-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+}
+
+.member-invite {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.member-invite-email {
+  flex: 1;
+  min-width: 0;
+}
+
+.member-invite-role {
+  flex: none;
+  width: 110px;
+}
+
+.member-list {
+  min-width: 0;
+}
+
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.member-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.member-name {
+  font-size: var(--text-base);
+  font-weight: 500;
+}
+
+.member-email {
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+}
+
+.member-role {
+  flex: none;
+  width: 110px;
+}
+
+.members-pending .row-list {
+  min-width: 0;
+}
+
+.invitation-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.invitation-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.invitation-title {
+  font-size: var(--text-base);
+  font-weight: 500;
+}
+
+.invitation-meta {
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+}
+
+.invitation-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ---------- Profile completion ---------- */
+
+.profile-completion-prompt {
+  margin: var(--space-4) var(--space-6) 0;
+}
+
+@media (max-width: 640px) {
+  .member-invite {
+    flex-wrap: wrap;
+  }
+
+  .member-invite-email {
+    flex-basis: 100%;
+  }
+}

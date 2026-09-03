@@ -1,0 +1,118 @@
+/* Design tokens: color, type, spacing, radius and elevation scales for every component. */
+
+:root {
+  color-scheme: light;
+  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+  --leading: 1.5;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 999px;
+  --control-h: 32px;
+  --control-h-sm: 28px;
+  --control-h-lg: 36px;
+  --sidebar-w: 240px;
+  --sidebar-w-collapsed: 56px;
+  --panel-w: 560px;
+
+  --color-bg: #f7f7f8;
+  --color-surface: #ffffff;
+  --color-surface-2: #f3f3f5;
+  --color-surface-3: #e9e9ed;
+  --color-border: #e4e4e9;
+  --color-border-strong: #d0d0d8;
+  --color-text: #1c1c21;
+  --color-text-2: #5c5c6b;
+  --color-text-3: #8b8b99;
+  --color-text-inverse: #ffffff;
+
+  --color-accent: #5b5bd6;
+  --color-accent-hover: #4b4bc6;
+  --color-accent-soft: #eeeefb;
+  --color-accent-text: #4646b4;
+
+  --color-success: #1f9d64;
+  --color-success-soft: #e6f6ee;
+  --color-warning: #d68a0c;
+  --color-warning-soft: #fdf3df;
+  --color-danger: #d5484a;
+  --color-danger-soft: #fbe9e9;
+  --color-info: #2f7fe0;
+  --color-info-soft: #e8f1fc;
+
+  --status-todo: #a3a3af;
+  --status-progress: #d68a0c;
+  --status-done: #1f9d64;
+  --priority-high: #d5484a;
+  --priority-medium: #d68a0c;
+  --priority-low: #a3a3af;
+
+  /* Modal / drawer scrims. Deliberately the same in both themes: the layer
+     underneath already changes, so a second dark-mode value doubles up. */
+  --color-scrim: rgba(16, 16, 24, 0.32);
+  --color-scrim-strong: rgba(16, 16, 24, 0.4);
+
+  --shadow-sm: 0 1px 2px rgba(16, 16, 24, 0.06);
+  --shadow-md: 0 4px 16px rgba(16, 16, 24, 0.08);
+  --shadow-lg: 0 8px 32px rgba(16, 16, 24, 0.14);
+  --focus-ring: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-accent);
+  --transition: 120ms ease;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #15151a;
+  --color-surface: #1b1b21;
+  --color-surface-2: #22222a;
+  --color-surface-3: #2a2a33;
+  --color-border: #2c2c36;
+  --color-border-strong: #3b3b47;
+  --color-text: #ececf1;
+  --color-text-2: #a6a6b4;
+  --color-text-3: #76767f;
+  --color-text-inverse: #15151a;
+
+  --color-accent: #7c7cec;
+  --color-accent-hover: #8f8ff1;
+  --color-accent-soft: #2a2a48;
+  --color-accent-text: #a5a5f5;
+
+  --color-success: #3ab77d;
+  --color-success-soft: #173427;
+  --color-warning: #e0a03a;
+  --color-warning-soft: #3a2d15;
+  --color-danger: #e5686a;
+  --color-danger-soft: #3f2224;
+  --color-info: #5b9cf0;
+  --color-info-soft: #1b2c44;
+
+  --status-todo: #6f6f7c;
+  --status-progress: #e0a03a;
+  --status-done: #3ab77d;
+  --priority-high: #e5686a;
+  --priority-medium: #e0a03a;
+  --priority-low: #6f6f7c;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+}

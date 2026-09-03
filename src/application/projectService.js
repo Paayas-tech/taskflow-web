@@ -189,7 +189,9 @@ export const createProjectService = (
         columnId: row.column_id || null,
       };
     });
-    return sortAssignedTasksForAttention(assignments, dateOnlyKey(now));
+    return sortAssignedTasksForAttention(assignments, dateOnlyKey(now), {
+      includeCompleted: true,
+    });
   },
 
   createProjectTask(userId, projectId, taskData) {

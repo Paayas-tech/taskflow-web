@@ -1,124 +1,68 @@
 import { describe, expect, it, vi } from "vitest";
+import { find, findAll, props, render, textContent } from "../test/elementTree";
 import ProjectRemindersPanel from "./ProjectRemindersPanel";
 
-function childrenOf(node) {
-  const children = node?.props?.children;
-  return (Array.isArray(children) ? children : [children]).filter(
-    (child) => child !== null && child !== undefined && child !== false
-  );
-}
-
-function resolveNode(node) {
-  if (Array.isArray(node)) return node.map(resolveNode);
-  if (!node || typeof node !== "object") return node;
-  if (typeof node.type === "function") return resolveNode(node.type(node.props));
-  return {
-    ...node,
-    props: { ...node.props, children: childrenOf(node).map(resolveNode) },
-  };
-}
-
-function walk(node, visitor) {
-  if (Array.isArray(node)) {
-    node.forEach((child) => walk(child, visitor));
-    return;
-  }
-  if (!node || typeof node !== "object") return;
-  visitor(node);
-  childrenOf(node).forEach((child) => walk(child, visitor));
-}
-
-function findElement(root, predicate) {
-  let match;
-  walk(root, (node) => {
-    if (!match && predicate(node)) match = node;
-  });
-  return match;
-}
-
-function findElements(root, predicate) {
-  const matches = [];
-  walk(root, (node) => {
-    if (predicate(node)) matches.push(node);
-  });
-  return matches;
-}
-
-function textContent(node) {
-  if (Array.isArray(node)) return node.map(textContent).join("");
-  if (typeof node === "string" || typeof node === "number") return String(node);
-  return childrenOf(node).map(textContent).join("");
-}
-
-function renderPanel(overrides = {}) {
-  return resolveNode(
+const renderPanel = (overrides = {}) =>
+  render(
     ProjectRemindersPanel({
       reminder: {
         defaultTime: 30,
         enableInAppReminders: true,
         enableSound: false,
       },
-      onBack: vi.fn(),
       onDefaultTimeChange: vi.fn(),
       onDefaultTimeCommit: vi.fn(),
       onInAppRemindersChange: vi.fn(),
       onSoundChange: vi.fn(),
       ...overrides,
-    })
+    }),
+    8
   );
-}
 
 describe("ProjectRemindersPanel", () => {
-  it("shows a clear auto-save description and preserves the back action", () => {
-    const onBack = vi.fn();
-    const output = renderPanel({ onBack });
-    const section = findElement(output, (node) => node.type === "section");
-    const backButton = findElement(output, (node) => node.type === "button");
+  it("names the panel and says that changes save themselves", () => {
+    const output = renderPanel();
 
-    expect(section.props["aria-labelledby"]).toBe("settings-detail-title");
-    expect(textContent(findElement(output, (node) => node.type === "h2"))).toBe(
-      "Project Reminders"
-    );
-    expect(textContent(output)).toContain(
-      "Set reminder timing and delivery."
-    );
-    expect(backButton.props["aria-label"]).toBe("Back from Project Reminders");
-    expect(textContent(backButton)).toBe("←");
-    backButton.props.onClick();
-    expect(onBack).toHaveBeenCalledOnce();
+    expect(props(output)["aria-label"]).toBe("Project reminders");
+    expect(textContent(output)).toContain("Set reminder timing and delivery.");
+    expect(textContent(output)).toContain("Changes save automatically.");
   });
 
-  it("updates the reminder draft immediately and saves it on blur", () => {
+  it("keeps the offset a draft while typing and saves it on blur", () => {
     const onDefaultTimeChange = vi.fn();
     const onDefaultTimeCommit = vi.fn();
     const output = renderPanel({ onDefaultTimeChange, onDefaultTimeCommit });
-    const input = findElement(output, (node) => node.props?.type === "number");
+    const input = find(output, (node) => props(node).type === "number");
+    const label = find(output, (node) => props(node).className === "field-label");
 
-    expect(textContent(output)).toContain("Remind me");
-    expect(input.props).toMatchObject({ min: "1", max: "1440", value: 30 });
-    input.props.onChange({ target: { value: "45" } });
+    expect(textContent(label)).toBe("Remind me");
+    expect(props(label).htmlFor).toBe(props(input).id);
+    expect(props(input)).toMatchObject({ min: "1", max: "1440", value: 30 });
+    props(input).onChange({ target: { value: "45" } });
     expect(onDefaultTimeChange).toHaveBeenCalledWith(45);
     expect(onDefaultTimeCommit).not.toHaveBeenCalled();
-    input.props.onBlur({ target: { value: "45" } });
+    props(input).onBlur({ target: { value: "45" } });
     expect(onDefaultTimeCommit).toHaveBeenCalledWith(45);
   });
 
-  it("preserves both immediate toggle values, copy, and callbacks", () => {
+  it("preserves both delivery toggles, their copy, and their callbacks", () => {
     const onInAppRemindersChange = vi.fn();
     const onSoundChange = vi.fn();
     const output = renderPanel({ onInAppRemindersChange, onSoundChange });
-    const toggles = findElements(output, (node) => node.props?.type === "checkbox");
+    const toggles = findAll(output, (node) => props(node).type === "checkbox");
 
-    expect(textContent(output)).toContain(
-      "In-app remindersShow alerts in TaskFlow."
-    );
-    expect(textContent(output)).toContain(
-      "Reminder soundPlay a sound for alerts."
-    );
-    expect(toggles.map((toggle) => toggle.props.checked)).toEqual([true, false]);
+    expect(textContent(output)).toContain("In-app reminders");
+    expect(textContent(output)).toContain("Show alerts in TaskFlow.");
+    expect(textContent(output)).toContain("Reminder sound");
+    expect(textContent(output)).toContain("Play a sound for alerts.");
+    expect(toggles.map((toggle) => props(toggle)["aria-label"])).toEqual([
+      "In-app reminders",
+      "Reminder sound",
+    ]);
+    expect(toggles.map((toggle) => props(toggle).checked)).toEqual([true, false]);
 
-    toggles[0].props.onChange({ target: { checked: false } });
-    toggles[1].props.onChange({ target: { checked: true } });
+    props(toggles[0]).onChange({ target: { checked: false } });
+    props(toggles[1]).onChange({ target: { checked: true } });
     expect(onInAppRemindersChange).toHaveBeenCalledWith(false);
     expect(onSoundChange).toHaveBeenCalledWith(true);
   });
