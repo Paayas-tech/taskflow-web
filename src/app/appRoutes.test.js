@@ -3,27 +3,20 @@ import {
   isNavigationItemActive,
   navigationItems,
   normalizePath,
-  pageMetadata,
+  pageTitle,
   projectIdFromPath,
-  projectOverviewPath,
   projectPath,
+  projectTabFromPath,
+  projectTabs,
   routeViewFromPath,
   routeViews,
 } from "./appRoutes";
 
 const staticRoutes = [
-  ["/", "dashboard"],
-  ["/for-you", "for-you"],
-  ["/recent", "recent"],
-  ["/starred", "starred"],
-  ["/planning/timeline", "planning-timeline"],
-  ["/planning/board", "planning-board"],
-  ["/planning/lists", "planning-lists"],
-  ["/planning/goals", "planning-goals"],
-  ["/planning/issues", "planning-issues"],
-  ["/inbox", "inbox"],
+  ["/", "home"],
   ["/tasks", "tasks"],
-  ["/calendar", "tasks"],
+  ["/calendar", "calendar"],
+  ["/inbox", "inbox"],
   ["/projects", "projects"],
   ["/settings", "settings"],
   ["/archived-tasks", "archived"],
@@ -42,8 +35,15 @@ describe("TaskFlow route normalization", () => {
     }
   );
 
-  it.each(["/unknown", "/projects/id/extra", "/projects/%2F", "/%E0%A4%A"])(
-    "falls back to the dashboard for %s",
+  it.each(["/unknown", "/projects/%2F", "/%E0%A4%A"])(
+    "falls back to home for %s",
+    (path) => {
+      expect(normalizePath(path)).toBe("/");
+    }
+  );
+
+  it.each(["/for-you", "/recent", "/starred", "/planning/timeline", "/plans", "/today"])(
+    "normalizes the removed route %s to home",
     (path) => {
       expect(normalizePath(path)).toBe("/");
     }
@@ -58,35 +58,49 @@ describe("TaskFlow route normalization", () => {
     expect(normalizePath("/tasks?filter=today")).toBe("/");
     expect(normalizePath("/recover#token")).toBe("/");
   });
-
-  it("redirects legacy Today links to the Dashboard and preserves Calendar", () => {
-    expect(normalizePath("/today")).toBe("/");
-    expect(normalizePath("/today/")).toBe("/");
-    expect(normalizePath("/calendar")).toBe("/calendar");
-    expect(normalizePath("/calendar/")).toBe("/calendar");
-  });
 });
 
 describe("TaskFlow project routes", () => {
+  it("redirects a bare project path to its overview tab", () => {
+    expect(normalizePath("/projects/project-a")).toBe("/projects/project-a/overview");
+    expect(normalizePath("/projects/project-a/")).toBe("/projects/project-a/overview");
+  });
+
+  it.each(projectTabs)("keeps the %s tab path", (tab) => {
+    expect(normalizePath(`/projects/project-a/${tab}`)).toBe(
+      `/projects/project-a/${tab}`
+    );
+    expect(projectTabFromPath(`/projects/project-a/${tab}`)).toBe(tab);
+  });
+
+  it("sends an unknown project sub-path back to the overview tab", () => {
+    expect(normalizePath("/projects/project-a/extra")).toBe(
+      "/projects/project-a/overview"
+    );
+    expect(projectTabFromPath("/projects/project-a/extra")).toBe("overview");
+    expect(projectTabFromPath("/tasks")).toBe("overview");
+  });
+
   it("extracts a UUID-like project id", () => {
     const id = "123e4567-e89b-12d3-a456-426614174000";
-    expect(projectIdFromPath(`/projects/${id}`)).toBe(id);
+    expect(projectIdFromPath(`/projects/${id}/board`)).toBe(id);
   });
 
   it("round-trips encoded project ids", () => {
     const id = "project name + review";
-    const path = projectPath(id);
+    const path = projectPath(id, "list");
 
-    expect(path).toBe("/projects/project%20name%20%2B%20review");
+    expect(path).toBe("/projects/project%20name%20%2B%20review/list");
     expect(projectIdFromPath(path)).toBe(id);
+    expect(projectTabFromPath(path)).toBe("list");
     expect(normalizePath(path)).toBe(path);
   });
 
-  it("recognizes and normalizes the project overview route", () => {
-    expect(projectOverviewPath("project-a")).toBe("/projects/project-a/overview");
-    expect(projectIdFromPath("/projects/project-a/overview")).toBe("project-a");
-    expect(normalizePath("/projects/project-a/overview/")).toBe("/projects/project-a/overview");
-    expect(routeViewFromPath("/projects/project-a/overview")).toBe("project-overview");
+  it("defaults projectPath to the overview tab and ignores unknown tabs", () => {
+    expect(projectPath("project-a")).toBe("/projects/project-a/overview");
+    expect(projectPath("project-a", "timeline")).toBe(
+      "/projects/project-a/overview"
+    );
   });
 
   it("rejects decoded ids that contain path separators", () => {
@@ -102,99 +116,51 @@ describe("TaskFlow route presentation", () => {
 
   it("keeps recovery distinct from authenticated routes", () => {
     expect(routeViewFromPath("/recover")).toBe("recover");
-    expect(routeViewFromPath("/recover")).not.toBe("dashboard");
+    expect(routeViewFromPath("/recover")).not.toBe("home");
   });
 
-  it("maps project detail paths to the project view", () => {
-    expect(routeViewFromPath("/projects/project-a")).toBe("project");
+  it.each(projectTabs)("maps the %s tab path to the project view", (tab) => {
+    expect(routeViewFromPath(`/projects/project-a/${tab}`)).toBe("project");
   });
 
-  it("preserves the sidebar route metadata and disabled reminder item", () => {
+  it("lists the five primary navigation items in order", () => {
     expect(navigationItems).toEqual([
-      { label: "For you", path: "/for-you", enabled: true, icon: "for-you", group: "workspace" },
-      { label: "Recent", path: "/recent", enabled: true, icon: "recent", group: "workspace" },
-      { label: "Starred", path: "/starred", enabled: true, icon: "starred", group: "workspace" },
-      { label: "Timeline", path: "/planning/timeline", enabled: true, icon: "timeline", group: "planning" },
-      { label: "Board", path: "/planning/board", enabled: true, icon: "board", group: "planning" },
-      { label: "Lists", path: "/planning/lists", enabled: true, icon: "lists", group: "planning" },
-      { label: "Goals", path: "/planning/goals", enabled: true, icon: "goals", group: "planning" },
-      { label: "Issues", path: "/planning/issues", enabled: true, icon: "issues", group: "planning" },
-      { label: "Dashboard", path: "/", enabled: true, icon: "dashboard" },
-      { label: "Inbox", path: "/inbox", enabled: true, icon: "inbox" },
-      { label: "My Tasks", path: "/tasks", enabled: true, icon: "tasks" },
-      { label: "Projects", path: "/projects", enabled: true, icon: "projects" },
-      { label: "Calendar", path: "/calendar", enabled: true, icon: "calendar" },
-      { label: "Reminders", enabled: false, icon: "reminders" },
-      { label: "Settings", path: "/settings", enabled: true, icon: "settings" },
+      { label: "Home", path: "/", icon: "home" },
+      { label: "My Tasks", path: "/tasks", icon: "check-square" },
+      { label: "Calendar", path: "/calendar", icon: "calendar" },
+      { label: "Inbox", path: "/inbox", icon: "inbox" },
+      { label: "Projects", path: "/projects", icon: "folders" },
     ]);
   });
 
-  it("preserves sidebar parent activation for project and archived views", () => {
-    expect(isNavigationItemActive("/projects", "/projects/project-a", "project")).toBe(true);
-    expect(isNavigationItemActive("/settings", "/archived-tasks", "archived")).toBe(true);
-    expect(isNavigationItemActive("/tasks", "/projects/project-a", "project")).toBe(false);
-    expect(isNavigationItemActive("/projects", "/projects/project-a/overview", "project-overview")).toBe(true);
-  });
-
-  it("preserves route-derived page metadata", () => {
+  it("keeps parent activation for project and archived views", () => {
     expect(
-      pageMetadata({
-        currentView: "project",
-        taskCount: 0,
-        archivedTaskCount: 0,
-        projectCount: 1,
-        selectedProject: { name: "Launch" },
-        projectsLoading: false,
-      })
-    ).toEqual({
-      title: "Launch",
-      subtitle: "Project work and planning.",
-    });
-
+      isNavigationItemActive("/projects", "/projects/project-a/board", "project")
+    ).toBe(true);
+    expect(isNavigationItemActive("/settings", "/archived-tasks", "archived")).toBe(
+      true
+    );
     expect(
-      pageMetadata({
-        currentView: "tasks",
-        taskCount: 1,
-        archivedTaskCount: 0,
-        projectCount: 0,
-        selectedProject: null,
-        projectsLoading: false,
-      })
-    ).toEqual({ title: "My Tasks", subtitle: "1 task" });
+      isNavigationItemActive("/tasks", "/projects/project-a/board", "project")
+    ).toBe(false);
+    expect(isNavigationItemActive("/tasks", "/tasks", "tasks")).toBe(true);
   });
 
   it.each([
-    ["dashboard", "Dashboard", "Work that needs attention."],
-    ["inbox", "Inbox", "Updates and mentions."],
-    ["settings", "Settings", "Preferences and account."],
-    ["projects", "Projects", "2 projects"],
-    ["archived", "Archived Tasks", "2 archived tasks"],
-  ])("preserves %s page copy", (currentView, title, subtitle) => {
-    expect(
-      pageMetadata({
-        currentView,
-        taskCount: 2,
-        archivedTaskCount: 2,
-        projectCount: 2,
-        selectedProject: null,
-        projectsLoading: false,
-      })
-    ).toEqual({ title, subtitle });
+    ["home", "Home"],
+    ["tasks", "My Tasks"],
+    ["calendar", "Calendar"],
+    ["inbox", "Inbox"],
+    ["projects", "Projects"],
+    ["settings", "Settings"],
+    ["archived", "Archived tasks"],
+  ])("titles the %s view", (view, title) => {
+    expect(pageTitle(view, null)).toBe(title);
   });
 
-  it.each([
-    [true, "Loading project..."],
-    [false, "Project unavailable"],
-  ])("preserves missing-project metadata when loading is %s", (projectsLoading, subtitle) => {
-    expect(
-      pageMetadata({
-        currentView: "project",
-        taskCount: 0,
-        archivedTaskCount: 0,
-        projectCount: 0,
-        selectedProject: null,
-        projectsLoading,
-      })
-    ).toEqual({ title: "Project", subtitle });
+  it("titles the project view with the project name", () => {
+    expect(pageTitle("project", { name: "Launch" })).toBe("Launch");
+    expect(pageTitle("project", null)).toBe("Project");
+    expect(pageTitle(undefined, null)).toBe("TaskFlow");
   });
 });

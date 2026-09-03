@@ -135,18 +135,10 @@ const isTimeOnly = (value) => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value ||
 
 const allowedViewPaths = new Set([
   "/",
-  "/for-you",
-  "/recent",
-  "/starred",
-  "/planning/timeline",
-  "/planning/board",
-  "/planning/lists",
-  "/planning/goals",
-  "/planning/issues",
-  "/inbox",
   "/tasks",
-  "/projects",
   "/calendar",
+  "/inbox",
+  "/projects",
 ]);
 
 export const normalizeDefaultReminderTime = (value) => {

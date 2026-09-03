@@ -1,7 +1,9 @@
+import { Button, ConfirmDialog, Icon, InlineNotice } from "../ui";
+
 export default function SettingsSignOutSection({
   onSignOut,
-  pending,
-  error,
+  pending = false,
+  error = "",
   onDeleteAccount,
   deletePending = false,
   deleteError = "",
@@ -10,76 +12,47 @@ export default function SettingsSignOutSection({
   onCancelDelete,
 }) {
   return (
-    <div className="settings-signout-row">
-      <div className="settings-account-actions">
-        <button
-          className="ghost-btn settings-signout"
-          type="button"
-          onClick={onSignOut}
-          disabled={pending || deletePending}
-          aria-busy={pending}
-          aria-describedby={error ? "settings-signout-error" : undefined}
-        >
-          {pending ? "Signing out..." : "Sign out"}
-        </button>
-        <button
-          className="settings-delete-trigger"
-          type="button"
-          onClick={onBeginDelete}
-          disabled={pending || deletePending}
-        >
-          Delete account
-        </button>
-      </div>
-      {error && (
-        <p className="signout-error" id="settings-signout-error" role="alert">
-          {error}
+    <section className="settings-danger" aria-label="Account actions">
+      <div className="settings-danger-heading">
+        <h3 className="settings-danger-title">Danger zone</h3>
+        <p className="settings-danger-description">
+          Sign out of this browser, or delete your account and everything in it.
         </p>
-      )}
+      </div>
 
-      {confirmingDelete && (
-        <div
-          className="settings-delete-backdrop"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !deletePending) {
-              onCancelDelete?.();
-            }
-          }}
+      {error ? (
+        <InlineNotice tone="error" id="settings-signout-error">
+          {error}
+        </InlineNotice>
+      ) : null}
+
+      <div className="cluster-2">
+        <Button
+          icon={<Icon name="log-out" />}
+          loading={pending}
+          disabled={deletePending}
+          aria-describedby={error ? "settings-signout-error" : undefined}
+          onClick={onSignOut}
         >
-          <section
-            className="settings-delete-dialog"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="delete-account-title"
-            aria-describedby="delete-account-description"
-          >
-            <div className="settings-delete-warning-icon" aria-hidden="true">!</div>
-            <div>
-              <p className="settings-delete-kicker">Permanent action</p>
-              <h2 id="delete-account-title">Delete your TaskFlow account?</h2>
-              <p id="delete-account-description">
-                All of your account data, personal tasks, and projects you own
-                will be permanently deleted. This action cannot be undone.
-              </p>
-            </div>
-            {deleteError && <p className="signout-error" role="alert">{deleteError}</p>}
-            <div className="settings-delete-actions">
-              <button className="ghost-btn" type="button" onClick={onCancelDelete} disabled={deletePending}>
-                Cancel
-              </button>
-              <button
-                className="danger-btn"
-                type="button"
-                onClick={onDeleteAccount}
-                disabled={deletePending}
-                aria-busy={deletePending}
-              >
-                {deletePending ? "Deleting account…" : "Permanently delete account"}
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
-    </div>
+          Sign out
+        </Button>
+        <Button variant="danger" disabled={pending || deletePending} onClick={onBeginDelete}>
+          Delete account
+        </Button>
+      </div>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        title="Delete your account?"
+        description="All of your account data, personal tasks, and projects you own will be permanently deleted. This action cannot be undone."
+        confirmLabel="Delete account"
+        danger
+        busy={deletePending}
+        onCancel={onCancelDelete}
+        onConfirm={onDeleteAccount}
+      >
+        {deleteError ? <InlineNotice tone="error">{deleteError}</InlineNotice> : null}
+      </ConfirmDialog>
+    </section>
   );
 }

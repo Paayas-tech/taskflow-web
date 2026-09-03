@@ -142,6 +142,28 @@ describe("settings defaults and normalization", () => {
       }).getDate()
     ).toBe(14);
   });
+
+  it.each(["/", "/tasks", "/calendar", "/inbox", "/projects"])(
+    "keeps %s as a startup view",
+    (path) => {
+      expect(defaultViewPath("last-viewed", path)).toBe(path);
+      expect(
+        normalizeSettings({ navigation: { lastViewedPath: path } }).navigation
+          .lastViewedPath
+      ).toBe(path);
+    }
+  );
+
+  it.each(["/for-you", "/recent", "/starred", "/planning/timeline", "/today"])(
+    "sends the removed view %s back to home",
+    (path) => {
+      expect(defaultViewPath("last-viewed", path)).toBe("/");
+      expect(
+        normalizeSettings({ navigation: { lastViewedPath: path } }).navigation
+          .lastViewedPath
+      ).toBe("/");
+    }
+  );
 });
 describe("settings validation and theme resolution", () => {
   it("validates reminder offsets and theme modes", () => {

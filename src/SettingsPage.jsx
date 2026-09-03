@@ -4,9 +4,10 @@ import {
   SETTINGS_DEFAULT_VIEWS,
   SETTINGS_TIME_FORMATS,
   SETTINGS_WEEK_STARTS,
-  TASKFLOW_BACKGROUNDS,
   TASKFLOW_LANGUAGES,
+  formatTimeForDisplay,
   getSettingsValidationError,
+  myDayResetTime,
 } from "./domain/settingsDomain";
 import {
   CALENDAR_PROVIDERS,
@@ -14,13 +15,11 @@ import {
   emptyCalendarConnection,
 } from "./domain/calendarConnectionDomain";
 import { requestNotificationPermission } from "./services/reminderService";
-import { useModalLifecycle } from "./components/modal/useModalLifecycle";
+import { Avatar, Button, Field, Icon, InlineNotice, Input, Kbd, Spinner } from "./ui";
 import {
-  PlaceholderPanel,
   SelectionRows,
   SettingsDetail,
   SettingsRow,
-  ToggleRow,
 } from "./settings/SettingsControls";
 import {
   AccountSettingsSection,
@@ -31,9 +30,7 @@ import {
 import ProfileSettingsPanel from "./settings/ProfileSettingsPanel";
 import CalendarConnectionSection from "./settings/CalendarConnectionSection";
 import ProjectRemindersPanel from "./settings/ProjectRemindersPanel";
-import BackgroundSettingsPanel from "./settings/BackgroundSettingsPanel";
 import ArchivedProjectsPanel from "./settings/ArchivedProjectsPanel";
-import GoogleCalendarIntegrationPanel from "./settings/GoogleCalendarIntegrationPanel";
 import { googleCalendarIntegrationService } from "./application/googleCalendarIntegrationService";
 
 const updateSection = (settings, section, patch) => ({
@@ -41,21 +38,44 @@ const updateSection = (settings, section, patch) => ({
   [section]: { ...settings[section], ...patch },
 });
 
-const titleCase = (value) =>
-  String(value || "")
-    .split("-")
-    .map((word) => word[0]?.toUpperCase() + word.slice(1))
-    .join(" ");
+/** "early-morning" → "Early morning". */
+const humanize = (value) => {
+  const text = String(value || "").replace(/-/g, " ");
+  return text ? `${text[0].toUpperCase()}${text.slice(1)}` : "";
+};
+
+const panelTitles = {
+  profile: "Profile",
+  projectReminders: "Project reminders",
+  archivedProjects: "Archived projects",
+  myDay: "My day",
+  calendars: "Calendars",
+  theme: "Theme",
+  defaultView: "Default view",
+  timeSettings: "Time settings",
+  timeFormat: "Time format",
+  dateFormat: "Date format",
+  weekStart: "Week starts on",
+  language: "Language",
+  shortcuts: "Keyboard shortcuts",
+  about: "About",
+};
 
 const defaultViewOptions = [
-  ["dashboard", "Dashboard"],
-  ["tasks", "All Tasks"],
-  ["projects", "Projects"],
-  ["calendar", "Calendar"],
-  ["last-viewed", "Last Viewed"],
+  ["dashboard", "Home", "Start on the home view"],
+  ["tasks", "My tasks", "Start on your task list"],
+  ["projects", "Projects", "Start on the project list"],
+  ["calendar", "Calendar", "Start on the calendar"],
+  ["last-viewed", "Last viewed", "Continue where you left off"],
 ].filter(([value]) => SETTINGS_DEFAULT_VIEWS.includes(value));
 
-export default function SettingsPage({
+const shortcuts = [
+  ["Open search", ["⌘K", "/"]],
+  ["Close a dialog or panel", ["Esc"]],
+  ["Move through controls", ["Tab"]],
+];
+
+export function SettingsPage({
   settings,
   loading,
   error,
@@ -73,7 +93,6 @@ export default function SettingsPage({
   deleteAccountError = "",
   onNavigate,
   profileRequest = 0,
-  homeRequest = 0,
   onOpenProjectCreate,
   onRestoreProject,
   exportData,
@@ -92,8 +111,6 @@ export default function SettingsPage({
   const [panelStack, setPanelStack] = useState(() => callbackParameters ? ["calendars"] : []);
   const [notificationMessage, setNotificationMessage] = useState("");
   const [panelMessage, setPanelMessage] = useState("");
-  const [backgroundSearch, setBackgroundSearch] = useState("");
-  const [confirmingFilterReset, setConfirmingFilterReset] = useState(false);
   const [projectActionId, setProjectActionId] = useState("");
   const [confirmingAccountDelete, setConfirmingAccountDelete] = useState(false);
   const [calendarSetupProviderId, setCalendarSetupProviderId] = useState("");
@@ -113,7 +130,6 @@ export default function SettingsPage({
   const [googleSyncSummary, setGoogleSyncSummary] = useState(null);
   const [confirmingGoogleDisconnect, setConfirmingGoogleDisconnect] = useState(false);
   const googleCallbackSyncStartedRef = useRef(false);
-  const calendarDialogRef = useRef(null);
   const validationError = useMemo(
     () => getSettingsValidationError(settings),
     [settings]
@@ -121,48 +137,26 @@ export default function SettingsPage({
   const activePanel = panelStack.at(-1) || null;
   const projects = exportData?.projects || [];
   const archivedProjects = projects.filter((project) => project.status === "archived");
-  const customLists = exportData?.lists || [];
-  const selectedList = customLists.find(
-    (list) => list.id === settings.taskDefaults.listId
-  );
-  const themeLabel = titleCase(settings.theme.mode);
-  const backgroundLabel =
-    TASKFLOW_BACKGROUNDS.find(
-      ({ id }) => id === settings.background.selected
-    )?.name || "Calm";
   const languageLabel =
     TASKFLOW_LANGUAGES.find(({ code }) => code === settings.language.code)?.name ||
     "English";
   const defaultViewLabel =
-    defaultViewOptions.find(([value]) => value === settings.navigation.defaultView)?.[1] || "Dashboard";
-  const weekStartLabel = titleCase(settings.time.weekStartsOn);
-  const connectedCalendarCount = CALENDAR_PROVIDERS.filter(
-    ({ id }) => settings.calendarConnections[id]?.connected
-  ).length;
+    defaultViewOptions.find(([value]) => value === settings.navigation.defaultView)?.[1] || "Home";
+  const weekStartLabel = humanize(settings.time.weekStartsOn);
+  const timeFormatLabel = settings.time.format === "12-hour" ? "12 hour" : "24 hour";
+  const connectedCalendarCount =
+    CALENDAR_PROVIDERS.filter(
+      ({ id }) => id !== "google" && settings.calendarConnections[id]?.connected
+    ).length + (googleConnection ? 1 : 0);
   const selectedCalendarProvider = CALENDAR_PROVIDERS.find(
     ({ id }) => id === calendarSetupProviderId
   );
-
-  const { onBackdropMouseDown: onCalendarBackdropMouseDown } =
-    useModalLifecycle({
-      isOpen: Boolean(calendarSetupProviderId),
-      modalRef: calendarDialogRef,
-      onClose: () => setCalendarSetupProviderId(""),
-      trapFocus: false,
-      restoreFocus: false,
-    });
 
   useEffect(() => {
     if (!profileRequest) return;
     setPanelMessage("");
     setPanelStack(["profile"]);
   }, [profileRequest]);
-
-  useEffect(() => {
-    if (!homeRequest) return;
-    setPanelMessage("");
-    setPanelStack([]);
-  }, [homeRequest]);
 
   const loadGoogleConnection = async () => {
     setGoogleConnectionLoading(true);
@@ -179,7 +173,7 @@ export default function SettingsPage({
   };
 
   useEffect(() => {
-    if (activePanel !== "integrations" && activePanel !== "calendars") return;
+    if (activePanel !== "calendars") return;
     void loadGoogleConnection();
   }, [activePanel]);
 
@@ -374,13 +368,25 @@ export default function SettingsPage({
 
   if (loading) {
     return (
-      <section className="settings-state" aria-live="polite">
-        <span className="settings-spinner" aria-hidden="true" />
-        <h2>Loading settings</h2>
-        <p>Preparing your preferences.</p>
+      <section className="page settings-page" aria-label="Settings">
+        <header className="page-header">
+          <h1 className="page-title">Settings</h1>
+        </header>
+        <div className="page-body is-narrow">
+          <p className="settings-loading" role="status">
+            <Spinner aria-hidden="true" />
+            Loading settings…
+          </p>
+        </div>
       </section>
     );
   }
+
+  // A display-name problem belongs on its own field; anything else stays a page notice.
+  const displayNameError =
+    activePanel === "profile" && validationError.startsWith("Display name")
+      ? validationError
+      : "";
 
   const renderPanel = () => {
     if (activePanel === "profile") {
@@ -388,8 +394,11 @@ export default function SettingsPage({
         <ProfileSettingsPanel
           settings={settings}
           saving={saving}
+          error={displayNameError}
           onChange={onChange}
-          onBack={closePanel}
+          onSave={() => {
+            if (!validationError) onSave(settings);
+          }}
           onSignOut={onSignOut}
           signOutPending={signOutPending}
           signOutError={signOutError}
@@ -406,65 +415,11 @@ export default function SettingsPage({
       );
     }
 
-    if (activePanel === "integrations") {
-      return (
-        <GoogleCalendarIntegrationPanel
-          connection={googleConnection}
-          loading={googleConnectionLoading}
-          pendingAction={googlePendingAction}
-          error={googleIntegrationError}
-          message={googleIntegrationMessage}
-          syncSummary={googleSyncSummary}
-          onBack={closePanel}
-          onConnect={() => void connectGoogleCalendar()}
-          onSync={() => void syncGoogleCalendar()}
-          onDisconnect={() => void disconnectGoogleCalendar()}
-          onRetry={() => void loadGoogleConnection()}
-        />
-      );
-    }
-
     if (activePanel === "myDay") {
-      const resetLabel =
-        settings.myDay.resetMode === "early-morning"
-          ? "6:00 AM"
-          : settings.myDay.resetMode === "custom"
-            ? settings.myDay.customResetTime
-            : "Midnight";
       return (
-        <SettingsDetail title="My Day" description="Set when your day resets." onBack={closePanel}>
-          <div className="settings-compact-list">
-            <SettingsRow label="Reset Time" value={resetLabel} onClick={() => openPanel("myDayReset")} />
-            <SettingsRow label="External Suggestions" value="Not available" onClick={() => openPanel("externalSuggestions")} />
-            <SettingsRow label="Reset Filter Suggestions" onClick={() => setConfirmingFilterReset(true)} />
-          </div>
-          {confirmingFilterReset && (
-            <div className="settings-inline-confirm" role="alertdialog" aria-label="Reset filter suggestions">
-              <p>Clear saved filter suggestions?</p>
-              <div>
-                <button className="ghost-btn" type="button" onClick={() => setConfirmingFilterReset(false)}>Cancel</button>
-                <button
-                  className="danger-btn"
-                  type="button"
-                  onClick={() => {
-                    setConfirmingFilterReset(false);
-                    setPanelMessage("No saved filter suggestions were present.");
-                  }}
-                >
-                  Confirm reset
-                </button>
-              </div>
-            </div>
-          )}
-        </SettingsDetail>
-      );
-    }
-
-    if (activePanel === "myDayReset") {
-      return (
-        <SettingsDetail title="Reset Time" description="Today uses this local-time boundary." onBack={closePanel}>
+        <SettingsDetail title="My day" description="Set when your day resets.">
           <SelectionRows
-            ariaLabel="My Day reset time"
+            ariaLabel="My day reset time"
             value={settings.myDay.resetMode}
             onSelect={(resetMode) =>
               commitSection(
@@ -478,7 +433,7 @@ export default function SettingsPage({
                         ? "06:00"
                         : settings.myDay.customResetTime,
                 },
-                "My Day reset time saved."
+                "My day reset time saved."
               )
             }
             options={[
@@ -487,10 +442,11 @@ export default function SettingsPage({
               ["custom", "Custom time", "Choose a local reset time"],
             ]}
           />
-          {settings.myDay.resetMode === "custom" && (
-            <label className="settings-inline-field">
-              <span>Custom reset time</span>
-              <input
+          {settings.myDay.resetMode === "custom" ? (
+            <Field label="Custom reset time" htmlFor="settings-custom-reset-time" inline>
+              <Input
+                id="settings-custom-reset-time"
+                className="settings-time-input"
                 type="time"
                 value={settings.myDay.customResetTime}
                 onChange={(event) =>
@@ -501,27 +457,9 @@ export default function SettingsPage({
                   )
                 }
               />
-            </label>
-          )}
+            </Field>
+          ) : null}
         </SettingsDetail>
-      );
-    }
-
-    if (activePanel === "externalSuggestions") {
-      return (
-        <PlaceholderPanel
-          title="External Suggestions"
-          description="External suggestions are not available yet."
-          onBack={closePanel}
-        >
-          <ToggleRow
-            label="Use external suggestions"
-            description="Requires an integration."
-            checked={false}
-            disabled
-            status="Not available"
-          />
-        </PlaceholderPanel>
       );
     }
 
@@ -539,19 +477,16 @@ export default function SettingsPage({
           googleError={googleIntegrationError}
           googleMessage={googleIntegrationMessage}
           googleSyncSummary={googleSyncSummary}
+          confirmingGoogleDisconnect={confirmingGoogleDisconnect}
           selectedProvider={selectedCalendarProvider}
           setup={setup}
-          dialogRef={calendarDialogRef}
-          onBackdropMouseDown={onCalendarBackdropMouseDown}
-          onBack={closePanel}
           onConnect={setCalendarSetupProviderId}
           onDisconnect={(provider) => void disconnectCalendar(provider)}
           onConnectGoogle={() => void connectGoogleCalendar()}
           onSyncGoogle={() => void syncGoogleCalendar()}
-          onDisconnectGoogle={() => void disconnectGoogleCalendar()}
-          confirmingGoogleDisconnect={confirmingGoogleDisconnect}
           onRequestGoogleDisconnect={() => setConfirmingGoogleDisconnect(true)}
           onCancelGoogleDisconnect={() => setConfirmingGoogleDisconnect(false)}
+          onDisconnectGoogle={() => void disconnectGoogleCalendar()}
           onRetryGoogle={() => void loadGoogleConnection()}
           onCloseSetup={() => setCalendarSetupProviderId("")}
         />
@@ -560,7 +495,7 @@ export default function SettingsPage({
 
     if (activePanel === "theme") {
       return (
-        <SettingsDetail title="Theme" description="Choose your appearance." onBack={closePanel}>
+        <SettingsDetail title="Theme" description="Choose your appearance.">
           <SelectionRows
             ariaLabel="Theme"
             value={settings.theme.mode}
@@ -574,31 +509,9 @@ export default function SettingsPage({
       );
     }
 
-    if (activePanel === "background") {
-      return (
-        <BackgroundSettingsPanel
-          backgrounds={TASKFLOW_BACKGROUNDS}
-          selectedBackgroundId={settings.background.selected}
-          searchValue={backgroundSearch}
-          onSearchChange={setBackgroundSearch}
-          onBack={closePanel}
-          onSelectBackground={({ id, name }) =>
-            void commitSettings(
-              {
-                ...settings,
-                background: { selected: id },
-                appearance: { ...settings.appearance, background: id },
-              },
-              `${name} background saved.`
-            )
-          }
-        />
-      );
-    }
-
     if (activePanel === "defaultView") {
       return (
-        <SettingsDetail title="Default View" description="Choose your start page." onBack={closePanel}>
+        <SettingsDetail title="Default view" description="Choose your start page.">
           <SelectionRows
             ariaLabel="Default view"
             value={settings.navigation.defaultView}
@@ -611,38 +524,24 @@ export default function SettingsPage({
       );
     }
 
-    if (activePanel === "defaultList") {
-      const options = [
-        ["", "Inbox", "Tasks without a custom list"],
-        ...customLists.map((list) => [list.id, list.name, "Custom list"]),
-      ];
-      return (
-        <SettingsDetail title="Default List" description="Used for new tasks." onBack={closePanel}>
-          <SelectionRows
-            ariaLabel="Default list"
-            value={settings.taskDefaults.listId || ""}
-            onSelect={(listId) =>
-              commitSection("taskDefaults", { listId: listId || null }, "Default list saved.")
-            }
-            options={options}
-          />
-        </SettingsDetail>
-      );
-    }
-
     if (activePanel === "timeSettings") {
       return (
-        <SettingsDetail title="Time Settings" description="Set date and time formats." onBack={closePanel}>
-          <div className="settings-compact-list">
-            <SettingsRow label="Time Format" value={settings.time.format === "12-hour" ? "12 Hour" : "24 Hour"} onClick={() => openPanel("timeFormat")} />
-            <SettingsRow label="Date Settings" value={settings.time.dateFormat} onClick={() => openPanel("dateFormat")} />
-            <SettingsRow label="Week Starts On" value={weekStartLabel} onClick={() => openPanel("weekStart")} />
-            <ToggleRow
-              label="Time Detection"
-              description="Not available yet."
-              checked={false}
-              disabled
-              status="Not available"
+        <SettingsDetail title="Time settings" description="Set date and time formats.">
+          <div className="row-list">
+            <SettingsRow
+              label="Time format"
+              value={timeFormatLabel}
+              onClick={() => openPanel("timeFormat")}
+            />
+            <SettingsRow
+              label="Date format"
+              value={settings.time.dateFormat}
+              onClick={() => openPanel("dateFormat")}
+            />
+            <SettingsRow
+              label="Week starts on"
+              value={weekStartLabel}
+              onClick={() => openPanel("weekStart")}
             />
           </div>
         </SettingsDetail>
@@ -651,14 +550,14 @@ export default function SettingsPage({
 
     if (activePanel === "timeFormat") {
       return (
-        <SettingsDetail title="Time Format" onBack={closePanel}>
+        <SettingsDetail title="Time format">
           <SelectionRows
             ariaLabel="Time format"
             value={settings.time.format}
             onSelect={(format) => commitSection("time", { format }, "Time format saved.")}
             options={SETTINGS_TIME_FORMATS.map((format) => [
               format,
-              format === "12-hour" ? "12 Hour" : "24 Hour",
+              format === "12-hour" ? "12 hour" : "24 hour",
             ])}
           />
         </SettingsDetail>
@@ -667,7 +566,7 @@ export default function SettingsPage({
 
     if (activePanel === "dateFormat") {
       return (
-        <SettingsDetail title="Date Settings" onBack={closePanel}>
+        <SettingsDetail title="Date format">
           <SelectionRows
             ariaLabel="Date format"
             value={settings.time.dateFormat}
@@ -680,12 +579,14 @@ export default function SettingsPage({
 
     if (activePanel === "weekStart") {
       return (
-        <SettingsDetail title="Week Starts On" onBack={closePanel}>
+        <SettingsDetail title="Week starts on">
           <SelectionRows
             ariaLabel="First day of week"
             value={settings.time.weekStartsOn}
-            onSelect={(weekStartsOn) => commitSection("time", { weekStartsOn }, "Calendar week start saved.")}
-            options={SETTINGS_WEEK_STARTS.map((day) => [day, titleCase(day)])}
+            onSelect={(weekStartsOn) =>
+              commitSection("time", { weekStartsOn }, "Calendar week start saved.")
+            }
+            options={SETTINGS_WEEK_STARTS.map((day) => [day, humanize(day)])}
           />
         </SettingsDetail>
       );
@@ -693,27 +594,21 @@ export default function SettingsPage({
 
     if (activePanel === "language") {
       return (
-        <SettingsDetail title="Language" description="Choose your locale. Interface text remains English." onBack={closePanel}>
+        <SettingsDetail
+          title="Language"
+          description="Choose your locale. Interface text remains English."
+        >
           <SelectionRows
             ariaLabel="Language"
             value={settings.language.code}
             onSelect={(code) => commitSection("language", { code }, "Language preference saved.")}
-            options={TASKFLOW_LANGUAGES.map(({ code, name, locale }) => [code, name, `${locale} locale`])}
+            options={TASKFLOW_LANGUAGES.map(({ code, name, locale }) => [
+              code,
+              name,
+              `${locale} locale`,
+            ])}
           />
         </SettingsDetail>
-      );
-    }
-
-    if (activePanel === "importData") {
-      return (
-        <PlaceholderPanel
-          title="Import Data"
-          description="Import is not available yet."
-          onBack={closePanel}
-        >
-          <p>You can still export your TaskFlow data.</p>
-          <button className="secondary-btn" type="button" onClick={downloadExport}>Export TaskFlow data</button>
-        </PlaceholderPanel>
       );
     }
 
@@ -721,7 +616,6 @@ export default function SettingsPage({
       return (
         <ProjectRemindersPanel
           reminder={settings.reminder}
-          onBack={closePanel}
           onDefaultTimeChange={(defaultTime) =>
             onChange(updateSection(settings, "reminder", { defaultTime }))
           }
@@ -747,29 +641,24 @@ export default function SettingsPage({
             onNavigate?.(`/projects/${encodeURIComponent(project.id)}`)
           }
           onRestoreProject={(project) => void restoreArchivedProject(project)}
-          onBack={closePanel}
         />
-      );
-    }
-
-    if (activePanel === "whatsNew") {
-      return (
-        <SettingsDetail title="What's New?" description="Recent TaskFlow features." onBack={closePanel}>
-          <ol className="settings-release-list">
-            <li><strong>Archived Tasks</strong><span>Archive, restore, and permanently remove tasks.</span></li>
-            <li><strong>Calendar and reminders</strong><span>Month, week, day, agenda, and scheduled reminders.</span></li>
-            <li><strong>Project task management</strong><span>Project assignment, project task views, and membership foundations.</span></li>
-          </ol>
-        </SettingsDetail>
       );
     }
 
     if (activePanel === "shortcuts") {
       return (
-        <SettingsDetail title="Keyboard Shortcuts" description="Available keyboard actions." onBack={closePanel}>
-          <div className="settings-shortcuts">
-            <p><kbd>Esc</kbd><span>Close an open task dialog when safe.</span></p>
-            <p><kbd>Tab</kbd><span>Move through available controls and dialog fields.</span></p>
+        <SettingsDetail title="Keyboard shortcuts" description="Available keyboard actions.">
+          <div className="row-list">
+            {shortcuts.map(([action, keys]) => (
+              <p className="settings-shortcut-row" key={action}>
+                <span>{action}</span>
+                <span className="cluster-2">
+                  {keys.map((key) => (
+                    <Kbd key={key}>{key}</Kbd>
+                  ))}
+                </span>
+              </p>
+            ))}
           </div>
         </SettingsDetail>
       );
@@ -777,12 +666,12 @@ export default function SettingsPage({
 
     if (activePanel === "about") {
       return (
-        <SettingsDetail title="About" description="Application information." onBack={closePanel}>
-          <div className="settings-about-copy">
-            <p><strong>TaskFlow</strong></p>
-            <p>Version 0.0.0</p>
-            <p>React, Vite, and Supabase productivity application.</p>
-            <p>No verified Terms or Privacy links are configured.</p>
+        <SettingsDetail title="About" description="Application information.">
+          <div className="settings-about">
+            <p className="settings-about-name">TaskFlow</p>
+            <p className="muted">Version 0.0.0</p>
+            <p className="muted">React, Vite, and Supabase productivity application.</p>
+            <p className="muted">No verified terms or privacy links are configured.</p>
           </div>
         </SettingsDetail>
       );
@@ -791,36 +680,73 @@ export default function SettingsPage({
     return null;
   };
 
-  return (
-    <div className="settings-page">
-      {error && (
-        <div className="settings-banner settings-banner-error" role="alert">
-          <span>{error}</span>
-          <button className="ghost-btn compact-btn" type="button" onClick={onRetry}>Retry</button>
-        </div>
-      )}
+  const feedbackMessage =
+    activePanel === "projectReminders"
+      ? ""
+      : notificationMessage || panelMessage || saveMessage;
 
-      <form
-        className="settings-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!validationError) onSave(settings);
-        }}
-      >
-        {activePanel ? renderPanel() : (
+  return (
+    <section className="page settings-page" aria-label="Settings">
+      <header className="page-header">
+        {activePanel ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Icon name="arrow-left" />}
+            onClick={closePanel}
+          >
+            Back
+          </Button>
+        ) : null}
+        <h1 className="page-title">{activePanel ? panelTitles[activePanel] : "Settings"}</h1>
+      </header>
+
+      <div className="page-body is-narrow">
+        {error ? (
+          <InlineNotice
+            tone="error"
+            className="page-notice"
+            action={
+              <Button size="sm" onClick={onRetry}>
+                Retry
+              </Button>
+            }
+          >
+            {error}
+          </InlineNotice>
+        ) : null}
+
+        {validationError && !displayNameError ? (
+          <InlineNotice tone="error" className="page-notice">
+            {validationError}
+          </InlineNotice>
+        ) : null}
+
+        {feedbackMessage ? (
+          <InlineNotice tone="success" className="page-notice">
+            {feedbackMessage}
+          </InlineNotice>
+        ) : null}
+
+        {activePanel ? (
+          renderPanel()
+        ) : (
           <div className="settings-overview">
-            <header className="settings-sheet-account-header">
-              <span aria-hidden="true">{(settings.profile.displayName || settings.profile.email)?.[0]?.toUpperCase() || "U"}</span>
-              <div>
-                <strong>{settings.profile.displayName || "TaskFlow user"}</strong>
-                <small>{settings.profile.email}</small>
+            <header className="settings-account">
+              <Avatar name={settings.profile.displayName || settings.profile.email} size="lg" />
+              <div className="settings-account-body">
+                <span className="settings-account-name">
+                  {settings.profile.displayName || "TaskFlow user"}
+                </span>
+                <span className="settings-account-email">{settings.profile.email}</span>
               </div>
             </header>
+
             <AccountSettingsSection
               displayName={settings.profile.displayName}
               onOpenProfile={() => openPanel("profile")}
               onOpenArchivedTasks={() => onNavigate?.("/archived-tasks")}
-              onOpenImportData={() => openPanel("importData")}
+              onExportData={downloadExport}
             />
             <ProjectsSettingsSection
               defaultReminderTime={settings.reminder.defaultTime}
@@ -830,42 +756,33 @@ export default function SettingsPage({
               onOpenProjectCreate={onOpenProjectCreate}
             />
             <PreferencesSettingsSection
-              myDayLabel={settings.myDay.resetMode === "midnight" ? "Midnight" : titleCase(settings.myDay.resetMode)}
+              myDayLabel={formatTimeForDisplay(
+                myDayResetTime(settings.myDay),
+                settings.time.format
+              )}
               connectedCalendarCount={connectedCalendarCount}
-              themeLabel={themeLabel}
-              backgroundLabel={backgroundLabel}
+              themeLabel={humanize(settings.theme.mode)}
               browserNotificationsEnabled={settings.reminder.enableBrowserNotifications}
               defaultViewLabel={defaultViewLabel}
-              defaultListLabel={selectedList?.name || "Inbox"}
-              timeSettingsLabel={`${settings.time.format === "12-hour" ? "12 Hour" : "24 Hour"} · ${weekStartLabel}`}
+              timeSettingsLabel={`${timeFormatLabel} · ${weekStartLabel}`}
               languageLabel={languageLabel}
               onOpenMyDay={() => openPanel("myDay")}
               onOpenCalendars={() => openPanel("calendars")}
               onOpenTheme={() => openPanel("theme")}
-              onOpenBackground={() => openPanel("background")}
               onToggleBrowserNotifications={(enabled) => void enableBrowserNotifications(enabled)}
               onOpenDefaultView={() => openPanel("defaultView")}
-              onOpenDefaultList={() => openPanel("defaultList")}
               onOpenTimeSettings={() => openPanel("timeSettings")}
               onOpenLanguage={() => openPanel("language")}
             />
             <TaskflowSettingsSection
-              onOpenWhatsNew={() => openPanel("whatsNew")}
               onOpenShortcuts={() => openPanel("shortcuts")}
               onOpenAbout={() => openPanel("about")}
             />
           </div>
         )}
-
-        {activePanel !== "projectReminders" && (notificationMessage || panelMessage || saveMessage) && (
-          <p className="settings-inline-note" role="status">
-            {notificationMessage || panelMessage || saveMessage}
-          </p>
-        )}
-        {validationError && <p className="form-error settings-validation" role="alert">{validationError}</p>}
-
-      </form>
-
-    </div>
+      </div>
+    </section>
   );
 }
+
+export default SettingsPage;

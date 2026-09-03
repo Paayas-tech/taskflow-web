@@ -1,53 +1,55 @@
+import { Button, EmptyState } from "../ui";
 import { SettingsDetail } from "./SettingsControls";
 
 export default function ArchivedProjectsPanel({
   projects,
-  pendingProjectId,
+  pendingProjectId = "",
   onViewProject,
   onRestoreProject,
-  onBack,
 }) {
+  if (!projects.length) {
+    return (
+      <SettingsDetail title="Archived projects" description="Projects you have archived.">
+        <EmptyState
+          icon="archive"
+          title="No archived projects"
+          description="Archived projects appear here."
+        />
+      </SettingsDetail>
+    );
+  }
+
   return (
-    <SettingsDetail
-      title="Archived Projects"
-      description="Projects already marked archived."
-      onBack={onBack}
-    >
-      {projects.length ? (
-        <div className="settings-compact-list settings-archived-projects">
-          {projects.map((project) => {
-            const pending = pendingProjectId === project.id;
-            return (
-              <div className="settings-archived-project" key={project.id}>
-                <div>
-                  <strong>{project.name}</strong>
-                  {project.description && <small>{project.description}</small>}
-                </div>
-                <div className="settings-archived-project-actions">
-                  <button
-                    className="ghost-btn compact-btn"
-                    type="button"
-                    onClick={() => onViewProject(project)}
-                    disabled={pending}
-                  >
-                    View
-                  </button>
-                  <button
-                    className="ghost-btn compact-btn"
-                    type="button"
-                    onClick={() => onRestoreProject(project)}
-                    disabled={pending}
-                  >
-                    {pending ? "Restoring..." : "Restore"}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="settings-placeholder-panel"><p>No archived projects.</p></div>
-      )}
+    <SettingsDetail title="Archived projects" description="Projects you have archived.">
+      <div className="row-list">
+        {projects.map((project) => {
+          const pending = pendingProjectId === project.id;
+
+          return (
+            <div className="settings-project-row" key={project.id}>
+              <span className="settings-row-body">
+                <span className="settings-row-label">{project.name}</span>
+                {project.description ? (
+                  <span className="settings-row-description truncate">{project.description}</span>
+                ) : null}
+              </span>
+              <span className="cluster-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={pending}
+                  onClick={() => onViewProject(project)}
+                >
+                  Open
+                </Button>
+                <Button size="sm" loading={pending} onClick={() => onRestoreProject(project)}>
+                  Restore
+                </Button>
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </SettingsDetail>
   );
 }

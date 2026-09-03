@@ -1,9 +1,30 @@
 # TaskFlow
 
 TaskFlow is a collaborative productivity application built with React, Vite,
-and Supabase. It supports personal tasks and lists, project workspaces, Kanban,
-calendar views, invitations, member roles, assignees, comments, activity, and
-realtime notifications.
+and Supabase. It supports personal tasks, project workspaces, Kanban, calendar
+views, invitations, member roles, assignees, comments, activity, attachments,
+and realtime notifications.
+
+## Routes
+
+The app is a single-page application with a sidebar shell and no top bar. Every
+route below renders inside `src/App.jsx`; unknown paths normalize to `/`.
+
+| Route | Page |
+|---|---|
+| `/` | Home dashboard (`src/pages/HomePage.jsx`) |
+| `/tasks` | My Tasks, list or board (`src/pages/MyTasksPage.jsx`) |
+| `/calendar` | Month / Week / Day / Agenda (`src/pages/CalendarPage.jsx`) |
+| `/inbox` | Notifications (`src/pages/InboxPage.jsx`) |
+| `/projects` | Project list and invitations (`src/pages/ProjectsPage.jsx`) |
+| `/projects/:id/{overview,board,list,stories}` | Project workspace (`src/pages/ProjectWorkspacePage.jsx`) |
+| `/settings` | Settings (`src/SettingsPage.jsx`) |
+| `/archived-tasks` | Archived personal tasks (`src/pages/ArchivedTasksPage.jsx`) |
+| `/recover` | Password recovery (`src/auth/Recover.jsx`) |
+
+`/projects/:id` and any unknown project sub-path redirect to
+`/projects/:id/overview`. In development, `/__preview` renders the offline
+component harness in `src/dev/`; it is excluded from production builds.
 
 ## Requirements
 
@@ -162,8 +183,10 @@ version; any such records require a separate, reviewed data audit.
 4. Deploy and verify authentication, personal data, collaboration, realtime,
    route refreshes, and responsive layouts.
 
-`vercel.json` rewrites application routes to `index.html` so direct navigation
-to `/today`, `/tasks`, `/projects`, `/calendar`, and `/settings` works.
+`vercel.json` rewrites every path to `index.html` so direct navigation to `/`,
+`/tasks`, `/calendar`, `/inbox`, `/projects`, `/projects/:id/board` and
+`/settings` works. It enumerates no individual routes, so adding a route needs
+no deployment change.
 
 ## Production prerequisites and backlog
 

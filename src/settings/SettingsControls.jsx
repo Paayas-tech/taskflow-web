@@ -1,121 +1,97 @@
+import { Checkbox, Icon } from "../ui";
+import { cx } from "../ui/cx";
+
+const slug = (value) =>
+  String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+
+/** A titled card of setting rows on the settings overview. */
 export function SettingsGroup({ title, children }) {
+  const titleId = `settings-group-${slug(title)}`;
+
   return (
-    <section className="settings-list-section" aria-labelledby={`settings-${title}`}>
-      <h2 id={`settings-${title}`}>{title}</h2>
-      <div className="settings-list">{children}</div>
+    <section className="settings-group" aria-labelledby={titleId}>
+      <h2 className="settings-group-title" id={titleId}>
+        {title}
+      </h2>
+      <div className="row-list">{children}</div>
     </section>
   );
 }
 
-export function SettingsRow({ label, value, onClick, disabled = false, selected = false }) {
+/** A navigating settings row: label, optional value, chevron. */
+export function SettingsRow({ label, value, description, onClick, disabled = false }) {
   return (
-    <button
-      className="settings-list-row"
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-    >
-      <span>{label}</span>
-      <span className="settings-row-end">
-        {value && <small>{value}</small>}
-        {selected ? (
-          <span className="settings-check" aria-label="Selected">✓</span>
-        ) : (
-          !disabled && <span className="settings-chevron" aria-hidden="true">›</span>
-        )}
+    <button className="settings-row" type="button" onClick={onClick} disabled={disabled}>
+      <span className="settings-row-body">
+        <span className="settings-row-label">{label}</span>
+        {description ? <span className="settings-row-description">{description}</span> : null}
       </span>
+      {value ? <span className="settings-row-value">{value}</span> : null}
+      <Icon className="settings-row-chevron" name="chevron-right" />
     </button>
   );
 }
 
-export function ToggleRow({ label, description, checked, onChange, disabled = false, status }) {
+/** A settings row whose control is a switch. */
+export function ToggleRow({ label, description, checked = false, onChange, disabled = false }) {
   return (
-    <label className={`settings-list-row settings-list-toggle ${disabled ? "is-disabled" : ""}`}>
-      <span className="settings-toggle-copy">
-        <strong>{label}</strong>
-        {description && <small>{description}</small>}
+    <div className={cx("settings-row", "settings-toggle-row", disabled && "is-disabled")}>
+      <span className="settings-row-body">
+        <span className="settings-row-label">{label}</span>
+        {description ? <span className="settings-row-description">{description}</span> : null}
       </span>
-      <span className="settings-row-end">
-        {status && <small>{status}</small>}
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(event) => onChange?.(event.target.checked)}
-          disabled={disabled}
-        />
-      </span>
-    </label>
+      <Checkbox
+        className="switch"
+        aria-label={label}
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange?.(event.target.checked)}
+      />
+    </div>
   );
 }
 
-export function SettingsDetail({ title, description, onBack, children, headerAction }) {
+/**
+ * The body of a settings detail panel. The panel title and its Back button live
+ * in the page header, so the title is only used as the region's accessible name.
+ */
+export function SettingsDetail({ title, description, children }) {
   return (
-    <section className="settings-detail" aria-labelledby="settings-detail-title">
-      <header className="settings-detail-navigation">
-        <button className="settings-back" type="button" onClick={onBack} aria-label={`Back from ${title}`}>
-          <span aria-hidden="true">←</span>
-        </button>
-        <h2 id="settings-detail-title">{title}</h2>
-        <span className="settings-detail-header-action">{headerAction}</span>
-      </header>
-      {description && <p className="settings-detail-description">{description}</p>}
+    <section className="settings-detail" aria-label={title}>
+      {description ? <p className="settings-detail-description">{description}</p> : null}
       {children}
     </section>
   );
 }
 
+/** A single-choice list of options rendered as radio rows with a check icon. */
 export function SelectionRows({ options, value, onSelect, ariaLabel }) {
   return (
-    <div className="settings-compact-list" role="radiogroup" aria-label={ariaLabel}>
-      {options.map(([optionValue, label, description]) => (
-        <label
-          className={`settings-choice-row ${value === optionValue ? "is-selected" : ""}`}
-          key={optionValue}
-        >
-          <span>
-            <strong>{label}</strong>
-            {description && <small>{description}</small>}
-          </span>
-          <input
-            type="radio"
-            name={ariaLabel}
-            value={optionValue}
-            checked={value === optionValue}
-            onChange={() => onSelect(optionValue)}
-          />
-          <span className="settings-check" aria-hidden="true">
-            {value === optionValue ? "✓" : ""}
-          </span>
-        </label>
-      ))}
-    </div>
-  );
-}
+    <div className="option-list" role="radiogroup" aria-label={ariaLabel}>
+      {options.map(([optionValue, label, description]) => {
+        const selected = value === optionValue;
 
-export function UnavailableProviders({ providers }) {
-  return (
-    <div className="settings-compact-list">
-      {providers.map((provider) => (
-        <div className="settings-provider-row" key={provider}>
-          <span>
-            <strong>{provider}</strong>
-            <small>Not connected</small>
-          </span>
-          <button className="ghost-btn compact-btn" type="button" disabled>
-            Not available
-          </button>
-        </div>
-      ))}
+        return (
+          <label className={cx("option-row", selected && "is-selected")} key={optionValue}>
+            <input
+              className="option-input"
+              type="radio"
+              name={ariaLabel}
+              value={optionValue}
+              checked={selected}
+              onChange={() => onSelect(optionValue)}
+            />
+            <span className="option-body">
+              <span className="option-label">{label}</span>
+              {description ? <span className="option-description">{description}</span> : null}
+            </span>
+            {selected ? <Icon className="option-check" name="check" /> : null}
+          </label>
+        );
+      })}
     </div>
-  );
-}
-
-export function PlaceholderPanel({ title, description, onBack, children }) {
-  return (
-    <SettingsDetail title={title} description={description} onBack={onBack}>
-      <div className="settings-placeholder-panel">
-        {children || <p>Not available yet.</p>}
-      </div>
-    </SettingsDetail>
   );
 }

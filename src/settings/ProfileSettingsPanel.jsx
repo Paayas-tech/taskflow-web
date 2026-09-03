@@ -1,11 +1,13 @@
+import { Avatar, Button, Field, Input } from "../ui";
 import { SettingsDetail } from "./SettingsControls";
 import SettingsSignOutSection from "./SettingsSignOutSection";
 
 export default function ProfileSettingsPanel({
   settings,
-  saving,
+  saving = false,
+  error = "",
   onChange,
-  onBack,
+  onSave,
   onSignOut,
   signOutPending = false,
   signOutError = "",
@@ -16,73 +18,69 @@ export default function ProfileSettingsPanel({
   onBeginDelete,
   onCancelDelete,
 }) {
+  const displayName = settings.profile.displayName;
+  const email = settings.profile.email;
+
   return (
-    <SettingsDetail
-      title="My Profile"
-      onBack={onBack}
-      headerAction={(
-        <button className="primary-btn compact-btn" type="submit" disabled={saving}>
-          {saving ? "Saving..." : "Save"}
-        </button>
-      )}
-    >
-      <div className="settings-profile-panel">
-        <section className="settings-profile-identity" aria-label="Profile summary">
-          <span className="settings-profile-avatar" aria-hidden="true">
-            {(settings.profile.displayName || settings.profile.email)?.[0]?.toUpperCase() || "U"}
-          </span>
-          <div>
-            <h3>{settings.profile.displayName || "TaskFlow user"}</h3>
-            <p>{settings.profile.email}</p>
-            <span className="settings-profile-status"><i aria-hidden="true" /> Signed in</span>
+    <SettingsDetail title="Profile" description="Your name is visible to project members.">
+      <form
+        className="settings-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSave?.();
+        }}
+      >
+        <div className="settings-identity">
+          <Avatar name={displayName || email} size="lg" />
+          <div className="settings-identity-body">
+            <span className="settings-identity-name">{displayName || "TaskFlow user"}</span>
+            <span className="settings-identity-email">{email}</span>
           </div>
-        </section>
+        </div>
 
-        <section className="settings-profile-information" aria-labelledby="profile-information-title">
-          <header>
-            <div>
-              <h3 id="profile-information-title">Profile information</h3>
-            </div>
-          </header>
-          <div className="settings-profile-fields">
-            <label className="settings-field">
-              <span>Display name</span>
-              <input
-                type="text"
-                maxLength="80"
-                value={settings.profile.displayName}
-                onChange={(event) =>
-                  onChange({
-                    ...settings,
-                    profile: { ...settings.profile, displayName: event.target.value },
-                  })
-                }
-                placeholder="Enter your name"
-                disabled={saving}
-              />
-            </label>
-            <label className="settings-field settings-profile-email-field">
-              <span>Email address</span>
-              <div>
-                <input type="email" value={settings.profile.email} disabled readOnly />
-                <span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg></span>
-              </div>
-            </label>
-          </div>
-        </section>
+        <Field label="Display name" htmlFor="settings-display-name" error={error}>
+          <Input
+            id="settings-display-name"
+            maxLength={80}
+            placeholder="Enter your name"
+            value={displayName}
+            disabled={saving}
+            invalid={Boolean(error)}
+            onChange={(event) =>
+              onChange({
+                ...settings,
+                profile: { ...settings.profile, displayName: event.target.value },
+              })
+            }
+          />
+        </Field>
 
-        <SettingsSignOutSection
-          onSignOut={onSignOut}
-          pending={signOutPending}
-          error={signOutError}
-          onDeleteAccount={onDeleteAccount}
-          deletePending={deleteAccountPending}
-          deleteError={deleteAccountError}
-          confirmingDelete={confirmingDelete}
-          onBeginDelete={onBeginDelete}
-          onCancelDelete={onCancelDelete}
-        />
-      </div>
+        <Field
+          label="Email"
+          htmlFor="settings-email"
+          hint="Your sign-in email is managed by your account."
+        >
+          <Input id="settings-email" type="email" value={email} readOnly disabled />
+        </Field>
+
+        <div className="settings-form-actions">
+          <Button variant="primary" type="submit" loading={saving}>
+            Save
+          </Button>
+        </div>
+      </form>
+
+      <SettingsSignOutSection
+        onSignOut={onSignOut}
+        pending={signOutPending}
+        error={signOutError}
+        onDeleteAccount={onDeleteAccount}
+        deletePending={deleteAccountPending}
+        deleteError={deleteAccountError}
+        confirmingDelete={confirmingDelete}
+        onBeginDelete={onBeginDelete}
+        onCancelDelete={onCancelDelete}
+      />
     </SettingsDetail>
   );
 }
