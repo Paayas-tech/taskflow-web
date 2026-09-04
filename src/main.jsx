@@ -9,6 +9,7 @@ import {
 } from "./store/reminders";
 import { configureStore, subscribe } from "./store/store";
 import { syncPathFromBrowser } from "./store/ui";
+import { listenForDesktopAuthCallback } from "./platform/desktop";
 import "./styles/index.css";
 
 configureStore({ api });
@@ -18,6 +19,18 @@ configureStore({ api });
 if (api.isSupabaseConfigured) {
   api.onAuthStateChange((event, user) => {
     void handleAuthEvent(event, user);
+  });
+
+  listenForDesktopAuthCallback(async ({ code, destination }) => {
+    try {
+      const result = await api.exchangeDesktopAuthCode(code);
+      await handleAuthEvent(
+        destination === "recover" ? "PASSWORD_RECOVERY" : "SIGNED_IN",
+        result.user
+      );
+    } catch {
+      // Invalid, expired, or replayed codes do not change the current session.
+    }
   });
 }
 

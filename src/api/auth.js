@@ -89,6 +89,16 @@ export const requestPasswordReset = async (email, redirectTo) =>
 export const updatePassword = async (password) =>
   authCall(requireSupabase().auth.updateUser({ password }));
 
+export const exchangeDesktopAuthCode = async (code) => {
+  const normalizedCode = String(code || "").trim();
+  if (!/^[A-Za-z0-9._~-]{20,2048}$/u.test(normalizedCode)) {
+    throw new Error("Invalid desktop authentication callback.");
+  }
+  return withUser(
+    await authCall(requireSupabase().auth.exchangeCodeForSession(normalizedCode))
+  );
+};
+
 export const signOut = async () => {
   await authCall(requireSupabase().auth.signOut());
 };

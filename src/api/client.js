@@ -4,6 +4,7 @@ const supabaseUrl = String(import.meta.env?.VITE_SUPABASE_URL || "").trim();
 const supabaseAnonKey = String(
   import.meta.env?.VITE_SUPABASE_ANON_KEY || ""
 ).trim();
+const isDesktopRuntime = globalThis.window?.taskflowDesktop?.isDesktop === true;
 
 /** Only https, or http on a local loopback host during development. */
 const isUsableSupabaseUrl = (value) => {
@@ -28,7 +29,8 @@ if (supabaseUrl && supabaseAnonKey && isUsableSupabaseUrl(supabaseUrl)) {
         auth: {
           autoRefreshToken: true,
           persistSession: true,
-          detectSessionInUrl: true,
+          detectSessionInUrl: !isDesktopRuntime,
+          ...(isDesktopRuntime ? { flowType: "pkce" } : {}),
         },
       });
     globalThis.__taskflowSupabaseClient = configuredClient;

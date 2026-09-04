@@ -6,6 +6,7 @@ import {
 import { validateRecoveryPassword } from "../domain/auth";
 import { Button, Field, InlineNotice, Input } from "../ui";
 import { AuthBrand } from "./AuthBrand";
+import { recoveryRedirectUrl } from "../platform/desktop";
 
 export function Recover({ recoverySession, onBack, onComplete }) {
   const [email, setEmail] = useState("");
@@ -26,7 +27,7 @@ export function Recover({ recoverySession, onBack, onComplete }) {
     try {
       await requestPasswordReset(
         email.trim(),
-        `${window.location.origin}/recover`
+        recoveryRedirectUrl()
       );
       setNotice(
         "If an account exists for that email, a password reset link has been sent."

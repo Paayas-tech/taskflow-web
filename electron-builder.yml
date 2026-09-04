@@ -1,0 +1,38 @@
+appId: com.paayas.taskflow
+productName: TaskFlow
+
+directories:
+  output: release
+
+files:
+  - dist/**/*
+  - electron/**/*
+  - "!electron/**/*.test.cjs"
+  - package.json
+  - "!**/*.map"
+  - "!**/.env"
+  - "!**/.env.*"
+  - "!**/*backup*"
+  - "!node_modules/**/*"
+
+asar: true
+
+protocols:
+  - name: TaskFlow
+    schemes:
+      - taskflow
+
+win:
+  target:
+    - nsis
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+
+linux:
+  category: Office
+  target:
+    - AppImage

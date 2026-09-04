@@ -29,6 +29,7 @@ import {
   startGoogleOAuth,
   syncGoogleCalendar,
 } from "../api/calendar";
+import { openExternalAuthorization } from "../platform/desktop";
 import { deleteAccountAndSignOut, signOutAccount } from "../auth/accountActions";
 import { setGoogleEvents } from "../store/calendar";
 import { updateProject } from "../store/projects";
@@ -426,7 +427,7 @@ export function CalendarsPanel({ commit, saving = false, callback = null, onConn
     setError("");
     setMessage("");
     try {
-      window.location.assign(await startGoogleOAuth());
+      await openExternalAuthorization(await startGoogleOAuth());
     } catch (connectionError) {
       setError(
         connectionError?.message || "Google Calendar connection could not be started."
