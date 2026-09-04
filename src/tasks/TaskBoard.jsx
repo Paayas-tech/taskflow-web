@@ -12,12 +12,12 @@ import {
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { IconButton } from "../ui/Button";
 import { Icon, StatusIcon } from "../ui/icons";
-import { cx } from "../ui/cx";
+import { cx } from "../ui/primitives";
 import {
   buildProjectTaskPlacements,
   groupProjectTasksByColumn,
   taskIdFromProjectDnd,
-} from "../domain/projectBoardDomain";
+} from "../domain/board";
 import { QuickAdd, QuickAddTrigger } from "./QuickAdd";
 import { TaskCard } from "./TaskCard";
 
@@ -32,12 +32,10 @@ const statusForCategory = (category) => {
  * `onOpenDetails(title, column)` is supplied the quick add offers "Add details"
  * so the typed title can be handed to the full composer, like the list views do.
  */
-export function BoardColumn({
+function BoardColumn({
   column,
   tasks = [],
-  context,
   onOpen,
-  onOpenProject,
   onQuickCreate,
   onOpenDetails,
   readOnly = false,
@@ -52,7 +50,6 @@ export function BoardColumn({
   selectedIds,
   onToggleSelect,
   todayKey,
-  formatSettings,
   className,
   ...rest
 }) {
@@ -106,16 +103,13 @@ export function BoardColumn({
                 <TaskCard
                   key={task.id}
                   task={task}
-                  context={context}
                   onOpen={onOpen}
-                  onOpenProject={onOpenProject}
                   readOnly={readOnly}
                   selected={selectedTaskId === task.id}
                   selectable={selectable}
                   selectedForBulk={Boolean(selectedIds?.has?.(task.id))}
                   onToggleSelect={onToggleSelect}
                   todayKey={todayKey}
-                  formatSettings={formatSettings}
                 />
               ))}
               {tasks.length === 0 && !quickCreateActive ? (
@@ -152,10 +146,8 @@ export function BoardColumn({
 export function TaskBoard({
   columns = [],
   tasks = [],
-  context,
   onMove,
   onOpen,
-  onOpenProject,
   onQuickCreate,
   onOpenDetails,
   readOnly = false,
@@ -166,7 +158,6 @@ export function TaskBoard({
   selectedIds,
   onToggleSelect,
   todayKey,
-  formatSettings,
   className,
   ...rest
 }) {
@@ -220,9 +211,7 @@ export function TaskBoard({
             key={column.id}
             column={column}
             tasks={tasksByColumn.get(column.id) || []}
-            context={context}
             onOpen={onOpen}
-            onOpenProject={onOpenProject}
             onQuickCreate={onQuickCreate}
             onOpenDetails={onOpenDetails}
             readOnly={readOnly}
@@ -240,7 +229,6 @@ export function TaskBoard({
             selectedIds={selectedIds}
             onToggleSelect={onToggleSelect}
             todayKey={todayKey}
-            formatSettings={formatSettings}
           />
         ))}
       </div>
@@ -254,5 +242,3 @@ export function TaskBoard({
     </DndContext>
   );
 }
-
-export default TaskBoard;

@@ -1,4 +1,4 @@
-import { cx } from "./cx";
+import { cx } from "./primitives";
 
 const shapes = {
   home: <path d="M3 10.5 12 3l9 7.5M5 9.5V20h14V9.5M9.5 20v-6h5v6" />,
@@ -226,9 +226,6 @@ const shapes = {
   ),
 };
 
-// eslint-disable-next-line react/only-export-components -- icon catalogue ships with the Icon component
-export const iconNames = Object.keys(shapes);
-
 export function Icon({ name, size = 16, className, ...rest }) {
   const shape = shapes[name];
   if (!shape) {
@@ -333,5 +330,3 @@ export function PriorityIcon({ priority = "medium", size = 16, className, ...res
     </svg>
   );
 }
-
-export default Icon;

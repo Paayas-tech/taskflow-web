@@ -1,6 +1,11 @@
+/**
+ * Who can see a project, and who has been invited. The roster is store data
+ * (loaded once per session with the projects), so it is read with a selector
+ * and re-read through `refreshMembers` after every change; pending invitations
+ * are owner-only and are fetched here through the store's api.
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
-import InvitationRow from "./InvitationRow";
-import MemberRow from "./MemberRow";
+import { InvitationRow, MemberRow } from "./rows";
 import {
   Button,
   ConfirmDialog,
@@ -10,15 +15,12 @@ import {
   Select,
   Spinner,
 } from "../ui";
-import { safeDisplayName } from "../domain/identityDomain";
-import {
-  cancelProjectInvitation,
-  createProjectInvitation,
-  getProjectInvitations,
-  getProjectMembers,
-  removeProjectMember,
-  updateProjectMemberRole,
-} from "../application/projectService";
+import { safeDisplayName } from "../domain/collaboration";
+import { refreshMembers } from "../store/projects";
+import { selectUser, selectWorkspace } from "../store/selectors";
+import { api, useStore } from "../store/store";
+
+const ROSTER_ERROR = "We couldn't load this project roster. Try again.";
 
 const restoreFocus = (element) => {
   if (!element) return;
@@ -29,13 +31,9 @@ const restoreFocus = (element) => {
   window.requestAnimationFrame(() => element.focus?.());
 };
 
-export default function ProjectMembersModal({
-  userId,
-  project,
-  onClose,
-  returnFocusElement,
-}) {
-  const [members, setMembers] = useState([]);
+export function ProjectMembersModal({ project, onClose, returnFocusElement }) {
+  const user = useStore(selectUser);
+  const { members } = useStore(selectWorkspace(project.id));
   const [invitations, setInvitations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -46,31 +44,28 @@ export default function ProjectMembersModal({
   const [busyId, setBusyId] = useState("");
   const [memberToRemove, setMemberToRemove] = useState(null);
   const removeTriggerRef = useRef(null);
-  const roleSaveIdsRef = useRef(new Set());
+
   const canManage = project.viewerRole === "owner";
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const [nextMembers, nextInvitations] = await Promise.all([
-        getProjectMembers(userId, project.id),
-        canManage ? getProjectInvitations(userId, project.id) : Promise.resolve([]),
-      ]);
-      setMembers(nextMembers);
-      setInvitations(nextInvitations);
-    } catch (loadError) {
-      console.error("Error loading project members:", loadError);
-      setError("We couldn't load this project roster. Try again.");
+      setInvitations(canManage ? await api().listProjectInvitations(project.id) : []);
+    } catch {
+      setError(ROSTER_ERROR);
     } finally {
       setLoading(false);
     }
-  }, [canManage, project.id, userId]);
+  }, [canManage, project.id]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   useEffect(() => () => restoreFocus(returnFocusElement), [returnFocusElement]);
 
+  /** Runs one roster mutation, then re-reads both the roster and invitations. */
   const runAction = async (id, action) => {
     if (busyId) return;
     setBusyId(id);
@@ -78,10 +73,9 @@ export default function ProjectMembersModal({
     setActionNotice("");
     try {
       await action();
-      await load();
-    } catch (actionFailure) {
-      console.error("Error updating project access:", actionFailure);
-      setActionError(actionFailure?.message || "We couldn't update project access. Try again.");
+      await Promise.all([refreshMembers(project.id), load()]);
+    } catch (failure) {
+      setActionError(failure?.message || "We couldn't update project access. Try again.");
     } finally {
       setBusyId("");
     }
@@ -90,53 +84,32 @@ export default function ProjectMembersModal({
   const submitInvitation = async (event) => {
     event.preventDefault();
     await runAction("invite", async () => {
-      await createProjectInvitation(userId, project.id, {
-        email,
-        role,
-        projectName: project.name,
-      });
+      await api().sendInvitation(project.id, { email, role, projectName: project.name });
       setEmail("");
       setRole("editor");
       setActionNotice("Invitation sent.");
     });
   };
 
-  const changeMemberRole = async (member, nextRole) => {
-    if (member.role === nextRole || roleSaveIdsRef.current.has(member.userId)) return;
-    const previousRole = member.role;
-
-    roleSaveIdsRef.current.add(member.userId);
-    setActionError("");
-    setMembers((currentMembers) => currentMembers.map((currentMember) =>
-      currentMember.userId === member.userId
-        ? { ...currentMember, role: nextRole }
-        : currentMember
-    ));
-
-    try {
-      await updateProjectMemberRole(userId, project.id, member.userId, nextRole);
-    } catch (roleError) {
-      console.error("Error updating project member role:", roleError);
-      setMembers((currentMembers) => currentMembers.map((currentMember) =>
-        currentMember.userId === member.userId && currentMember.role === nextRole
-          ? { ...currentMember, role: previousRole }
-          : currentMember
-      ));
-      setActionError(roleError?.message || "We couldn't update this member's role. Try again.");
-    } finally {
-      roleSaveIdsRef.current.delete(member.userId);
+  const changeMemberRole = (member, nextRole) => {
+    if (member.role === nextRole) return;
+    if (member.userId === user?.id) {
+      setActionError("Ownership cannot be changed here.");
+      return;
     }
-  };
-
-  const cancelRemoval = () => {
-    setMemberToRemove(null);
-    restoreFocus(removeTriggerRef.current);
+    void runAction(member.userId, () =>
+      api().updateMemberRole(project.id, member.userId, nextRole)
+    );
   };
 
   const confirmRemoval = () => {
     const selected = memberToRemove;
     setMemberToRemove(null);
-    void runAction(selected.userId, () => removeProjectMember(userId, project.id, selected.userId));
+    if (selected.userId === project.ownerId) {
+      setActionError("The project owner cannot be removed.");
+      return;
+    }
+    void runAction(selected.userId, () => api().removeMember(project.id, selected.userId));
   };
 
   return (
@@ -159,7 +132,11 @@ export default function ProjectMembersModal({
       ) : error ? (
         <InlineNotice
           tone="error"
-          action={<Button variant="secondary" size="sm" onClick={load}>Try again</Button>}
+          action={
+            <Button variant="secondary" size="sm" onClick={load}>
+              Try again
+            </Button>
+          }
         >
           {error}
         </InlineNotice>
@@ -226,10 +203,11 @@ export default function ProjectMembersModal({
                     key={invitation.id}
                     invitation={invitation}
                     busy={busyId === invitation.id}
-                    onCancel={(selected) => runAction(
-                      selected.id,
-                      () => cancelProjectInvitation(userId, project.id, selected.id)
-                    )}
+                    onCancel={(selected) =>
+                      void runAction(selected.id, () =>
+                        api().cancelInvitation(project.id, selected.id)
+                      )
+                    }
                   />
                 ))}
               </div>
@@ -240,12 +218,17 @@ export default function ProjectMembersModal({
 
       <ConfirmDialog
         open={Boolean(memberToRemove)}
-        onCancel={cancelRemoval}
+        onCancel={() => {
+          setMemberToRemove(null);
+          restoreFocus(removeTriggerRef.current);
+        }}
         onConfirm={confirmRemoval}
         title="Remove member?"
-        description={memberToRemove
-          ? `${safeDisplayName(memberToRemove)} loses access to ${project.name}.`
-          : ""}
+        description={
+          memberToRemove
+            ? `${safeDisplayName(memberToRemove)} loses access to ${project.name}.`
+            : ""
+        }
         confirmLabel="Remove"
         danger
       />

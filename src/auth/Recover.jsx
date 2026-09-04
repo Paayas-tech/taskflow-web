@@ -2,12 +2,12 @@ import { useState } from "react";
 import {
   requestPasswordReset,
   updatePassword,
-} from "../application/authService";
-import { validateRecoveryPassword } from "../domain/recoveryDomain";
+} from "../api/auth";
+import { validateRecoveryPassword } from "../domain/auth";
 import { Button, Field, InlineNotice, Input } from "../ui";
-import AuthBrand from "./AuthBrand";
+import { AuthBrand } from "./AuthBrand";
 
-export default function Recover({ recoverySession, onBack, onComplete }) {
+export function Recover({ recoverySession, onBack, onComplete }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");

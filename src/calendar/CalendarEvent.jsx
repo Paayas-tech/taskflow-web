@@ -1,12 +1,12 @@
-import { normalizeTaskSchedule } from "../domain/calendarDomain";
-import { isTaskComplete } from "../domain/taskDomain";
-import { formatReminderMetadata } from "../domain/reminderDomain";
+import { isTaskComplete, normalizeTaskSchedule } from "../domain/task";
+import { formatReminderMetadata } from "../domain/reminder";
 import {
   formatDateOnlyForDisplay,
   formatTimeForDisplay,
-} from "../domain/settingsDomain";
-import { Icon } from "../ui/icons";
-import { cx } from "../ui/cx";
+} from "../domain/settings";
+import { selectProject, selectSettings } from "../store/selectors";
+import { useStore } from "../store/store";
+import { Icon, cx } from "../ui";
 
 const eventKind = (schedule, segment) => {
   if (segment) return "multiday";
@@ -50,10 +50,10 @@ export function CalendarEvent({
   segment = null,
   style,
   displayTime,
-  formatSettings = {},
-  projectsById,
   selected = false,
 }) {
+  const { time } = useStore(selectSettings);
+  const project = useStore(selectProject(task.projectId || ""));
   const schedule = normalizeTaskSchedule(task);
   const kind = eventKind(schedule, segment);
   const googleEvent = task.source === "google";
@@ -61,22 +61,21 @@ export function CalendarEvent({
     displayTime !== undefined
       ? displayTime
       : kind === "timed"
-        ? formatTimeForDisplay(schedule.startTime, formatSettings.format)
-        : segmentMetadata(schedule, segment, formatSettings.format);
+        ? formatTimeForDisplay(schedule.startTime, time.format)
+        : segmentMetadata(schedule, segment, time.format);
   const completed = isTaskComplete(task);
-  const project = task.projectId ? projectsById?.get?.(task.projectId) : null;
   const color = googleEvent
     ? "var(--color-info)"
     : project?.color || "var(--color-accent)";
   const rangeLabel = schedule.endDate
-    ? `${formatDateOnlyForDisplay(schedule.dueDate, formatSettings.dateFormat)} through ${formatDateOnlyForDisplay(schedule.endDate, formatSettings.dateFormat)}`
-    : formatDateOnlyForDisplay(schedule.dueDate, formatSettings.dateFormat);
+    ? `${formatDateOnlyForDisplay(schedule.dueDate, time.dateFormat)} through ${formatDateOnlyForDisplay(schedule.endDate, time.dateFormat)}`
+    : formatDateOnlyForDisplay(schedule.dueDate, time.dateFormat);
   const scheduleLabel = schedule.isAllDay
     ? `${rangeLabel}, all day`
-    : `${rangeLabel}, ${formatTimeForDisplay(schedule.startTime, formatSettings.format)} to ${formatTimeForDisplay(schedule.endTime, formatSettings.format)}`;
+    : `${rangeLabel}, ${formatTimeForDisplay(schedule.startTime, time.format)} to ${formatTimeForDisplay(schedule.endTime, time.format)}`;
   const reminderLabel = task.reminderAt
     ? formatReminderMetadata(task.reminderAt, new Date(), {
-        timeFormat: formatSettings.format,
+        timeFormat: time.format,
       })
     : "Reminder enabled";
   const description = `${task.title}. ${scheduleLabel}${task.reminder ? `. ${reminderLabel}` : ""}`;
@@ -116,5 +115,3 @@ export function CalendarEvent({
     </button>
   );
 }
-
-export default CalendarEvent;

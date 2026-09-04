@@ -1,9 +1,15 @@
-import { useMemo, useState } from "react";
-import CalendarAgendaView from "../calendar/CalendarAgendaView";
-import CalendarDayView from "../calendar/CalendarDayView";
-import CalendarEvent from "../calendar/CalendarEvent";
-import CalendarWeekView from "../calendar/CalendarWeekView";
-import { QuickAdd, TaskRow } from "../tasks";
+/**
+ * Month / Week / Day / Agenda calendar over everything assigned to me, plus the
+ * read-only mirror of a connected Google Calendar. Reads its data from the
+ * store; the view, the visible month and the selected day are local UI state.
+ */
+import { useEffect, useMemo, useState } from "react";
+import { CalendarAgendaView } from "../calendar/CalendarAgendaView";
+import { CalendarDayView } from "../calendar/CalendarDayView";
+import { CalendarEvent } from "../calendar/CalendarEvent";
+import { CalendarWeekView } from "../calendar/CalendarWeekView";
+import { QuickAdd } from "../tasks/QuickAdd";
+import { TaskRow } from "../tasks/TaskRow";
 import {
   Button,
   EmptyState,
@@ -11,25 +17,39 @@ import {
   IconButton,
   InlineNotice,
   SegmentedControl,
+  cx,
 } from "../ui";
 import {
   assignMultiDayLanes,
+  buildCalendarMonthGrid,
   buildCalendarWeek,
+  calendarMonthStart,
   createCalendarTaskInitialValues,
   groupCalendarAgenda,
-  isValidCalendarDate,
-  normalizeTaskSchedule,
+  normalizeGoogleCalendarEvents,
   segmentMultiDayItems,
-  shiftCalendarDate,
-} from "../domain/calendarDomain";
-import {
-  buildCalendarMonthGrid,
-  calendarMonthStart,
-  dateOnlyKey,
-  localDateFromDateOnly,
   shiftCalendarMonth,
-} from "../domain/taskDomain";
-import { normalizeGoogleCalendarEvents } from "../domain/googleCalendarDomain";
+} from "../domain/calendar";
+import {
+  dateOnlyKey,
+  isValidDateOnly,
+  localDateFromDateOnly,
+  normalizeTaskSchedule,
+  shiftDateOnly,
+} from "../domain/task";
+import { loadGoogleEvents } from "../store/calendar";
+import { loadTasks } from "../store/session";
+import {
+  selectGoogleEvents,
+  selectMyTasks,
+  selectSelectedTaskId,
+  selectTasksError,
+  selectTasksStatus,
+  selectWeekStartsOn,
+} from "../store/selectors";
+import { useStore } from "../store/store";
+import { createTask } from "../store/tasks";
+import { openComposer, openTask } from "../store/ui";
 
 const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const visibleEventLimit = 3;
@@ -75,30 +95,22 @@ const formatWeekRange = (dateKey, weekStartsOn) => {
   return `${startLabel}–${endLabel}`;
 };
 
-const chunkWeeks = (monthGrid) =>
-  Array.from({ length: 6 }, (_, index) => monthGrid.slice(index * 7, index * 7 + 7));
-
 const isMultiDayTask = (task) =>
-  isValidCalendarDate(task.endDate) && task.endDate > task.dueDate;
+  isValidDateOnly(task.endDate) && task.endDate > task.dueDate;
 
 const countLabel = (count) => `${count} ${count === 1 ? "task" : "tasks"}`;
 
+const isGoogleEvent = (item) => item?.source === "google";
+
 /** Month / Week / Day / Agenda calendar over personal and assigned project work. */
-export function CalendarPage({
-  tasks = [],
-  externalEvents = [],
-  tasksLoading = false,
-  tasksError = "",
-  onRetry,
-  taskActions = {},
-  onOpenTask,
-  onOpenProject,
-  selectedTaskId = null,
-  onNewTask,
-  formatSettings = {},
-  weekStartsOn = 0,
-  projects = [],
-}) {
+export function CalendarPage() {
+  const tasks = useStore(selectMyTasks);
+  const googleEvents = useStore(selectGoogleEvents);
+  const selectedTaskId = useStore(selectSelectedTaskId);
+  const tasksStatus = useStore(selectTasksStatus);
+  const tasksError = useStore(selectTasksError);
+  const weekStartsOn = useStore(selectWeekStartsOn);
+
   const now = new Date();
   const todayKey = dateOnlyKey(now);
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
@@ -106,13 +118,11 @@ export function CalendarPage({
   const [visibleMonth, setVisibleMonth] = useState(() => calendarMonthStart(new Date()));
   const [view, setView] = useState("month");
   const [selectedDateKey, setSelectedDateKey] = useState(() => dateOnlyKey(new Date()));
-  const [mutationError, setMutationError] = useState("");
 
-  const projectsById = useMemo(
-    () => new Map(projects.map((project) => [project.id, project])),
-    [projects]
-  );
-  const rowContext = useMemo(() => ({ projectsById }), [projectsById]);
+  useEffect(() => {
+    void loadGoogleEvents();
+  }, []);
+
   const monthGrid = useMemo(
     () => buildCalendarMonthGrid(visibleMonth, weekStartsOn),
     [visibleMonth, weekStartsOn]
@@ -121,16 +131,19 @@ export function CalendarPage({
     () => [...weekdayLabels.slice(weekStartsOn), ...weekdayLabels.slice(0, weekStartsOn)],
     [weekStartsOn]
   );
-  const weeks = useMemo(() => chunkWeeks(monthGrid), [monthGrid]);
+  const weeks = useMemo(
+    () => Array.from({ length: 6 }, (_, index) => monthGrid.slice(index * 7, index * 7 + 7)),
+    [monthGrid]
+  );
   const externalCalendarItems = useMemo(
-    () => normalizeGoogleCalendarEvents(externalEvents),
-    [externalEvents]
+    () => normalizeGoogleCalendarEvents(googleEvents),
+    [googleEvents]
   );
   const scheduledItems = useMemo(
     () =>
       [...tasks, ...externalCalendarItems]
         .map((task) => ({ ...task, ...normalizeTaskSchedule(task) }))
-        .filter((task) => isValidCalendarDate(task.dueDate)),
+        .filter((task) => isValidDateOnly(task.dueDate)),
     [externalCalendarItems, tasks]
   );
   const agendaByDate = useMemo(
@@ -163,26 +176,18 @@ export function CalendarPage({
   }, [gridEndDate, gridStartDate, scheduledItems, weekStartsOn]);
 
   const selectedDateItems = agendaByDate.get(selectedDateKey) || [];
-  const pendingIds = taskActions.pendingIds;
-  const rangeLabel =
-    view === "month"
-      ? formatMonth(visibleMonth)
-      : view === "week"
-        ? formatWeekRange(selectedDateKey, weekStartsOn)
-        : view === "day"
-          ? formatFullDate(selectedDateKey)
-          : "Agenda";
+  const rangeLabel = {
+    month: () => formatMonth(visibleMonth),
+    week: () => formatWeekRange(selectedDateKey, weekStartsOn),
+    day: () => formatFullDate(selectedDateKey),
+    agenda: () => "Agenda",
+  }[view]();
 
   const selectDate = (dateKey) => {
     setSelectedDateKey(dateKey);
     const date = localDateFromDateOnly(dateKey);
-    if (
-      date &&
-      (date.getFullYear() !== visibleMonth.getFullYear() ||
-        date.getMonth() !== visibleMonth.getMonth())
-    ) {
-      setVisibleMonth(calendarMonthStart(date));
-    }
+    const month = date ? calendarMonthStart(date) : null;
+    if (month && month.getTime() !== visibleMonth.getTime()) setVisibleMonth(month);
   };
 
   const changePeriod = (amount) => {
@@ -192,7 +197,7 @@ export function CalendarPage({
       setSelectedDateKey(dateOnlyKey(nextMonth));
       return;
     }
-    const nextDate = shiftCalendarDate(selectedDateKey, view === "week" ? amount * 7 : amount);
+    const nextDate = shiftDateOnly(selectedDateKey, view === "week" ? amount * 7 : amount);
     if (nextDate) selectDate(nextDate);
   };
 
@@ -202,36 +207,20 @@ export function CalendarPage({
     setSelectedDateKey(dateOnlyKey(today));
   };
 
-  const openTask = (task, triggerElement) => {
-    if (task?.source === "google") {
-      if (task.htmlLink) window.open(task.htmlLink, "_blank", "noopener,noreferrer");
+  /** Google events open in Google Calendar; everything else opens the panel. */
+  const openItem = (item) => {
+    if (isGoogleEvent(item)) {
+      if (item.htmlLink) window.open(item.htmlLink, "_blank", "noopener,noreferrer");
       return;
     }
-    onOpenTask?.(task, triggerElement);
-  };
-
-  const toggleComplete = async (task) => {
-    if (task?.source === "google" || !taskActions.toggleComplete) return;
-    setMutationError("");
-    try {
-      await taskActions.toggleComplete(task);
-    } catch {
-      setMutationError(`We couldn't update “${task.title}”. Try again.`);
-    }
-  };
-
-  const createOnSelectedDate = async (title) => {
-    if (!taskActions.createPersonal) return;
-    setMutationError("");
-    await taskActions.createPersonal({ title, dueDate: selectedDateKey });
+    openTask(item.id);
   };
 
   const openComposerForDate = (initialValues = {}) => {
-    if (!onNewTask) return;
-    const dateValues = isValidCalendarDate(selectedDateKey)
+    const dateValues = isValidDateOnly(selectedDateKey)
       ? createCalendarTaskInitialValues({ date: selectedDateKey })
       : {};
-    onNewTask({ ...dateValues, ...initialValues });
+    openComposer({ ...dateValues, ...initialValues });
   };
 
   const renderMonthGrid = () => (
@@ -277,14 +266,12 @@ export function CalendarPage({
 
               return (
                 <div
-                  className={[
+                  className={cx(
                     "cal-cell",
-                    cell.inCurrentMonth ? "" : "is-outside",
-                    selected ? "is-selected" : "",
-                    cell.key === todayKey ? "is-today" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
+                    !cell.inCurrentMonth && "is-outside",
+                    selected && "is-selected",
+                    cell.key === todayKey && "is-today"
+                  )}
                   role="gridcell"
                   aria-selected={selected}
                   key={cell.key}
@@ -293,9 +280,7 @@ export function CalendarPage({
                     type="button"
                     className="cal-cell-select"
                     aria-label={
-                      dayItems.length
-                        ? `${dayLabel}, ${countLabel(dayItems.length)}`
-                        : dayLabel
+                      dayItems.length ? `${dayLabel}, ${countLabel(dayItems.length)}` : dayLabel
                     }
                     onClick={() => selectDate(cell.key)}
                   />
@@ -309,12 +294,10 @@ export function CalendarPage({
                         key={task.id}
                         task={task}
                         viewContext="month"
-                        projectsById={projectsById}
                         selected={selectedTaskId === task.id}
-                        formatSettings={formatSettings}
-                        onClick={(event) => {
+                        onClick={() => {
                           setSelectedDateKey(cell.key);
-                          openTask(task, event.currentTarget);
+                          openItem(task);
                         }}
                       />
                     ))}
@@ -344,16 +327,14 @@ export function CalendarPage({
                     task={segment}
                     segment={segment}
                     viewContext="month"
-                    projectsById={projectsById}
                     selected={selectedTaskId === segment.id}
-                    formatSettings={formatSettings}
                     style={{
                       gridColumn: `${segment.startColumn + 1} / ${segment.endColumn + 2}`,
                       gridRow: segment.lane + 1,
                     }}
-                    onClick={(event) => {
+                    onClick={() => {
                       setSelectedDateKey(segment.startDate);
-                      openTask(segment, event.currentTarget);
+                      openItem(segment);
                     }}
                   />
                 ))}
@@ -382,32 +363,24 @@ export function CalendarPage({
         />
       ) : (
         <div className="row-list">
-          {selectedDateItems.map((task) => {
-            const googleEvent = task.source === "google";
-            return (
-              <TaskRow
-                key={task.id}
-                task={task}
-                context={rowContext}
-                dense
-                todayKey={todayKey}
-                selected={selectedTaskId === task.id}
-                busy={pendingIds?.has?.(task.id) || false}
-                readOnly={googleEvent}
-                formatSettings={formatSettings}
-                onOpen={openTask}
-                onOpenProject={googleEvent ? undefined : onOpenProject}
-                onToggleComplete={googleEvent ? undefined : toggleComplete}
-              />
-            );
-          })}
+          {selectedDateItems.map((task) => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              dense
+              todayKey={todayKey}
+              selected={selectedTaskId === task.id}
+              readOnly={isGoogleEvent(task)}
+              onOpen={openItem}
+            />
+          ))}
         </div>
       )}
 
       <QuickAdd
         autoFocus={false}
         contextLabel={formatFullDate(selectedDateKey)}
-        onCreate={createOnSelectedDate}
+        onCreate={(title) => createTask({ title, dueDate: selectedDateKey })}
         onOpenDetails={(title) => openComposerForDate({ title })}
       />
     </aside>
@@ -420,53 +393,37 @@ export function CalendarPage({
           tasks={scheduledItems}
           todayKey={todayKey}
           selectedTaskId={selectedTaskId}
-          projectsById={projectsById}
-          pendingIds={pendingIds}
-          formatSettings={formatSettings}
           onSelectDate={(dateKey) => {
             selectDate(dateKey);
             setView("day");
           }}
-          onToggleComplete={toggleComplete}
-          onOpenTask={openTask}
-          onOpenProject={onOpenProject}
+          onOpenTask={openItem}
         />
       );
     }
+
+    // Week and Day are the same time grid over a different span.
+    const timeGridProps = {
+      tasks: scheduledItems,
+      selectedDateKey,
+      todayKey,
+      nowMinutes,
+      selectedTaskId,
+      onCreateTask: openComposer,
+      onOpenTask: openItem,
+    };
 
     if (view === "week") {
       return (
         <CalendarWeekView
-          tasks={scheduledItems}
-          selectedDateKey={selectedDateKey}
-          todayKey={todayKey}
-          nowMinutes={nowMinutes}
-          selectedTaskId={selectedTaskId}
-          projectsById={projectsById}
+          {...timeGridProps}
           weekStartsOn={weekStartsOn}
-          formatSettings={formatSettings}
           onSelectDate={selectDate}
-          onCreateTask={onNewTask}
-          onOpenTask={openTask}
         />
       );
     }
 
-    if (view === "day") {
-      return (
-        <CalendarDayView
-          tasks={scheduledItems}
-          selectedDateKey={selectedDateKey}
-          todayKey={todayKey}
-          nowMinutes={nowMinutes}
-          selectedTaskId={selectedTaskId}
-          projectsById={projectsById}
-          formatSettings={formatSettings}
-          onCreateTask={onNewTask}
-          onOpenTask={openTask}
-        />
-      );
-    }
+    if (view === "day") return <CalendarDayView {...timeGridProps} />;
 
     return (
       <div className="cal-layout">
@@ -524,33 +481,21 @@ export function CalendarPage({
       </header>
 
       <div className="page-body cal-body">
-        {mutationError ? (
-          <InlineNotice
-            className="page-notice"
-            tone="error"
-            onDismiss={() => setMutationError("")}
-          >
-            {mutationError}
-          </InlineNotice>
-        ) : null}
-
         {tasksError ? (
           <InlineNotice
             className="page-notice"
             tone="error"
             action={
-              onRetry ? (
-                <Button size="sm" onClick={onRetry}>
-                  Try again
-                </Button>
-              ) : null
+              <Button size="sm" onClick={() => loadTasks()}>
+                Try again
+              </Button>
             }
           >
             {tasksError}
           </InlineNotice>
         ) : null}
 
-        {tasksLoading ? (
+        {tasksStatus === "loading" && tasks.length === 0 ? (
           <div className="cal-loading" role="status" aria-label="Loading calendar">
             <span className="skeleton cal-skeleton" />
             <span className="skeleton cal-skeleton" />
@@ -563,5 +508,3 @@ export function CalendarPage({
     </section>
   );
 }
-
-export default CalendarPage;

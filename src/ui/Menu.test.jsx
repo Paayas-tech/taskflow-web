@@ -1,93 +1,70 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-const hooks = vi.hoisted(() => ({ setters: [] }));
-const popover = vi.hoisted(() => ({
-  open: false,
-  toggle: vi.fn(),
-  close: vi.fn(),
-  setOpen: vi.fn(),
-  rootRef: { current: null },
-}));
-
-vi.mock("react", () => ({
-  useState: (initial) => {
-    const setter = vi.fn();
-    hooks.setters.push(setter);
-    return [initial, setter];
-  },
-  useRef: (initial) => ({ current: initial }),
-  useEffect: () => {},
-}));
-
-vi.mock("./usePopover", () => ({ usePopover: () => popover }));
-
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Menu } from "./Menu";
-import { find, findAll, textContent } from "../test/elementTree";
 
-const items = [
-  { label: "Actions", heading: true },
-  { id: "open", label: "Open", onSelect: vi.fn() },
-  { id: "archive", label: "Archive", disabled: true, onSelect: vi.fn() },
-  { separator: true },
-  { id: "delete", label: "Delete permanently", danger: true, onSelect: vi.fn() },
-];
-
-const trigger = (triggerProps) => ({ type: "button", props: triggerProps });
-
-afterEach(() => {
-  hooks.setters.length = 0;
-  vi.clearAllMocks();
-  popover.open = false;
-});
+const renderMenu = (items) =>
+  render(
+    <Menu
+      trigger={(triggerProps) => (
+        <button type="button" {...triggerProps}>
+          Actions
+        </button>
+      )}
+      items={items}
+    />
+  );
 
 describe("Menu", () => {
-  it("hands the trigger its popover props and renders nothing while closed", () => {
-    const output = Menu({ trigger, items });
-
-    expect(output.props.className).toBe("menu-wrap");
-    expect(output.props.children[0].props["aria-haspopup"]).toBe("menu");
-    expect(output.props.children[0].props["aria-expanded"]).toBe(false);
-    expect(find(output, (node) => node.props.role === "menu")).toBeUndefined();
-  });
-
-  it("renders headings, separators, disabled and danger items when open", () => {
-    popover.open = true;
-    const output = Menu({ trigger, items, align: "end" });
-    const menu = find(output, (node) => node.props.role === "menu");
-    const menuItems = findAll(output, (node) => node.props.role === "menuitem");
-
-    expect(menu.props.className).toBe("menu menu-align-end");
-    expect(menuItems).toHaveLength(3);
-    expect(menuItems[1].props.disabled).toBe(true);
-    expect(menuItems[2].props.className).toBe("menu-item is-danger");
-    expect(textContent(find(output, (node) => node.props.className === "menu-heading"))).toBe("Actions");
-    expect(find(output, (node) => node.props.role === "separator")).toBeDefined();
-  });
-
-  it("closes and reports the selection when an item is chosen", () => {
-    popover.open = true;
+  it("opens on the trigger and runs the selected item", async () => {
     const onSelect = vi.fn();
-    const output = Menu({ trigger, items: [{ id: "open", label: "Open", onSelect }] });
+    renderMenu([
+      { id: "heading", heading: true, label: "Task" },
+      { id: "edit", label: "Edit", onSelect },
+      { id: "sep", separator: true },
+      { id: "delete", label: "Delete", danger: true },
+    ]);
 
-    findAll(output, (node) => node.props.role === "menuitem")[0].props.onClick();
-    expect(popover.close).toHaveBeenCalledTimes(1);
+    const trigger = screen.getByRole("button", { name: "Actions" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    await userEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getAllByRole("menuitem")).toHaveLength(2);
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "Edit" }));
     expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it("moves the roving focus with the arrow keys and closes on Escape", () => {
-    popover.open = true;
-    const output = Menu({ trigger, items });
-    const menu = find(output, (node) => node.props.role === "menu");
-    const setActiveIndex = hooks.setters.at(-1);
-    const event = { preventDefault: vi.fn() };
+  it("skips disabled items when arrowing and closes on Escape", async () => {
+    renderMenu([
+      { id: "edit", label: "Edit" },
+      { id: "archive", label: "Archive", disabled: true },
+      { id: "delete", label: "Delete" },
+    ]);
 
-    menu.props.onKeyDown({ ...event, key: "ArrowDown" });
-    expect(setActiveIndex).toHaveBeenCalledWith(1);
+    await userEvent.click(screen.getByRole("button", { name: "Actions" }));
+    expect(screen.getByRole("menuitem", { name: "Edit" })).toHaveFocus();
 
-    menu.props.onKeyDown({ ...event, key: "End" });
-    expect(setActiveIndex).toHaveBeenCalledWith(4);
+    await userEvent.keyboard("{ArrowDown}");
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveFocus();
 
-    menu.props.onKeyDown({ ...event, key: "Escape" });
-    expect(popover.close).toHaveBeenCalledTimes(1);
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("portals the menu outside clipping ancestors and still handles outside clicks", async () => {
+    const { container } = renderMenu([{ id: "open", label: "Open" }]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Actions" }));
+
+    const menu = screen.getByRole("menu");
+    expect(menu.parentElement).toBe(document.body);
+    expect(container).not.toContainElement(menu);
+
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });

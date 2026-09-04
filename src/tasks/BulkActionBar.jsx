@@ -1,7 +1,7 @@
 import { Button } from "../ui/Button";
 import { Select } from "../ui/Field";
-import { cx } from "../ui/cx";
-import { safeDisplayName } from "../domain/identityDomain";
+import { cx } from "../ui/primitives";
+import { safeDisplayName } from "../domain/collaboration";
 
 /** Bulk edits for the selected tasks in a story or a filtered list. */
 export function BulkActionBar({
@@ -108,5 +108,3 @@ export function BulkActionBar({
     </div>
   );
 }
-
-export default BulkActionBar;

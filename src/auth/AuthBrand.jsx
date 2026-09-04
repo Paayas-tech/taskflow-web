@@ -1,7 +1,7 @@
 import { Icon } from "../ui";
 
 /** Mark + wordmark shown at the top of every auth card. */
-export default function AuthBrand() {
+export function AuthBrand() {
   return (
     <div className="auth-brand">
       <span className="auth-mark" aria-hidden="true">

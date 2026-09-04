@@ -1,8 +1,7 @@
 import { StatusIcon } from "../ui/icons";
-import { cx } from "../ui/cx";
-import { isTaskComplete } from "../domain/taskDomain";
-import { groupProjectTasksByColumn } from "../domain/projectBoardDomain";
-import { statusLabel } from "./taskPresentation";
+import { cx } from "../ui/primitives";
+import { isTaskComplete, statusLabel } from "../domain/task";
+import { groupProjectTasksByColumn } from "../domain/board";
 
 const STATUSES = ["todo", "in-progress", "completed"];
 
@@ -81,5 +80,3 @@ export function StoryProgress({ tasks = [], columns = [], className, ...rest }) 
     </div>
   );
 }
-
-export default StoryProgress;

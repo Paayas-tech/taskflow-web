@@ -1,16 +1,23 @@
+/**
+ * The project list: grouped sections of `TaskRow`s with an inline quick add per
+ * section that inherits that section's story, status or assignee.
+ */
 import { useState } from "react";
-import { BulkActionBar, QuickAdd, QuickAddTrigger, TaskRow } from "../tasks";
+import { BulkActionBar } from "../tasks/BulkActionBar";
+import { QuickAdd, QuickAddTrigger } from "../tasks/QuickAdd";
+import { TaskRow } from "../tasks/TaskRow";
 import { Button, IconButton } from "../ui/Button";
-import { EmptyState } from "../ui/EmptyState";
+import { EmptyState, InlineNotice } from "../ui/primitives";
 import { Checkbox } from "../ui/Field";
 import { Icon } from "../ui/icons";
-import { InlineNotice } from "../ui/InlineNotice";
-import { groupProjectTasksByColumn } from "../domain/projectBoardDomain";
-import { safeDisplayName } from "../domain/identityDomain";
+import { groupProjectTasksByColumn } from "../domain/board";
+import { safeDisplayName } from "../domain/collaboration";
 
 const sectionsFor = ({ group, tasks, stories, members, columns }) => {
   if (group === "status") {
-    const byColumn = groupProjectTasksByColumn(columns, tasks, { preserveTaskOrder: true });
+    const byColumn = groupProjectTasksByColumn(columns, tasks, {
+      preserveTaskOrder: true,
+    });
     return columns.map((column) => ({
       id: `column-${column.id}`,
       title: column.name,
@@ -34,7 +41,12 @@ const sectionsFor = ({ group, tasks, stories, members, columns }) => {
         tasks: byAssignee.get(member.userId) || [],
         create: { assigneeId: member.userId },
       })),
-      { id: "assignee-none", title: "Unassigned", tasks: unassigned, create: { assigneeId: "" } },
+      {
+        id: "assignee-none",
+        title: "Unassigned",
+        tasks: unassigned,
+        create: { assigneeId: "" },
+      },
     ];
   }
 
@@ -56,29 +68,26 @@ const sectionsFor = ({ group, tasks, stories, members, columns }) => {
       tasks: byStory.get(story.id) || [],
       create: { storyId: story.id },
     })),
-    { id: "story-none", title: "No story", tasks: withoutStory, create: { storyId: "" } },
+    {
+      id: "story-none",
+      title: "No story",
+      tasks: withoutStory,
+      create: { storyId: "" },
+    },
   ];
 };
 
-/**
- * The project list: grouped sections of `TaskRow`s with an inline quick add per
- * section that inherits that section's story, status or assignee.
- */
 export function ProjectListTab({
   tasks = [],
   stories = [],
   members = [],
   columns = [],
-  context,
   group = "story",
-  onOpen,
-  onToggleComplete,
   onArchive,
   onCreate,
   onOpenComposer,
   readOnly = false,
   selectedTaskId = null,
-  pendingIds,
   selectable = false,
   selectedIds,
   allSelected = false,
@@ -92,7 +101,6 @@ export function ProjectListTab({
   hasTasks = false,
   onClearFilters,
   todayKey,
-  formatSettings,
 }) {
   const [collapsedIds, setCollapsedIds] = useState(() => new Set());
   const [quickAddSectionId, setQuickAddSectionId] = useState(null);
@@ -135,7 +143,10 @@ export function ProjectListTab({
       ) : null}
 
       {bulkMessage ? (
-        <InlineNotice tone={bulkMessage.error ? "error" : "success"} className="workspace-bulk-message">
+        <InlineNotice
+          tone={bulkMessage.error ? "error" : "success"}
+          className="workspace-bulk-message"
+        >
           {bulkMessage.text}
         </InlineNotice>
       ) : null}
@@ -173,7 +184,11 @@ export function ProjectListTab({
           const collapsed = collapsedIds.has(section.id);
           const headingId = `workspace-section-${section.id}`;
           return (
-            <section className="section workspace-section" key={section.id} aria-labelledby={headingId}>
+            <section
+              className="section workspace-section"
+              key={section.id}
+              aria-labelledby={headingId}
+            >
               <header className="section-header">
                 <IconButton
                   label={`${collapsed ? "Expand" : "Collapse"} ${section.title}`}
@@ -196,9 +211,7 @@ export function ProjectListTab({
                       <TaskRow
                         key={task.id}
                         task={task}
-                        context={context}
                         selected={selectedTaskId === task.id}
-                        busy={Boolean(pendingIds?.has?.(task.id))}
                         readOnly={readOnly}
                         showProject={false}
                         showStory={group !== "story"}
@@ -206,10 +219,7 @@ export function ProjectListTab({
                         selectable={selectable}
                         selectedForBulk={Boolean(selectedIds?.has?.(task.id))}
                         onToggleSelect={onToggleSelect}
-                        onOpen={onOpen}
-                        onToggleComplete={readOnly ? undefined : onToggleComplete}
                         onArchive={readOnly ? undefined : onArchive}
-                        formatSettings={formatSettings}
                       />
                     ))}
                     {section.tasks.length === 0 ? (
@@ -245,5 +255,3 @@ export function ProjectListTab({
     </div>
   );
 }
-
-export default ProjectListTab;

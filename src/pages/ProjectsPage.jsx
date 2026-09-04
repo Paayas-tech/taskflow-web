@@ -1,18 +1,37 @@
+/**
+ * Every project I can see, plus the invitations waiting for an answer. All of
+ * it is store data; the page owns only its filters and the dialogs it opens.
+ */
 import { useEffect, useState } from "react";
-import { Badge } from "../ui/Badge";
+import { InvitationRow } from "../collaboration/rows";
+import { ProjectDialog } from "../project/ProjectDialog";
+import { Badge, EmptyState, InlineNotice, SegmentedControl, cx } from "../ui/primitives";
 import { Button, IconButton } from "../ui/Button";
 import { ConfirmDialog } from "../ui/Dialog";
 import { Checkbox, Input } from "../ui/Field";
-import { EmptyState } from "../ui/EmptyState";
 import { Icon } from "../ui/icons";
-import { InlineNotice } from "../ui/InlineNotice";
 import { Menu } from "../ui/Menu";
-import { SegmentedControl } from "../ui/SegmentedControl";
-import { cx } from "../ui/cx";
-import InvitationRow from "../collaboration/InvitationRow";
-import ProjectDialog from "../projects/ProjectDialog";
-import { prefetchProjectWorkspace } from "../application/projectWorkspaceLoader";
-import { taskTimestampToMillis } from "../domain/taskDomain";
+import { taskTimestampToMillis } from "../domain/task";
+import { readProjectTab } from "../lib/preferences";
+import { loadInvitations, loadProjects } from "../store/session";
+import {
+  acceptInvitation,
+  createProject,
+  declineInvitation,
+  deleteProject,
+  ensureWorkspace,
+  updateProject,
+} from "../store/projects";
+import { consumeProjectCreateRequest, setProjectTab } from "../store/ui";
+import {
+  selectErrors,
+  selectInvitations,
+  selectLoaded,
+  selectProjectCreateRequest,
+  selectProjects,
+  selectUser,
+} from "../store/selectors";
+import { useStore } from "../store/store";
 
 const accessOptions = [
   { id: "all", label: "All" },
@@ -22,12 +41,16 @@ const accessOptions = [
 
 const roleLabels = { owner: "Owner", editor: "Editor", viewer: "Viewer" };
 
+const CREATE_ERROR =
+  "We couldn't create this project. Check your connection and try again.";
+const SAVE_ERROR = "We couldn't save this project. Check your connection and try again.";
+const DELETE_ERROR =
+  "We couldn't delete this project. Check your connection and try again.";
+
 const stopPointer = (event) => event.stopPropagation();
 
 const stopKeys = (event) => {
-  if (event.key === " " || event.key === "Enter") {
-    event.stopPropagation();
-  }
+  if (event.key === " " || event.key === "Enter") event.stopPropagation();
 };
 
 const isOwnedBy = (project, userId) =>
@@ -36,12 +59,12 @@ const isOwnedBy = (project, userId) =>
 const isArchivedProject = (project) => project.status === "archived";
 
 /** `Updated 3 Sep` (with the year when it is not the current one). */
-function formatUpdatedLabel(project, now = new Date()) {
+const formatUpdatedLabel = (project) => {
   const millis = taskTimestampToMillis(project?.updatedAt ?? project?.createdAt);
   if (millis === null) return "";
 
   const date = new Date(millis);
-  const sameYear = date.getFullYear() === now.getFullYear();
+  const sameYear = date.getFullYear() === new Date().getFullYear();
   const formatted = new Intl.DateTimeFormat(undefined, {
     day: "numeric",
     month: "short",
@@ -49,10 +72,23 @@ function formatUpdatedLabel(project, now = new Date()) {
   }).format(date);
 
   return `Updated ${formatted}`;
-}
+};
+
+const retryNotice = (message, retry) => (
+  <InlineNotice
+    tone="error"
+    action={
+      <Button size="sm" onClick={() => void retry()}>
+        Retry
+      </Button>
+    }
+  >
+    {message}
+  </InlineNotice>
+);
 
 /** Pure filter behind the search box, the access segments and `Show archived`. */
-function filterProjects(projects, { userId, access, search, showArchived }) {
+const filterProjects = (projects, { userId, access, search, showArchived }) => {
   const query = String(search || "").trim().toLowerCase();
 
   return projects.filter((project) => {
@@ -63,28 +99,20 @@ function filterProjects(projects, { userId, access, search, showArchived }) {
     if (access === "shared" && owned) return false;
 
     if (!query) return true;
-    return `${project.name || ""} ${project.description || ""}`.toLowerCase().includes(query);
+    return `${project.name || ""} ${project.description || ""}`
+      .toLowerCase()
+      .includes(query);
   });
-}
+};
 
-export default function ProjectsPage({
-  userId,
-  projects = [],
-  loading = false,
-  error = "",
-  onRetry,
-  onCreateProject,
-  onUpdateProject,
-  onDeleteProject,
-  onOpenProject,
-  createRequest = 0,
-  invitations = [],
-  invitationsLoading = false,
-  invitationsError = "",
-  onRetryInvitations,
-  onAcceptInvitation,
-  onDeclineInvitation,
-}) {
+export function ProjectsPage() {
+  const user = useStore(selectUser);
+  const projects = useStore(selectProjects);
+  const invitations = useStore(selectInvitations);
+  const loaded = useStore(selectLoaded);
+  const errors = useStore(selectErrors);
+  const createRequest = useStore(selectProjectCreateRequest);
+
   const [access, setAccess] = useState("all");
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
@@ -99,27 +127,22 @@ export default function ProjectsPage({
   const [deleteError, setDeleteError] = useState("");
 
   const [actionId, setActionId] = useState("");
-  const [actionError, setActionError] = useState("");
   const [invitationBusyId, setInvitationBusyId] = useState("");
 
-  const openCreate = () => {
-    setEditingProject(null);
-    setDialogError("");
-    setDialogOpen(true);
-  };
-
-  useEffect(() => {
-    if (!createRequest) return;
-    setEditingProject(null);
-    setDialogError("");
-    setDialogOpen(true);
-  }, [createRequest]);
-
-  const openEdit = (project) => {
+  const openDialog = (project = null) => {
     setEditingProject(project);
     setDialogError("");
     setDialogOpen(true);
   };
+
+  // "New project" from elsewhere navigates here first, so the request is
+  // already pending on this page's very first render: any non-zero counter
+  // opens the dialog, exactly like the profile request on the settings page.
+  useEffect(() => {
+    if (!createRequest) return;
+    openDialog();
+    consumeProjectCreateRequest();
+  }, [createRequest]);
 
   const closeDialog = () => {
     if (saving) return;
@@ -130,80 +153,58 @@ export default function ProjectsPage({
 
   const submitProject = async (values) => {
     if (saving) return;
-
     setSaving(true);
     setDialogError("");
-    try {
-      if (editingProject) await onUpdateProject?.(editingProject.id, values);
-      else await onCreateProject?.(values);
-      setDialogOpen(false);
-      setEditingProject(null);
-    } catch (submitError) {
-      console.error("Error saving project:", submitError);
-      setDialogError(
-        editingProject
-          ? "We couldn't save this project. Check your connection and try again."
-          : "We couldn't create this project. Check your connection and try again."
-      );
-    } finally {
-      setSaving(false);
+
+    const saved = editingProject
+      ? await updateProject(editingProject.id, values)
+      : await createProject(values);
+
+    setSaving(false);
+    if (!saved) {
+      setDialogError(editingProject ? SAVE_ERROR : CREATE_ERROR);
+      return;
     }
+    setDialogOpen(false);
+    setEditingProject(null);
   };
 
   const toggleArchive = async (project) => {
     if (actionId) return;
-    const archiving = !isArchivedProject(project);
-
-    setActionError("");
     setActionId(project.id);
-    try {
-      await onUpdateProject?.(project.id, { status: archiving ? "archived" : "active" });
-    } catch (archiveError) {
-      console.error("Error updating project archive state:", archiveError);
-      setActionError(
-        `We couldn't ${archiving ? "archive" : "restore"} “${project.name}”. Try again.`
-      );
-    } finally {
-      setActionId("");
-    }
+    await updateProject(project.id, {
+      status: isArchivedProject(project) ? "active" : "archived",
+    });
+    setActionId("");
   };
 
   const confirmDelete = async () => {
     if (!projectToDelete || deleting) return;
-
     setDeleting(true);
     setDeleteError("");
-    try {
-      await onDeleteProject?.(projectToDelete.id);
-      setProjectToDelete(null);
-    } catch (removeError) {
-      console.error("Error deleting project:", removeError);
-      setDeleteError("We couldn't delete this project. Check your connection and try again.");
-    } finally {
-      setDeleting(false);
-    }
+
+    const removed = await deleteProject(projectToDelete.id);
+    setDeleting(false);
+    if (removed) setProjectToDelete(null);
+    else setDeleteError(DELETE_ERROR);
   };
 
-  const respondToInvitation = async (invitation, action) => {
+  const respondToInvitation = async (invitation, respond) => {
     if (invitationBusyId) return;
-
-    setActionError("");
     setInvitationBusyId(invitation.id);
-    try {
-      await action?.(invitation.id);
-    } catch (invitationError) {
-      console.error("Error responding to project invitation:", invitationError);
-      setActionError(invitationError?.message || "We couldn't update this invitation. Try again.");
-    } finally {
-      setInvitationBusyId("");
-    }
+    await respond(invitation.id);
+    setInvitationBusyId("");
   };
 
-  const visibleProjects = filterProjects(projects, { userId, access, search, showArchived });
-  const showInvitations = invitationsLoading || Boolean(invitationsError) || invitations.length > 0;
+  const openProject = (projectId) =>
+    setProjectTab(projectId, readProjectTab(projectId));
+
+  const visibleProjects = filterProjects(projects, { userId: user?.id, access, search, showArchived });
+  const showInvitations =
+    loaded.invitations === "loading" || Boolean(errors.invitations) || invitations.length > 0;
 
   const renderProjectRow = (project) => {
-    const owner = isOwnedBy(project, userId);
+    const owner = isOwnedBy(project, user?.id);
     const archived = isArchivedProject(project);
     const roleLabel = roleLabels[project.viewerRole] || (owner ? "Owner" : "Member");
     const updatedLabel = formatUpdatedLabel(project);
@@ -212,40 +213,35 @@ export default function ProjectsPage({
         id: "open",
         label: "Open",
         icon: <Icon name="external-link" />,
-        onSelect: () => onOpenProject?.(project.id),
+        onSelect: () => openProject(project.id),
       },
-      owner
-        ? {
-            id: "edit",
-            label: "Edit",
-            icon: <Icon name="edit" />,
-            onSelect: () => openEdit(project),
-          }
-        : null,
-      owner
-        ? {
-            id: "archive",
-            label: archived ? "Restore" : "Archive",
-            icon: <Icon name={archived ? "archive-restore" : "archive"} />,
-            disabled: actionId === project.id,
-            onSelect: () => void toggleArchive(project),
-          }
-        : null,
-      owner
-        ? {
-            id: "delete",
-            label: "Delete",
-            icon: <Icon name="trash" />,
-            danger: true,
-            onSelect: () => {
-              setDeleteError("");
-              setProjectToDelete(project);
-            },
-          }
-        : null,
+      owner && {
+        id: "edit",
+        label: "Edit",
+        icon: <Icon name="edit" />,
+        onSelect: () => openDialog(project),
+      },
+      owner && {
+        id: "archive",
+        label: archived ? "Restore" : "Archive",
+        icon: <Icon name={archived ? "archive-restore" : "archive"} />,
+        disabled: actionId === project.id,
+        onSelect: () => void toggleArchive(project),
+      },
+      owner && {
+        id: "delete",
+        label: "Delete",
+        icon: <Icon name="trash" />,
+        danger: true,
+        onSelect: () => {
+          setDeleteError("");
+          setProjectToDelete(project);
+        },
+      },
     ].filter(Boolean);
 
-    const open = () => onOpenProject?.(project.id);
+    // Hovering a row warms its workspace: a cache hit costs nothing.
+    const prefetch = () => void ensureWorkspace(project.id);
 
     return (
       <div
@@ -255,14 +251,13 @@ export default function ProjectsPage({
         tabIndex={0}
         aria-label={`Open ${project.name}`}
         aria-busy={actionId === project.id || undefined}
-        onClick={open}
+        onClick={() => openProject(project.id)}
+        onMouseEnter={prefetch}
+        onFocus={prefetch}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
-          open();
-        }}
-        onMouseEnter={() => {
-          prefetchProjectWorkspace(userId, project.id)?.catch(() => {});
+          openProject(project.id);
         }}
       >
         <span
@@ -283,13 +278,19 @@ export default function ProjectsPage({
         <span className="project-row-meta">
           <Badge tone="neutral">{roleLabel}</Badge>
           {archived ? <Badge tone="neutral">Archived</Badge> : null}
-          {updatedLabel ? <span className="project-row-updated">{updatedLabel}</span> : null}
+          {updatedLabel ? (
+            <span className="project-row-updated">{updatedLabel}</span>
+          ) : null}
           <span className="project-row-menu" onClick={stopPointer} onKeyDown={stopKeys}>
             <Menu
               align="end"
               items={menuItems}
               trigger={(triggerProps) => (
-                <IconButton label={`More actions for ${project.name}`} size="sm" {...triggerProps}>
+                <IconButton
+                  label={`More actions for ${project.name}`}
+                  size="sm"
+                  {...triggerProps}
+                >
                   <Icon name="more-horizontal" />
                 </IconButton>
               )}
@@ -301,7 +302,7 @@ export default function ProjectsPage({
   };
 
   const renderProjects = () => {
-    if (loading) {
+    if (loaded.projects === "loading" && projects.length === 0) {
       return (
         <div className="row-list" aria-busy="true">
           <p className="sr-only" role="status">
@@ -317,20 +318,7 @@ export default function ProjectsPage({
       );
     }
 
-    if (error) {
-      return (
-        <InlineNotice
-          tone="error"
-          action={
-            <Button size="sm" onClick={onRetry}>
-              Retry
-            </Button>
-          }
-        >
-          {error}
-        </InlineNotice>
-      );
-    }
+    if (errors.projects) return retryNotice(errors.projects, loadProjects);
 
     if (projects.length === 0) {
       return (
@@ -339,7 +327,7 @@ export default function ProjectsPage({
           title="No projects yet"
           description="Projects hold a board, a task list and stories for your team."
           action={
-            <Button variant="primary" onClick={openCreate}>
+            <Button variant="primary" onClick={() => openDialog()}>
               New project
             </Button>
           }
@@ -384,19 +372,13 @@ export default function ProjectsPage({
             aria-label="Search projects"
             onChange={(event) => setSearch(event.target.value)}
           />
-          <Button variant="primary" icon={<Icon name="plus" />} onClick={openCreate}>
+          <Button variant="primary" icon={<Icon name="plus" />} onClick={() => openDialog()}>
             New project
           </Button>
         </div>
       </header>
 
-      <div className="page-body is-narrow">
-        {actionError ? (
-          <InlineNotice tone="error" className="page-notice" onDismiss={() => setActionError("")}>
-            {actionError}
-          </InlineNotice>
-        ) : null}
-
+      <div className="page-body">
         {showInvitations ? (
           <section className="section" aria-labelledby="projects-invitations-title">
             <div className="section-header">
@@ -408,21 +390,12 @@ export default function ProjectsPage({
               ) : null}
             </div>
 
-            {invitationsLoading ? (
+            {loaded.invitations === "loading" ? (
               <p className="muted" role="status">
                 Loading invitations…
               </p>
-            ) : invitationsError ? (
-              <InlineNotice
-                tone="error"
-                action={
-                  <Button size="sm" onClick={onRetryInvitations}>
-                    Retry
-                  </Button>
-                }
-              >
-                {invitationsError}
-              </InlineNotice>
+            ) : errors.invitations ? (
+              retryNotice(errors.invitations, loadInvitations)
             ) : (
               <div className="row-list">
                 {invitations.map((invitation) => (
@@ -431,8 +404,8 @@ export default function ProjectsPage({
                     invitation={invitation}
                     incoming
                     busy={invitationBusyId === invitation.id}
-                    onAccept={(selected) => void respondToInvitation(selected, onAcceptInvitation)}
-                    onDecline={(selected) => void respondToInvitation(selected, onDeclineInvitation)}
+                    onAccept={(selected) => void respondToInvitation(selected, acceptInvitation)}
+                    onDecline={(selected) => void respondToInvitation(selected, declineInvitation)}
                   />
                 ))}
               </div>

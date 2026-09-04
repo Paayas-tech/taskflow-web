@@ -1,28 +1,36 @@
 import { useMemo, useState } from "react";
-import { Button, EmptyState, Icon, InlineNotice, SegmentedControl } from "../ui";
-import { cx } from "../ui/cx";
+import { mapPersonalTasksToBoard, personalTaskMoveUpdate } from "../domain/board";
 import {
-  QuickAdd,
-  QuickAddTrigger,
-  TaskBoard,
-  TaskFilterBar,
-  TaskRow,
+  dateOnlyKey,
   groupTasksBy,
   groupTasksByDue,
+  isTaskComplete,
   sortTasks,
   taskSearchMatch,
-} from "../tasks";
-import { dateOnlyKey, isTaskComplete } from "../domain/taskDomain";
+} from "../domain/task";
 import {
-  mapPersonalTasksToBoard,
-  personalTaskMoveUpdate,
-} from "../domain/personalTaskBoardDomain";
-
-const VIEW_STORAGE_KEY = "taskflow:my-tasks-view";
-const GROUP_STORAGE_KEY = "taskflow:my-tasks-group";
-
-const VIEWS = ["list", "board"];
-const GROUPS = ["due", "priority", "project", "status"];
+  readMyTasksGroup,
+  readMyTasksView,
+  writeMyTasksGroup,
+  writeMyTasksView,
+} from "../lib/preferences";
+import {
+  selectActiveProjects,
+  selectErrors,
+  selectLoaded,
+  selectMyTasks,
+  selectSelectedTaskId,
+} from "../store/selectors";
+import { loadTasks } from "../store/session";
+import { useStore } from "../store/store";
+import { archiveTask, createTask, updateTask } from "../store/tasks";
+import { openComposer } from "../store/ui";
+import { QuickAdd, QuickAddTrigger } from "../tasks/QuickAdd";
+import { TaskBoard } from "../tasks/TaskBoard";
+import { TaskFilterBar } from "../tasks/TaskFilterBar";
+import { TaskRow } from "../tasks/TaskRow";
+import { Button, EmptyState, Icon, InlineNotice, SegmentedControl } from "../ui";
+import { cx } from "../ui/primitives";
 
 const VIEW_OPTIONS = [
   { id: "list", label: "List", icon: <Icon name="list" /> },
@@ -62,46 +70,19 @@ const BOARD_COLUMNS = [
   { id: "completed", name: "Done", category: "done" },
 ];
 
-const SKELETON_ROWS = [0, 1, 2];
-
-const readPreference = (key, allowed, fallback) => {
-  try {
-    const stored = window.localStorage.getItem(key);
-    return allowed.includes(stored) ? stored : fallback;
-  } catch {
-    return fallback;
-  }
-};
-
-const writePreference = (key, value) => {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    /* view preferences are best effort */
-  }
-};
-
 /**
  * My Tasks: personal tasks plus the project tasks assigned to you, as a grouped
  * list or the three personal board columns.
  */
-export default function MyTasksPage({
-  tasks = [],
-  tasksLoading = false,
-  tasksError = "",
-  onRetry,
-  projects = [],
-  taskActions,
-  onOpenTask,
-  onOpenProject,
-  selectedTaskId = null,
-  onNewTask,
-  formatSettings,
-}) {
-  const [view, setView] = useState(() => readPreference(VIEW_STORAGE_KEY, VIEWS, "list"));
-  const [groupBy, setGroupBy] = useState(() =>
-    readPreference(GROUP_STORAGE_KEY, GROUPS, "due")
-  );
+export function MyTasksPage() {
+  const tasks = useStore(selectMyTasks);
+  const projects = useStore(selectActiveProjects);
+  const loaded = useStore(selectLoaded);
+  const errors = useStore(selectErrors);
+  const selectedTaskId = useStore(selectSelectedTaskId);
+
+  const [view, setView] = useState(readMyTasksView);
+  const [groupBy, setGroupBy] = useState(readMyTasksGroup);
   const [search, setSearch] = useState("");
   const [source, setSource] = useState("all");
   const [priority, setPriority] = useState("all");
@@ -110,17 +91,11 @@ export default function MyTasksPage({
   const [sort, setSort] = useState("due");
   const [collapsedGroups, setCollapsedGroups] = useState(() => new Set(["completed"]));
   const [quickAddOpen, setQuickAddOpen] = useState(false);
-  const [mutationError, setMutationError] = useState("");
 
   const todayKey = useMemo(() => dateOnlyKey(new Date()), []);
   const projectsById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects]
-  );
-  const context = useMemo(() => ({ projectsById }), [projectsById]);
-  const openCount = useMemo(
-    () => tasks.filter((task) => !isTaskComplete(task)).length,
-    [tasks]
   );
 
   const visibleTasks = useMemo(
@@ -136,7 +111,8 @@ export default function MyTasksPage({
   );
 
   const listTasks = useMemo(
-    () => (showCompleted ? visibleTasks : visibleTasks.filter((task) => !isTaskComplete(task))),
+    () =>
+      showCompleted ? visibleTasks : visibleTasks.filter((task) => !isTaskComplete(task)),
     [showCompleted, visibleTasks]
   );
 
@@ -149,24 +125,27 @@ export default function MyTasksPage({
   }, [groupBy, listTasks, projectsById, sort, todayKey]);
 
   const boardTasks = useMemo(() => mapPersonalTasksToBoard(visibleTasks), [visibleTasks]);
+  const listView = view === "list";
+  const openCount = tasks.filter((task) => !isTaskComplete(task)).length;
   const quickAddGroupId = groupBy === "due" ? "today" : groups[0]?.id;
   const quickAddDueDate = groupBy === "due" ? todayKey : "";
-  const pendingIds = taskActions?.pendingIds;
-  const activeCount =
-    (search.trim() ? 1 : 0) +
-    (source === "all" ? 0 : 1) +
-    (priority === "all" ? 0 : 1) +
-    (projectFilter === "all" ? 0 : 1) +
-    (showCompleted ? 1 : 0);
+  const loading = loaded.tasks === "loading" && tasks.length === 0;
+  const activeCount = [
+    search.trim(),
+    source !== "all",
+    priority !== "all",
+    projectFilter !== "all",
+    showCompleted,
+  ].filter(Boolean).length;
 
   const changeView = (next) => {
     setView(next);
-    writePreference(VIEW_STORAGE_KEY, next);
+    writeMyTasksView(next);
   };
 
   const changeGroup = (next) => {
     setGroupBy(next);
-    writePreference(GROUP_STORAGE_KEY, next);
+    writeMyTasksGroup(next);
   };
 
   const clearFilters = () => {
@@ -177,94 +156,40 @@ export default function MyTasksPage({
     setShowCompleted(false);
   };
 
-  const toggleGroup = (groupId) => {
+  const toggleGroup = (groupId) =>
     setCollapsedGroups((current) => {
       const next = new Set(current);
-      if (next.has(groupId)) next.delete(groupId);
-      else next.add(groupId);
+      if (!next.delete(groupId)) next.add(groupId);
       return next;
     });
-  };
-
-  const runMutation = async (action, message) => {
-    setMutationError("");
-    try {
-      await action();
-    } catch {
-      setMutationError(message);
-    }
-  };
-
-  const handleOpen = (task, triggerElement) => onOpenTask?.(task, triggerElement);
-
-  const handleToggleComplete = (task) => {
-    void runMutation(
-      () => taskActions.toggleComplete(task),
-      `We couldn't update “${task.title}”. Check your connection and try again.`
-    );
-  };
-
-  const handleArchive = (task) => {
-    void runMutation(
-      () => taskActions.archive(task),
-      `We couldn't archive “${task.title}”. Check your connection and try again.`
-    );
-  };
 
   const handleMove = (placements) => {
     const move = personalTaskMoveUpdate(boardTasks, placements);
-    const task = move ? tasks.find((candidate) => candidate.id === move.taskId) : null;
-    if (!task) return undefined;
-    return runMutation(
-      () => taskActions.quickUpdate(task, move.changes),
-      `We couldn't move “${task.title}”. Check your connection and try again.`
-    );
+    return move ? updateTask(move.taskId, move.changes) : undefined;
   };
 
-  const createFromQuickAdd = async (title) => {
-    setMutationError("");
-    await taskActions.createPersonal({ title, dueDate: quickAddDueDate });
-  };
+  const createQuickTask = (title) => createTask({ title, dueDate: quickAddDueDate });
 
   const openDetailsFromQuickAdd = (title) => {
     setQuickAddOpen(false);
-    onNewTask?.({ title, dueDate: quickAddDueDate });
-  };
-
-  const createFromBoard = async (title, column) => {
-    setMutationError("");
-    await taskActions.createPersonal({
-      title,
-      status: column.id,
-      completed: column.id === "completed",
-    });
-  };
-
-  const openDetailsFromBoard = (title, column) => {
-    onNewTask?.({ title, status: column.id });
+    openComposer({ title, dueDate: quickAddDueDate });
   };
 
   const renderRow = (task) => (
     <TaskRow
       key={task.id}
       task={task}
-      context={context}
       todayKey={todayKey}
       selected={selectedTaskId === task.id}
-      busy={Boolean(pendingIds?.has?.(task.id))}
       showProject={groupBy !== "project"}
-      onOpen={handleOpen}
-      onOpenProject={onOpenProject}
-      onToggleComplete={handleToggleComplete}
-      onArchive={task.projectId ? undefined : handleArchive}
-      formatSettings={formatSettings}
+      onArchive={task.projectId ? undefined : (item) => archiveTask(item.id)}
     />
   );
 
   const renderQuickAdd = () =>
     quickAddOpen ? (
       <QuickAdd
-        onCreate={createFromQuickAdd}
+        onCreate={createQuickTask}
         onOpenDetails={openDetailsFromQuickAdd}
         onCancel={() => setQuickAddOpen(false)}
       />
@@ -336,10 +261,10 @@ export default function MyTasksPage({
   };
 
   const renderBody = () => {
-    if (tasksLoading) {
+    if (loading) {
       return (
         <div className="row-list my-tasks-skeleton" role="status" aria-label="Loading tasks">
-          {SKELETON_ROWS.map((row) => (
+          {[0, 1, 2].map((row) => (
             <div className="skeleton-row" key={row}>
               <span className="skeleton my-tasks-skeleton-check" />
               <span className="skeleton my-tasks-skeleton-line" />
@@ -349,17 +274,17 @@ export default function MyTasksPage({
       );
     }
 
-    if (tasksError) {
+    if (errors.tasks) {
       return (
         <InlineNotice
           tone="error"
           action={
-            <Button variant="secondary" size="sm" onClick={onRetry}>
+            <Button variant="secondary" size="sm" onClick={() => void loadTasks()}>
               Retry
             </Button>
           }
         >
-          {tasksError}
+          {errors.tasks}
         </InlineNotice>
       );
     }
@@ -373,7 +298,7 @@ export default function MyTasksPage({
           action={
             <QuickAdd
               autoFocus={false}
-              onCreate={createFromQuickAdd}
+              onCreate={createQuickTask}
               onOpenDetails={openDetailsFromQuickAdd}
             />
           }
@@ -381,68 +306,49 @@ export default function MyTasksPage({
       );
     }
 
+    // Every select filter falls back to its first option, which is always "all".
+    const filters = [
+      {
+        id: "my-tasks-source",
+        label: "Source",
+        value: source,
+        options: SOURCE_OPTIONS,
+        onChange: setSource,
+      },
+      {
+        id: "my-tasks-priority",
+        label: "Priority",
+        value: priority,
+        options: PRIORITY_OPTIONS,
+        onChange: setPriority,
+      },
+      projects.length > 0 && {
+        id: "my-tasks-project",
+        label: "Project",
+        value: projectFilter,
+        options: [
+          { value: "all", label: "Any" },
+          ...projects.map((project) => ({ value: project.id, label: project.name })),
+        ],
+        onChange: setProjectFilter,
+      },
+      listView && {
+        id: "my-tasks-completed",
+        type: "checkbox",
+        label: "Show completed",
+        value: showCompleted,
+        onChange: setShowCompleted,
+      },
+    ].filter(Boolean);
+
     return (
       <>
         <TaskFilterBar
           search={search}
           onSearch={setSearch}
-          filters={[
-            {
-              id: "my-tasks-source",
-              label: "Source",
-              value: source,
-              defaultValue: "all",
-              options: SOURCE_OPTIONS,
-              onChange: setSource,
-            },
-            {
-              id: "my-tasks-priority",
-              label: "Priority",
-              value: priority,
-              defaultValue: "all",
-              options: PRIORITY_OPTIONS,
-              onChange: setPriority,
-            },
-            ...(projects.length > 0
-              ? [
-                  {
-                    id: "my-tasks-project",
-                    label: "Project",
-                    value: projectFilter,
-                    defaultValue: "all",
-                    options: [
-                      { value: "all", label: "Any" },
-                      ...projects.map((project) => ({
-                        value: project.id,
-                        label: project.name,
-                      })),
-                    ],
-                    onChange: setProjectFilter,
-                  },
-                ]
-              : []),
-            ...(view === "list"
-              ? [
-                  {
-                    id: "my-tasks-completed",
-                    type: "checkbox",
-                    label: "Show completed",
-                    value: showCompleted,
-                    onChange: setShowCompleted,
-                  },
-                ]
-              : []),
-          ]}
-          group={
-            view === "list"
-              ? { value: groupBy, options: GROUP_OPTIONS, onChange: changeGroup }
-              : undefined
-          }
-          sort={
-            view === "list"
-              ? { value: sort, options: SORT_OPTIONS, onChange: setSort }
-              : undefined
-          }
+          filters={filters}
+          group={listView ? { value: groupBy, options: GROUP_OPTIONS, onChange: changeGroup } : undefined}
+          sort={listView ? { value: sort, options: SORT_OPTIONS, onChange: setSort } : undefined}
           activeCount={activeCount}
           onClear={clearFilters}
         />
@@ -452,17 +358,13 @@ export default function MyTasksPage({
             <TaskBoard
               columns={BOARD_COLUMNS}
               tasks={boardTasks}
-              context={context}
               todayKey={todayKey}
               selectedTaskId={selectedTaskId}
               collapsible
               initiallyCollapsedIds={["completed"]}
               onMove={handleMove}
-              onOpen={handleOpen}
-              onOpenProject={onOpenProject}
-              onQuickCreate={createFromBoard}
-              onOpenDetails={openDetailsFromBoard}
-              formatSettings={formatSettings}
+              onQuickCreate={(title, column) => createTask({ title, status: column.id })}
+              onOpenDetails={(title, column) => openComposer({ title, status: column.id })}
             />
           </div>
         ) : (
@@ -494,28 +396,16 @@ export default function MyTasksPage({
           <Button
             variant="primary"
             icon={<Icon name="plus" size={14} />}
-            onClick={() => onNewTask?.()}
+            onClick={() => openComposer()}
           >
             New task
           </Button>
         </div>
       </header>
 
-      <div
-        className={cx("page-body", view === "board" ? "my-tasks-board-body" : "is-narrow")}
-      >
-        {mutationError ? (
-          <div className="page-notice">
-            <InlineNotice tone="error" onDismiss={() => setMutationError("")}>
-              {mutationError}
-            </InlineNotice>
-          </div>
-        ) : null}
-
+      <div className={cx("page-body", view === "board" && "my-tasks-board-body")}>
         {renderBody()}
       </div>
     </div>
   );
 }
-
-export { MyTasksPage };

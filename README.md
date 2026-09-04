@@ -5,6 +5,11 @@ and Supabase. It supports personal tasks, project workspaces, Kanban, calendar
 views, invitations, member roles, assignees, comments, activity, attachments,
 and realtime notifications.
 
+The client is a single in-memory store loaded once per session and mutated
+optimistically against a thin Supabase `api/` layer; see
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full data flow and
+store shape.
+
 ## Routes
 
 The app is a single-page application with a sidebar shell and no top bar. Every
@@ -18,13 +23,12 @@ route below renders inside `src/App.jsx`; unknown paths normalize to `/`.
 | `/inbox` | Notifications (`src/pages/InboxPage.jsx`) |
 | `/projects` | Project list and invitations (`src/pages/ProjectsPage.jsx`) |
 | `/projects/:id/{overview,board,list,stories}` | Project workspace (`src/pages/ProjectWorkspacePage.jsx`) |
-| `/settings` | Settings (`src/SettingsPage.jsx`) |
+| `/settings` | Settings (`src/pages/SettingsPage.jsx`) |
 | `/archived-tasks` | Archived personal tasks (`src/pages/ArchivedTasksPage.jsx`) |
 | `/recover` | Password recovery (`src/auth/Recover.jsx`) |
 
 `/projects/:id` and any unknown project sub-path redirect to
-`/projects/:id/overview`. In development, `/__preview` renders the offline
-component harness in `src/dev/`; it is excluded from production builds.
+`/projects/:id/overview`.
 
 ## Requirements
 
@@ -104,6 +108,18 @@ Only connection metadata is readable by the signed-in browser. OAuth state,
 encrypted access tokens, and encrypted refresh tokens remain in the private
 schema and are available only through service-role-only database functions.
 
+### Attachments
+
+Attachments use Supabase Storage directly; no edge functions or secrets are
+required.
+
+- Apply `supabase/migrations/015_attachments.sql` and
+  `supabase/migrations/016_attachment_storage_hardening.sql`. They create the
+  private `taskflow-attachments` bucket with a 10 MiB file size limit and an
+  allowlist of PDF, TXT, CSV, DOC/DOCX, XLS/XLSX, PPT/PPTX, PNG, JPEG, and WebP.
+- After applying, confirm in the Supabase dashboard that the bucket is still
+  private.
+
 ## Local development
 
 ```bash
@@ -126,7 +142,6 @@ npm test
 npm run test:db
 npm run lint
 npm run build
-git diff --check
 ```
 
 ### Local resilience checks
@@ -187,29 +202,6 @@ version; any such records require a separate, reviewed data audit.
 `/tasks`, `/calendar`, `/inbox`, `/projects`, `/projects/:id/board` and
 `/settings` works. It enumerates no individual routes, so adding a route needs
 no deployment change.
-
-## Production prerequisites and backlog
-
-- Configure custom SMTP with a verified sender domain before enabling public
-  self-service signups. Supabase's default SMTP is intended for testing and is
-  not a production delivery service.
-- Keep email confirmation enabled when custom SMTP is introduced, and validate
-  confirmation delivery with a fresh inbox before announcing public signup.
-
-### Production pre-launch checklist
-
-- Confirm `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` exist in the intended
-  deployment environments.
-- Confirm all reviewed migrations are applied and RLS remains enabled and
-  covered by the database-policy tests.
-- Keep custom SMTP disabled until `mail.bohaus.in` is verified; DNS verification
-  remains an external prerequisite.
-- Complete owner, editor, and viewer smoke tests with separate accounts.
-- Verify sign-out failure leaves the current session intact, retry succeeds,
-  expired sessions return to login, and protected routes never render account
-  data while signed out.
-- Confirm no Supabase service-role key, secret key, provider secret, or token is
-  present in any frontend `VITE_` variable.
 
 ## Security
 

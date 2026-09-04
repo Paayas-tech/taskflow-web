@@ -1,16 +1,16 @@
 import { useMemo } from "react";
-import CalendarEvent from "./CalendarEvent";
+import { CalendarEvent } from "./CalendarEvent";
 import {
   buildCalendarTimeAxis,
   calendarMinutesToPixels,
   createCalendarTaskInitialValues,
-  isValidCalendarDate,
   layoutCalendarDayEvents,
-  normalizeTaskSchedule,
-} from "../domain/calendarDomain";
-import { formatTimeForDisplay } from "../domain/settingsDomain";
-import { Button } from "../ui/Button";
-import { Icon } from "../ui/icons";
+} from "../domain/calendar";
+import { isValidDateOnly, normalizeTaskSchedule } from "../domain/task";
+import { formatTimeForDisplay } from "../domain/settings";
+import { selectSettings } from "../store/selectors";
+import { useStore } from "../store/store";
+import { Button, Icon } from "../ui";
 
 const pixelsPerMinute = 1;
 
@@ -42,9 +42,8 @@ export function CalendarDayView({
   onCreateTask,
   onOpenTask,
   selectedTaskId = null,
-  projectsById,
-  formatSettings = {},
 }) {
+  const { time } = useStore(selectSettings);
   const timeAxis = useMemo(() => buildCalendarTimeAxis(), []);
   const normalizedTasks = useMemo(
     () => tasks.map((task) => ({ ...task, ...normalizeTaskSchedule(task) })),
@@ -56,7 +55,7 @@ export function CalendarDayView({
         const finalDate = task.endDate || task.dueDate;
         return (
           task.isAllDay &&
-          isValidCalendarDate(task.dueDate) &&
+          isValidDateOnly(task.dueDate) &&
           selectedDateKey >= task.dueDate &&
           selectedDateKey <= finalDate
         );
@@ -101,10 +100,8 @@ export function CalendarDayView({
                   task={task}
                   segment={segment}
                   viewContext="day"
-                  projectsById={projectsById}
                   selected={selectedTaskId === task.id}
-                  formatSettings={formatSettings}
-                  onClick={(event) => onOpenTask?.(task, event.currentTarget)}
+                  onClick={() => onOpenTask?.(task)}
                 />
               );
             })
@@ -127,9 +124,9 @@ export function CalendarDayView({
           style={{ height: calendarMinutesToPixels(1440, pixelsPerMinute) }}
         >
           <div className="cal-time-axis" aria-hidden="true">
-            {timeAxis.map(({ minutes, label, time }) => (
+            {timeAxis.map(({ minutes, label, time: slotTime }) => (
               <span key={minutes} style={{ top: calendarMinutesToPixels(minutes) }}>
-                {formatTimeForDisplay(time, formatSettings.format) || label}
+                {formatTimeForDisplay(slotTime, time.format) || label}
               </span>
             ))}
           </div>
@@ -139,14 +136,14 @@ export function CalendarDayView({
             ))}
           </div>
           <div className="cal-day-column">
-            {timeAxis.map(({ minutes, time }) => (
+            {timeAxis.map(({ minutes, time: slotTime }) => (
               <button
                 type="button"
                 key={minutes}
                 className="cal-slot"
                 disabled={!onCreateTask}
-                aria-label={`Add a one-hour task at ${formatTimeForDisplay(time, formatSettings.format)}`}
-                onClick={() => createTimed(time)}
+                aria-label={`Add a one-hour task at ${formatTimeForDisplay(slotTime, time.format)}`}
+                onClick={() => createTimed(slotTime)}
               />
             ))}
             {selectedDateKey === todayKey && nowMinutes !== null ? (
@@ -161,12 +158,10 @@ export function CalendarDayView({
                 key={task.id}
                 task={task}
                 viewContext="day"
-                projectsById={projectsById}
                 selected={selectedTaskId === task.id}
-                displayTime={displayTimeForSegment(task, formatSettings.format)}
-                formatSettings={formatSettings}
+                displayTime={displayTimeForSegment(task, time.format)}
                 style={timedEventStyle(task)}
-                onClick={(event) => onOpenTask?.(task, event.currentTarget)}
+                onClick={() => onOpenTask?.(task)}
               />
             ))}
           </div>
@@ -175,5 +170,3 @@ export function CalendarDayView({
     </section>
   );
 }
-
-export default CalendarDayView;

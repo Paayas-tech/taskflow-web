@@ -1,13 +1,13 @@
-import { Avatar } from "../ui/Avatar";
-import { Badge } from "../ui/Badge";
+/**
+ * Project stories tab: one row per story with its task progress, plus the
+ * archived stories that can be restored.
+ */
+import { Avatar, Badge, EmptyState, cx } from "../ui/primitives";
 import { Button } from "../ui/Button";
-import { EmptyState } from "../ui/EmptyState";
 import { Icon } from "../ui/icons";
-import { cx } from "../ui/cx";
-import { isTaskComplete } from "../domain/taskDomain";
-import { groupProjectTasksByColumn } from "../domain/projectBoardDomain";
-import { safeDisplayName } from "../domain/identityDomain";
-import { dueDateTone, formatDueLabel, statusLabel } from "../tasks/taskPresentation";
+import { dueDateTone, formatDueLabel, isTaskComplete, statusLabel } from "../domain/task";
+import { groupProjectTasksByColumn } from "../domain/board";
+import { safeDisplayName } from "../domain/collaboration";
 
 const STATUSES = ["todo", "in-progress", "completed"];
 
@@ -40,10 +40,6 @@ const breakdownLabel = (storyTasks, columns) => {
   return STATUSES.map((status) => `${statusLabel(status)} ${counts.get(status)}`).join(" · ");
 };
 
-/**
- * Project stories tab: one row per story with its task progress, plus the
- * archived stories that can be restored.
- */
 export function ProjectStoriesTab({
   stories = [],
   tasks = [],
@@ -60,7 +56,7 @@ export function ProjectStoriesTab({
 }) {
   const membersById = new Map(members.map((member) => [member.userId, member]));
 
-  const openStory = (story, element) => onOpenStory?.(story, element);
+  const openStory = (story) => onOpenStory?.(story);
 
   return (
     <section className="stories-tab stack-4" aria-label="Project stories">
@@ -83,7 +79,9 @@ export function ProjectStoriesTab({
             const storyTasks = tasks.filter((task) => task.storyId === story.id);
             const completed = storyTasks.filter(isTaskComplete).length;
             const percentage =
-              storyTasks.length > 0 ? Math.round((completed / storyTasks.length) * 100) : 0;
+              storyTasks.length > 0
+                ? Math.round((completed / storyTasks.length) * 100)
+                : 0;
             const status = statusOf(story);
             const dueDate = typeof story.dueDate === "string" ? story.dueDate.trim() : "";
             const dueLabel = formatDueLabel(dueDate, todayKey);
@@ -96,11 +94,11 @@ export function ProjectStoriesTab({
                 role="button"
                 tabIndex={0}
                 aria-current={selected ? "true" : undefined}
-                onClick={(event) => openStory(story, event.currentTarget)}
+                onClick={() => openStory(story)}
                 onKeyDown={(event) => {
                   if (event.key !== "Enter" && event.key !== " ") return;
                   event.preventDefault();
-                  openStory(story, event.currentTarget);
+                  openStory(story);
                 }}
               >
                 <span className="story-row-icon" aria-hidden="true">
@@ -112,14 +110,20 @@ export function ProjectStoriesTab({
                     {story.title}
                   </span>
                   {story.description ? (
-                    <span className="story-row-description truncate muted" title={story.description}>
+                    <span
+                      className="story-row-description truncate muted"
+                      title={story.description}
+                    >
                       {story.description}
                     </span>
                   ) : null}
                 </div>
 
                 <div className="story-row-meta">
-                  <span className="story-row-progress" title={breakdownLabel(storyTasks, columns)}>
+                  <span
+                    className="story-row-progress"
+                    title={breakdownLabel(storyTasks, columns)}
+                  >
                     <span
                       className="progress story-row-bar"
                       role="progressbar"
@@ -139,7 +143,10 @@ export function ProjectStoriesTab({
 
                   {dueLabel ? (
                     <time
-                      className={cx("task-due", `is-${dueDateTone(dueDate, todayKey, status === "completed")}`)}
+                      className={cx(
+                        "task-due",
+                        `is-${dueDateTone(dueDate, todayKey, status === "completed")}`
+                      )}
                       dateTime={dueDate}
                     >
                       <Icon name="calendar" size={12} />
@@ -187,5 +194,3 @@ export function ProjectStoriesTab({
     </section>
   );
 }
-
-export default ProjectStoriesTab;

@@ -1,99 +1,47 @@
 import { describe, expect, it, vi } from "vitest";
-import { find, findAll, props, render, textContent } from "../test/elementTree";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { TaskFilterBar } from "./TaskFilterBar";
 
-const priorityFilter = (overrides = {}) => ({
-  id: "priority",
-  label: "Priority",
-  value: "any",
+const statusFilter = (onChange) => ({
+  id: "status",
+  label: "Status",
+  value: "all",
+  defaultValue: "all",
   options: [
-    { value: "any", label: "Any" },
-    { value: "high", label: "High" },
+    { value: "all", label: "All" },
+    { value: "todo", label: "To do" },
   ],
-  onChange: vi.fn(),
-  ...overrides,
+  onChange,
 });
 
-const selectsOf = (tree) => findAll(render(tree), (node) => node.type === "select");
-
 describe("TaskFilterBar", () => {
-  it("labels the search field and reports what was typed", () => {
+  it("reports the typed search text and the chosen filter value", async () => {
     const onSearch = vi.fn();
-    const tree = render(TaskFilterBar({ search: "rel", onSearch }));
-    const input = find(tree, (node) => node.type === "input");
+    const onChange = vi.fn();
+    render(<TaskFilterBar search="" onSearch={onSearch} filters={[statusFilter(onChange)]} />);
 
-    expect(props(input)["aria-label"]).toBe("Search tasks");
-    expect(props(input).value).toBe("rel");
+    // The search box is controlled by the page, so each keystroke is reported
+    // against the value the bar was given.
+    await userEvent.type(screen.getByLabelText("Search tasks"), "b");
+    expect(onSearch).toHaveBeenLastCalledWith("b");
 
-    props(input).onChange({ target: { value: "release" } });
-    expect(onSearch).toHaveBeenCalledWith("release");
+    await userEvent.selectOptions(screen.getByLabelText("Status"), "todo");
+    expect(onChange).toHaveBeenCalledWith("todo");
   });
 
-  it("renders each filter as a labelled chip and reports the chosen value", () => {
-    const filter = priorityFilter();
-    const tree = TaskFilterBar({ filters: [filter] });
-    const chip = find(render(tree), (node) =>
-      String(props(node).className || "").includes("filter-select")
-    );
-
-    expect(textContent(chip)).toContain("Priority:");
-
-    const select = selectsOf(tree)[0];
-    expect(props(select)["aria-label"]).toBe("Priority");
-    props(select).onChange({ target: { value: "high" } });
-    expect(filter.onChange).toHaveBeenCalledWith("high");
-  });
-
-  it("highlights a chip only when it moved off its default", () => {
-    const atDefault = find(
-      render(TaskFilterBar({ filters: [priorityFilter()] })),
-      (node) => String(props(node).className || "").includes("filter-select")
-    );
-    const changed = find(
-      render(TaskFilterBar({ filters: [priorityFilter({ value: "high" })] })),
-      (node) => String(props(node).className || "").includes("filter-select")
-    );
-
-    expect(props(atDefault).className).not.toContain("is-active");
-    expect(props(changed).className).toContain("is-active");
-  });
-
-  it("supports checkbox chips such as show completed", () => {
-    const filter = {
-      id: "completed",
-      type: "checkbox",
-      label: "Show completed",
-      value: false,
-      onChange: vi.fn(),
-    };
-    const tree = render(TaskFilterBar({ filters: [filter] }));
-    const input = find(tree, (node) => node.type === "input" && props(node).type === "checkbox");
-
-    expect(textContent(tree)).toContain("Show completed");
-    props(input).onChange({ target: { checked: true } });
-    expect(filter.onChange).toHaveBeenCalledWith(true);
-  });
-
-  it("adds group and sort selects when the page provides them", () => {
-    const group = { value: "due", options: [{ value: "due", label: "Due date" }], onChange: vi.fn() };
-    const sort = { value: "due", options: [{ value: "due", label: "Due" }], onChange: vi.fn() };
-    const labels = selectsOf(TaskFilterBar({ group, sort })).map(
-      (select) => props(select)["aria-label"]
-    );
-
-    expect(labels).toEqual(["Group by", "Sort"]);
-  });
-
-  it("shows Clear only while filters are active", () => {
+  it("offers Clear only while filters are active", async () => {
     const onClear = vi.fn();
-    const withoutClear = render(TaskFilterBar({ activeCount: 0, onClear }));
-    expect(textContent(withoutClear)).not.toContain("Clear");
+    const { rerender } = render(
+      <TaskFilterBar filters={[statusFilter(vi.fn())]} onClear={onClear} />
+    );
+    expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();
 
-    const withClear = render(TaskFilterBar({ activeCount: 2, onClear }));
-    const button = find(withClear, (node) => node.type === "button");
-    expect(textContent(button)).toBe("Clear");
+    rerender(
+      <TaskFilterBar filters={[statusFilter(vi.fn())]} onClear={onClear} activeCount={1} />
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
 
-    props(button).onClick();
-    expect(onClear).toHaveBeenCalled();
+    expect(onClear).toHaveBeenCalledTimes(1);
   });
 });

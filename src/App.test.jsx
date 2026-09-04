@@ -1,725 +1,241 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { App } from "./App";
+import { completeOnboarding, signOut } from "./api/auth";
+import { createFakeApi, makeUser } from "./test/fakeApi";
+import { renderPage, seedStore } from "./test/renderApp";
+import { endSession, startSession } from "./store/session";
+import { configureStore, getState } from "./store/store";
+import { navigate, notify } from "./store/ui";
 
-const hookRuntime = vi.hoisted(() => {
-  let activeRunner;
-  const same = (left, right) =>
-    Boolean(
-      left &&
-        right &&
-        left.length === right.length &&
-        left.every((value, index) => Object.is(value, right[index]))
-    );
-
-  return {
-    activate(runner) {
-      activeRunner = runner;
-    },
-    useState(initialValue) {
-      const index = activeRunner.cursor++;
-      activeRunner.slots[index] ??= {
-        value: typeof initialValue === "function" ? initialValue() : initialValue,
-      };
-      const slot = activeRunner.slots[index];
-      return [
-        slot.value,
-        (next) => {
-          slot.value = typeof next === "function" ? next(slot.value) : next;
-        },
-      ];
-    },
-    useRef(initialValue) {
-      const index = activeRunner.cursor++;
-      activeRunner.slots[index] ??= { current: initialValue };
-      return activeRunner.slots[index];
-    },
-    useCallback(callback, dependencies) {
-      const index = activeRunner.cursor++;
-      const previous = activeRunner.slots[index];
-      if (previous && same(previous.dependencies, dependencies)) {
-        return previous.callback;
-      }
-      activeRunner.slots[index] = { callback, dependencies };
-      return callback;
-    },
-    useMemo(factory, dependencies) {
-      const index = activeRunner.cursor++;
-      const previous = activeRunner.slots[index];
-      if (previous && same(previous.dependencies, dependencies)) {
-        return previous.value;
-      }
-      const value = factory();
-      activeRunner.slots[index] = { value, dependencies };
-      return value;
-    },
-    useEffect(effect, dependencies) {
-      const index = activeRunner.cursor++;
-      const previous = activeRunner.slots[index];
-      if (!previous || !same(previous.dependencies, dependencies)) {
-        activeRunner.pending.push({ index, effect, dependencies });
-      }
-    },
-  };
-});
-
-const taskService = vi.hoisted(() => ({
-  createTask: vi.fn(),
-  getTasks: vi.fn(),
-  updateTask: vi.fn(),
-  archiveTask: vi.fn(),
-  unarchiveTask: vi.fn(),
-  deleteTask: vi.fn(),
-}));
-
-const projectService = vi.hoisted(() => ({
-  getProjects: vi.fn(),
-  getAssignedProjectTasks: vi.fn(),
-  getUserInvitations: vi.fn(),
-  createProject: vi.fn(),
-  createProjectTask: vi.fn(),
-  updateProjectTask: vi.fn(),
-  archiveProjectTask: vi.fn(),
-  deleteProjectTask: vi.fn(),
-  setTaskAssignee: vi.fn(),
-}));
-
-const settingsService = vi.hoisted(() => ({
-  getSettings: vi.fn(),
-  saveSettings: vi.fn(),
-}));
-
-const authService = vi.hoisted(() => ({
-  callback: null,
-  onAuthStateChange: vi.fn((callback) => {
-    authService.callback = callback;
-    callback("SIGNED_IN", { uid: "user-a", email: "test-user@example.com" });
-    return vi.fn();
-  }),
-}));
-
-const notificationsState = vi.hoisted(() => ({
-  value: {
-    notifications: [],
-    loading: false,
-    error: "",
-    liveNotice: "",
-    unreadCount: 0,
-    markRead: vi.fn(),
-    markAllRead: vi.fn(),
-    dismiss: vi.fn(),
-    refresh: vi.fn(),
-  },
-}));
-
-const captures = vi.hoisted(() => ({}));
-
-vi.mock("react", () => ({
-  default: {},
-  useCallback: hookRuntime.useCallback,
-  useEffect: hookRuntime.useEffect,
-  useMemo: hookRuntime.useMemo,
-  useRef: hookRuntime.useRef,
-  useState: hookRuntime.useState,
-}));
-
-const captureOnly = vi.hoisted(() => (name) => (props) => {
-  captures[name] = props;
-  return null;
-});
-
-vi.mock("./shell/AppShell", () => ({
-  default: (props) => {
-    captures.appShell = props;
-    return {
-      type: "div",
-      key: null,
-      props: { className: "app-shell", children: [props.sidebar, props.children] },
-    };
-  },
-}));
-vi.mock("./shell/Sidebar", () => ({ default: captureOnly("sidebar") }));
-vi.mock("./shell/SearchDialog", () => ({ default: captureOnly("searchDialog") }));
-vi.mock("./inbox/useNotifications", () => ({
-  default: (userId) => {
-    captures.notificationsUserId = userId;
-    return notificationsState.value;
-  },
-}));
-vi.mock("./pages/HomePage", () => ({ default: captureOnly("home") }));
-vi.mock("./pages/MyTasksPage", () => ({ default: captureOnly("myTasks") }));
-vi.mock("./pages/CalendarPage", () => ({ default: captureOnly("calendar") }));
-vi.mock("./pages/InboxPage", () => ({ default: captureOnly("inbox") }));
-vi.mock("./pages/ProjectsPage", () => ({ default: captureOnly("projects") }));
-vi.mock("./pages/ProjectWorkspacePage", () => ({ default: captureOnly("workspace") }));
-vi.mock("./pages/ArchivedTasksPage", () => ({ default: captureOnly("archived") }));
-vi.mock("./SettingsPage", () => ({ default: captureOnly("settings") }));
-vi.mock("./auth/ConfigurationErrorScreen", () => ({ default: () => null }));
-vi.mock("./auth/Login", () => ({ default: captureOnly("login") }));
-vi.mock("./auth/Onboarding", () => ({ default: captureOnly("onboarding") }));
-vi.mock("./auth/Recover", () => ({ default: captureOnly("recover") }));
-vi.mock("./collaboration/ProfileCompletionPrompt", () => ({
-  default: captureOnly("profilePrompt"),
-}));
-vi.mock("./tasks/ConnectedTaskDetailPanel", () => ({ default: captureOnly("panel") }));
-vi.mock("./tasks/TaskComposerDialog", () => ({ default: captureOnly("composer") }));
-
-vi.mock("./application/authService", () => ({
-  onAuthStateChange: authService.onAuthStateChange,
+vi.mock("./api/auth", () => ({
+  signIn: vi.fn(),
+  signUp: vi.fn(),
+  resendConfirmation: vi.fn(),
+  verifySignupOtp: vi.fn(),
+  requestPasswordReset: vi.fn(),
+  updatePassword: vi.fn(),
   signOut: vi.fn(),
-  completeOnboarding: vi.fn(),
   deleteAccount: vi.fn(),
+  completeOnboarding: vi.fn(),
 }));
-vi.mock("./application/signOutController", () => ({
-  createSignOutController: () => ({ reset: vi.fn(), run: vi.fn() }),
-}));
-vi.mock("./application/googleCalendarIntegrationService", () => ({
-  googleCalendarIntegrationService: {
-    getConnection: vi.fn().mockResolvedValue(null),
-    sync: vi.fn().mockResolvedValue({ events: [] }),
+
+// The suite runs entirely against the in-memory fake api, so no test may depend
+// on the machine's `.env`: the client module is stubbed, and `configured` flips
+// the one branch App reads from it.
+const client = vi.hoisted(() => ({ configured: true }));
+vi.mock("./api/client", () => ({
+  get isSupabaseConfigured() {
+    return client.configured;
   },
+  supabase: null,
+  requireSupabase: () => {
+    throw new Error("Tests never reach Supabase.");
+  },
+  throwIfError: () => {},
+  currentUserId: async () => null,
+  subscribeToTable: () => () => {},
 }));
-vi.mock("./application/attachmentService", () => ({
-  attachmentService: { removeAll: vi.fn().mockResolvedValue(undefined) },
-}));
-vi.mock("./application/taskService", () => taskService);
-vi.mock("./application/projectService", () => ({
-  ...projectService,
-  acceptProjectInvitation: vi.fn(),
-  declineProjectInvitation: vi.fn(),
-  deleteProject: vi.fn(),
-  updateProject: vi.fn(),
-}));
-vi.mock("./application/settingsService", () => settingsService);
-vi.mock("./services/reminderService", () => ({
-  createReminderScheduler: () => ({ start: vi.fn(), stop: vi.fn(), check: vi.fn() }),
-}));
-vi.mock("./infrastructure/supabase/client", () => ({ isSupabaseConfigured: true }));
 
-import App from "./App";
-import { normalizeSettings } from "./domain/settingsDomain";
+/** Signs the seeded account out again, leaving the store configured. */
+const signedOut = async () => {
+  await seedStore();
+  endSession();
+};
 
-const mountedRunners = new Set();
-
-function childrenOf(node) {
-  const children = node?.props?.children;
-  return (Array.isArray(children) ? children.flat(Infinity) : [children]).filter(
-    (child) => child !== null && child !== undefined && child !== false
-  );
-}
-
-function resolveNode(node) {
-  if (Array.isArray(node)) return node.map(resolveNode);
-  if (!node || typeof node !== "object") return node;
-  if (typeof node.type === "function") return resolveNode(node.type(node.props));
-  return {
-    ...node,
-    props: { ...node.props, children: childrenOf(node).map(resolveNode) },
-  };
-}
-
-function createEventTarget() {
-  const listeners = new Map();
-  return {
-    addEventListener(type, listener) {
-      const entries = listeners.get(type) ?? new Set();
-      entries.add(listener);
-      listeners.set(type, entries);
-    },
-    removeEventListener(type, listener) {
-      listeners.get(type)?.delete(listener);
-    },
-    dispatch(type, event) {
-      for (const listener of listeners.get(type) ?? []) listener(event);
-    },
-  };
-}
-
-function createDocument() {
-  return {
-    ...createEventTarget(),
-    title: "",
-    activeElement: null,
-    body: { style: { overflow: "" } },
-    documentElement: { dataset: {}, style: {} },
-    querySelector: () => null,
-  };
-}
-
-function createWindow(pathname = "/") {
-  const storage = new Map();
-  return {
-    ...createEventTarget(),
-    location: { pathname, reload: vi.fn() },
-    history: { pushState: vi.fn(), replaceState: vi.fn() },
-    matchMedia: () => ({
-      matches: false,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-    }),
-    localStorage: {
-      getItem: vi.fn((key) => storage.get(key) ?? null),
-      setItem: vi.fn((key, value) => storage.set(key, String(value))),
-    },
-    scrollTo: vi.fn(),
-  };
-}
-
-function createRunner() {
-  const runner = { cursor: 0, pending: [], slots: [], output: null };
-
-  function render() {
-    runner.cursor = 0;
-    runner.pending = [];
-    hookRuntime.activate(runner);
-    runner.output = resolveNode(App());
-
-    for (const pending of runner.pending) {
-      runner.slots[pending.index]?.cleanup?.();
-      runner.slots[pending.index] = {
-        dependencies: pending.dependencies,
-        cleanup: pending.effect(),
-      };
-    }
-    return runner.output;
-  }
-
-  function unmount() {
-    for (const slot of [...runner.slots].reverse()) slot?.cleanup?.();
-    runner.slots = [];
-    mountedRunners.delete(api);
-  }
-
-  const api = {
-    render,
-    unmount,
-    get output() {
-      return runner.output;
-    },
-  };
-  mountedRunners.add(api);
-  render();
-  render();
-  return api;
-}
-
-async function flush(runner, times = 3) {
-  for (let index = 0; index < times; index += 1) {
-    await Promise.resolve();
-  }
-  runner.render();
-}
-
-async function mountApp() {
-  const runner = createRunner();
-  await flush(runner);
-  await flush(runner);
-  return runner;
-}
-
-const personalTask = (overrides = {}) => ({
-  id: "task-1",
-  title: "Write the brief",
-  status: "todo",
-  completed: false,
-  priority: "medium",
-  dueDate: "",
-  projectId: null,
-  archivedAt: null,
-  ...overrides,
-});
-
-const assignedTask = (overrides = {}) => ({
-  id: "project-task-1",
-  title: "Ship the release",
-  status: "todo",
-  completed: false,
-  priority: "medium",
-  dueDate: "",
-  projectId: "project-a",
-  projectName: "Launch",
-  assigneeId: "user-a",
-  archivedAt: null,
-  ...overrides,
-});
-
-beforeEach(() => {
-  globalThis.document = createDocument();
-  globalThis.window = createWindow();
-  taskService.getTasks.mockReset().mockResolvedValue([]);
-  taskService.createTask.mockReset().mockResolvedValue({ id: "created-task" });
-  taskService.updateTask.mockReset().mockResolvedValue(undefined);
-  taskService.archiveTask.mockReset().mockResolvedValue(undefined);
-  taskService.unarchiveTask.mockReset().mockResolvedValue(undefined);
-  taskService.deleteTask.mockReset().mockResolvedValue(undefined);
-  projectService.getProjects.mockReset().mockResolvedValue([]);
-  projectService.getAssignedProjectTasks.mockReset().mockResolvedValue([]);
-  projectService.getUserInvitations.mockReset().mockResolvedValue([]);
-  projectService.createProject.mockReset().mockResolvedValue({ id: "project-new" });
-  projectService.createProjectTask
-    .mockReset()
-    .mockResolvedValue({ id: "created-project-task" });
-  projectService.updateProjectTask.mockReset().mockResolvedValue(undefined);
-  projectService.archiveProjectTask.mockReset().mockResolvedValue(undefined);
-  projectService.deleteProjectTask.mockReset().mockResolvedValue(undefined);
-  projectService.setTaskAssignee.mockReset().mockResolvedValue(undefined);
-  settingsService.getSettings.mockReset().mockResolvedValue(normalizeSettings());
-  settingsService.saveSettings
-    .mockReset()
-    .mockResolvedValue({ settings: normalizeSettings(), profileUpdated: true });
-  notificationsState.value = {
-    notifications: [],
-    loading: false,
-    error: "",
-    liveNotice: "",
-    unreadCount: 0,
-    markRead: vi.fn(),
-    markAllRead: vi.fn(),
-    dismiss: vi.fn(),
-    refresh: vi.fn(),
-  };
-  for (const key of Object.keys(captures)) delete captures[key];
-});
+/** A first-run account: signed in, still behind the onboarding gate. */
+const seedNewAccount = () => seedStore({ user: { onboardingRequired: true } });
 
 afterEach(() => {
-  for (const runner of [...mountedRunners]) runner.unmount();
-  delete globalThis.document;
-  delete globalThis.window;
-  vi.restoreAllMocks();
+  client.configured = true;
+  completeOnboarding.mockReset();
+  signOut.mockReset();
+  window.history.replaceState({}, "", "/");
 });
 
-describe("App shell routing", () => {
-  it("renders Home by default and titles the document", async () => {
-    await mountApp();
+describe("App auth gate", () => {
+  it("shows the sign-in screen when nobody is signed in", async () => {
+    await signedOut();
+    renderPage(<App />);
 
-    expect(captures.home).toBeDefined();
-    expect(captures.myTasks).toBeUndefined();
-    expect(captures.sidebar.currentPath).toBe("/");
-    expect(captures.sidebar.currentView).toBe("home");
+    expect(screen.getByText("Welcome back")).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Sidebar" })).toBeNull();
+  });
+
+  it("shows password recovery on /recover", async () => {
+    await signedOut();
+    navigate("/recover");
+    renderPage(<App />);
+
+    expect(screen.getByText("Reset your password")).toBeInTheDocument();
+  });
+
+  it("renders the shell and the route's page once signed in", async () => {
+    await seedStore();
+    renderPage(<App />);
+
+    expect(screen.getByRole("complementary", { name: "Sidebar" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: /Good (morning|afternoon|evening)/ })
+    ).toBeInTheDocument();
     expect(document.title).toBe("Home · TaskFlow");
   });
 
-  it("normalizes a bare project path to its overview tab", async () => {
-    globalThis.window = createWindow("/projects/project-a");
-    projectService.getProjects.mockResolvedValue([
-      { id: "project-a", name: "Launch", status: "active", viewerRole: "owner" },
-    ]);
+  it("asks for configuration when Supabase credentials are missing", async () => {
+    client.configured = false;
+    await seedStore();
+    renderPage(<App />);
 
-    await mountApp();
+    expect(
+      screen.getByRole("alert", { name: "Configuration required" })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("TaskFlow setup is incomplete. Contact your administrator.")
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Sidebar" })).toBeNull();
+  });
+});
 
-    expect(window.history.replaceState).toHaveBeenCalledWith(
-      {},
-      "",
-      "/projects/project-a/overview"
-    );
-    expect(captures.workspace.projectId).toBe("project-a");
-    expect(captures.workspace.tab).toBe("overview");
-    expect(captures.workspace.project).toEqual(
-      expect.objectContaining({ name: "Launch" })
-    );
-    expect(document.title).toBe("Launch · TaskFlow");
+describe("App onboarding gate", () => {
+  it("holds a brand-new account on the onboarding screen", async () => {
+    await seedNewAccount();
+    renderPage(<App />);
+
+    expect(screen.getByText(/make TaskFlow yours/)).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Sidebar" })).toBeNull();
   });
 
-  it("remembers the project tab and navigates to it", async () => {
-    globalThis.window = createWindow("/projects/project-a/board");
-    const runner = await mountApp();
+  it("waits for the saved settings before asking for a name", async () => {
+    const account = makeUser({ onboardingRequired: true });
+    configureStore({ api: createFakeApi({ user: account }) });
+    const session = startSession(account);
+    renderPage(<App />);
 
-    expect(captures.workspace.tab).toBe("board");
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
 
-    captures.workspace.onTabChange("list");
-    runner.render();
-
-    expect(window.localStorage.setItem).toHaveBeenCalledWith(
-      "taskflow:project-tab:project-a",
-      "list"
-    );
-    expect(window.history.pushState).toHaveBeenCalledWith(
-      {},
-      "",
-      "/projects/project-a/list"
-    );
-  });
-
-  it("applies the saved default view on the first load", async () => {
-    settingsService.getSettings.mockResolvedValue(
-      normalizeSettings({ navigation: { defaultView: "tasks" } })
-    );
-
-    await mountApp();
-
-    expect(window.history.replaceState).toHaveBeenCalledWith({}, "", "/tasks");
-    expect(captures.myTasks).toBeDefined();
-  });
-
-  it("does not reload data for an equivalent same-user token refresh", async () => {
-    const runner = await mountApp();
-    expect(taskService.getTasks).toHaveBeenCalledOnce();
-
-    authService.callback("TOKEN_REFRESHED", {
-      uid: "user-a",
-      email: "test-user@example.com",
-      displayName: undefined,
+    await act(async () => {
+      await session;
     });
-    runner.render();
 
-    expect(taskService.getTasks).toHaveBeenCalledOnce();
+    expect(screen.getByText(/make TaskFlow yours/)).toBeInTheDocument();
   });
 
-  it("resets loaded data when a different user signs in", async () => {
-    taskService.getTasks.mockResolvedValue([personalTask()]);
-    const runner = await mountApp();
-    expect(captures.home.tasks).toHaveLength(1);
+  it("saves the name and purpose, completes onboarding and opens the app", async () => {
+    const user = userEvent.setup();
+    const { api, user: account } = await seedNewAccount();
+    completeOnboarding.mockResolvedValue({ ...account, onboardingRequired: false });
+    renderPage(<App />);
 
-    authService.callback("SIGNED_IN", { uid: "user-b", email: "other@example.com" });
-    runner.render();
+    const nameField = screen.getByLabelText("Display name");
+    await user.clear(nameField);
+    await user.type(nameField, "Alex Chen");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(captures.home.tasks).toEqual([]);
-    expect(taskService.getTasks).toHaveBeenCalledTimes(2);
-  });
-});
+    await user.click(screen.getByRole("radio", { name: /Personal/ }));
+    await user.click(screen.getByRole("button", { name: "Enter TaskFlow" }));
 
-describe("App shell chrome", () => {
-  it("passes unread and invitation counts to the sidebar", async () => {
-    notificationsState.value = { ...notificationsState.value, unreadCount: 4 };
-    projectService.getUserInvitations.mockResolvedValue([
-      { id: "invitation-a" },
-      { id: "invitation-b" },
-    ]);
+    await waitFor(() => expect(completeOnboarding).toHaveBeenCalledTimes(1));
 
-    await mountApp();
-
-    expect(captures.notificationsUserId).toBe("user-a");
-    expect(captures.sidebar.unreadCount).toBe(4);
-    expect(captures.sidebar.invitationCount).toBe(2);
+    const [, saved] = api.callsOf("saveSettings")[0];
+    expect(saved.profile.displayName).toBe("Alex Chen");
+    expect(saved.data.onboardingPurpose).toBe("personal");
+    expect(getState().auth.user.onboardingRequired).toBe(false);
+    expect(getState().ui.path).toBe("/");
+    expect(
+      await screen.findByRole("complementary", { name: "Sidebar" })
+    ).toBeInTheDocument();
   });
 
-  it("opens search with the keyboard and navigates to a chosen project", async () => {
-    projectService.getProjects.mockResolvedValue([
-      { id: "project-a", name: "Launch", status: "active", viewerRole: "owner" },
-    ]);
-    const runner = await mountApp();
+  it("keeps the account on the onboarding screen when the save fails", async () => {
+    const user = userEvent.setup();
+    const { api } = await seedNewAccount();
+    api.failNext("saveSettings", new Error("Network request failed."));
+    renderPage(<App />);
 
-    expect(captures.searchDialog.open).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Enter TaskFlow" }));
 
-    const preventDefault = vi.fn();
-    window.dispatch("keydown", { key: "k", metaKey: true, preventDefault });
-    runner.render();
+    expect(
+      await screen.findByText(
+        "We couldn't finish setting up your workspace. Please try again."
+      )
+    ).toBeInTheDocument();
+    expect(completeOnboarding).not.toHaveBeenCalled();
+    expect(screen.queryByRole("complementary", { name: "Sidebar" })).toBeNull();
+  });
 
-    expect(preventDefault).toHaveBeenCalledOnce();
-    expect(captures.searchDialog.open).toBe(true);
+  it("does not leave a failed restart on the sign-up tab after a later sign-out", async () => {
+    const user = userEvent.setup();
+    signOut.mockRejectedValueOnce(new Error("offline"));
+    await seedNewAccount();
+    renderPage(<App />);
 
-    const projectResult = captures.searchDialog.items.find(
-      (item) => item.type === "project"
+    await user.click(
+      screen.getByRole("button", { name: "Go back and start signup over" })
     );
-    expect(projectResult).toEqual(
-      expect.objectContaining({ title: "Launch", type: "project" })
-    );
+    expect(
+      await screen.findByText("Couldn’t sign out. Please check your connection and try again.")
+    ).toBeInTheDocument();
 
-    captures.searchDialog.onSelect(projectResult);
-    runner.render();
+    act(() => endSession());
 
-    expect(window.history.pushState).toHaveBeenCalledWith(
-      {},
-      "",
-      "/projects/project-a/overview"
-    );
-  });
-
-  it("opens the projects page with a create request from the sidebar", async () => {
-    const runner = await mountApp();
-
-    captures.sidebar.onNewProject();
-    runner.render();
-
-    expect(window.history.pushState).toHaveBeenCalledWith({}, "", "/projects");
-    expect(captures.projects.createRequest).toBe(1);
+    expect(screen.getByText("Welcome back")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Sign in", pressed: true })
+    ).toBeInTheDocument();
   });
 });
 
-describe("App task data", () => {
-  it("merges personal and assigned tasks without duplicates or stories", async () => {
-    taskService.getTasks.mockResolvedValue([
-      personalTask(),
-      personalTask({ id: "archived-task", archivedAt: "2026-08-01T00:00:00.000Z" }),
-    ]);
-    projectService.getAssignedProjectTasks.mockResolvedValue([
-      assignedTask(),
-      assignedTask({ id: "story-1", workType: "story", title: "Release story" }),
-      assignedTask({ id: "task-1", title: "Duplicate" }),
-      assignedTask({ id: "archived-project-task", archivedAt: "2026-08-02T00:00:00.000Z" }),
-    ]);
+describe("App shell", () => {
+  it("opens search with ⌘K", async () => {
+    await seedStore();
+    renderPage(<App />);
 
-    await mountApp();
+    expect(screen.queryByLabelText("Search projects and tasks")).toBeNull();
 
-    expect(captures.home.tasks.map((task) => task.id)).toEqual([
-      "task-1",
-      "project-task-1",
-    ]);
-    expect(captures.home.tasks[0].title).toBe("Write the brief");
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+
+    expect(getState().ui.searchOpen).toBe(true);
+    expect(screen.getByLabelText("Search projects and tasks")).toBeInTheDocument();
   });
 
-  it("dispatches taskActions.update to the personal or the project service", async () => {
-    taskService.getTasks.mockResolvedValue([personalTask()]);
-    projectService.getAssignedProjectTasks.mockResolvedValue([assignedTask()]);
-    const runner = await mountApp();
+  it("shows a notice and dismisses it", async () => {
+    const user = userEvent.setup();
+    await seedStore();
+    renderPage(<App />);
 
-    const [personal, project] = captures.home.tasks;
+    notify({ tone: "error", text: "We couldn't save that." });
 
-    await captures.home.taskActions.update(personal, { priority: "high" });
-    expect(taskService.updateTask).toHaveBeenCalledWith("user-a", "task-1", {
-      priority: "high",
-    });
-    expect(projectService.updateProjectTask).not.toHaveBeenCalled();
+    const toast = await screen.findByRole("alert");
+    expect(toast).toHaveTextContent("We couldn't save that.");
 
-    await captures.home.taskActions.update(project, { priority: "low" });
-    expect(projectService.updateProjectTask).toHaveBeenCalledWith(
-      "user-a",
-      "project-a",
-      "project-task-1",
-      { priority: "low" }
-    );
-    await flush(runner);
-    expect(projectService.getAssignedProjectTasks).toHaveBeenCalledTimes(2);
+    await user.click(screen.getByRole("button", { name: "Dismiss message" }));
+
+    expect(getState().ui.notice).toBeNull();
+    expect(screen.queryByText("We couldn't save that.")).toBeNull();
   });
 
-  it("optimistically completes an assigned project task", async () => {
-    projectService.getAssignedProjectTasks.mockResolvedValue([assignedTask()]);
-    const runner = await mountApp();
+  it("navigates between views from the sidebar", async () => {
+    const user = userEvent.setup();
+    await seedStore();
+    renderPage(<App />);
 
-    const pending = captures.home.taskActions.toggleComplete(captures.home.tasks[0]);
-    runner.render();
+    await user.click(screen.getByRole("button", { name: "Calendar" }));
 
-    expect(captures.home.tasks[0].completed).toBe(true);
-    expect(captures.home.taskActions.pendingIds.has("project-task-1")).toBe(true);
-
-    await pending;
-    runner.render();
-
-    expect(projectService.updateProjectTask).toHaveBeenCalledWith(
-      "user-a",
-      "project-a",
-      "project-task-1",
-      expect.objectContaining({ completed: true, status: "completed" })
-    );
-    expect(captures.home.taskActions.pendingIds.has("project-task-1")).toBe(false);
+    expect(getState().ui.path).toBe("/calendar");
+    expect(document.title).toBe("Calendar · TaskFlow");
   });
 
-  it("creates a personal task or a project task from the composer", async () => {
-    const runner = await mountApp();
+  it("opens the create dialog for 'New project' from another page", async () => {
+    const user = userEvent.setup();
+    await seedStore();
+    renderPage(<App />);
 
-    captures.sidebar.onNewTask();
-    runner.render();
-    expect(captures.composer.open).toBe(true);
+    const sidebar = within(screen.getByRole("complementary", { name: "Sidebar" }));
+    await user.click(sidebar.getByRole("button", { name: "New project" }));
 
-    await captures.composer.onSubmit({ title: "Personal work" });
-    expect(taskService.createTask).toHaveBeenCalledWith(
-      "user-a",
-      expect.objectContaining({
-        title: "Personal work",
-        status: "todo",
-        projectId: null,
-      })
-    );
-
-    await captures.composer.onSubmit({
-      title: "Project work",
-      projectId: "project-a",
-      assigneeId: "member-a",
-    });
-    expect(projectService.createProjectTask).toHaveBeenCalledWith(
-      "user-a",
-      "project-a",
-      expect.objectContaining({ title: "Project work", projectId: "project-a" })
-    );
-    expect(projectService.setTaskAssignee).toHaveBeenCalledWith(
-      "user-a",
-      "project-a",
-      "created-project-task",
-      "member-a"
-    );
-  });
-});
-
-describe("App go to project", () => {
-  it("closes the panel, asks the workspace for the task and navigates there", async () => {
-    projectService.getProjects.mockResolvedValue([
-      { id: "project-a", name: "Launch", status: "active", viewerRole: "owner" },
-    ]);
-    projectService.getAssignedProjectTasks.mockResolvedValue([assignedTask()]);
-    window.localStorage.setItem("taskflow:project-tab:project-a", "list");
-    const runner = await mountApp();
-
-    const projectTask = captures.home.tasks[0];
-    captures.home.onOpenTask(projectTask);
-    runner.render();
-    expect(captures.panel.task.id).toBe("project-task-1");
-    expect(captures.panel.onOpenProject).toBe(captures.home.onOpenProject);
-
-    captures.panel.onOpenProject(projectTask);
-    runner.render();
-
-    expect(window.history.pushState).toHaveBeenCalledWith(
-      {},
-      "",
-      "/projects/project-a/list"
-    );
-    expect(captures.workspace.openItemRequest).toEqual(
-      expect.objectContaining({ projectId: "project-a", itemId: "project-task-1" })
-    );
-    expect(captures.workspace.projectId).toBe("project-a");
-  });
-
-  it("gives every task list a handler and ignores a personal task", async () => {
-    taskService.getTasks.mockResolvedValue([personalTask()]);
-    projectService.getProjects.mockResolvedValue([
-      { id: "project-a", name: "Launch", status: "active", viewerRole: "owner" },
-    ]);
-    const runner = await mountApp();
-
-    captures.home.onOpenProject(captures.home.tasks[0]);
-    runner.render();
-    expect(window.history.pushState).not.toHaveBeenCalled();
-
-    for (const [path, capture] of [
-      ["/tasks", "myTasks"],
-      ["/calendar", "calendar"],
-      ["/archived-tasks", "archived"],
-    ]) {
-      captures.sidebar.onNavigate(path);
-      runner.render();
-
-      captures[capture].onOpenProject({ id: "project-task-1", projectId: "project-a" });
-      runner.render();
-      expect(window.history.pushState).toHaveBeenLastCalledWith(
-        {},
-        "",
-        "/projects/project-a/overview"
-      );
-    }
-  });
-});
-
-describe("App task detail panel host", () => {
-  it("opens the panel for the selected task and closes it when the task disappears", async () => {
-    taskService.getTasks.mockResolvedValue([personalTask()]);
-    const runner = await mountApp();
-
-    expect(captures.panel).toBeUndefined();
-
-    captures.home.onOpenTask(captures.home.tasks[0]);
-    runner.render();
-
-    expect(captures.panel).toEqual(
-      expect.objectContaining({ userId: "user-a" })
-    );
-    expect(captures.panel.task.id).toBe("task-1");
-    expect(captures.home.selectedTaskId).toBe("task-1");
-
-    captures.panel = undefined;
-    taskService.getTasks.mockResolvedValue([]);
-    captures.home.onRetryTasks();
-    await flush(runner);
-    runner.render();
-
-    expect(captures.panel).toBeUndefined();
-    expect(captures.home.selectedTaskId).toBeNull();
+    expect(getState().ui.path).toBe("/projects");
+    expect(await screen.findByRole("dialog", { name: "New project" })).toBeInTheDocument();
   });
 });

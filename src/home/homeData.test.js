@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { dateOnlyKey } from "../domain/task";
 import {
-  activeProjects,
-  assignedHomeTasks,
+  effectiveMyDayDate,
   homeTaskBuckets,
   latestNotifications,
+  notificationText,
   recentProjects,
-  shiftDateKey,
 } from "./homeData";
 
 const todayKey = "2026-09-02";
@@ -24,18 +24,6 @@ const task = (overrides = {}) => ({
 });
 
 const titles = (tasks) => tasks.map((item) => item.title);
-
-describe("shiftDateKey", () => {
-  it("moves a date-only key across a month boundary", () => {
-    expect(shiftDateKey("2026-08-30", 7)).toBe("2026-09-06");
-    expect(shiftDateKey("2026-09-02", -1)).toBe("2026-09-01");
-  });
-
-  it("returns the input when it is not a date-only key", () => {
-    expect(shiftDateKey("", 7)).toBe("");
-    expect(shiftDateKey("tomorrow", 7)).toBe("tomorrow");
-  });
-});
 
 describe("homeTaskBuckets", () => {
   it("splits open tasks into today, upcoming and overdue", () => {
@@ -59,8 +47,19 @@ describe("homeTaskBuckets", () => {
   it("drops completed and archived tasks", () => {
     const buckets = homeTaskBuckets(
       [
-        task({ id: "1", title: "Done", dueDate: todayKey, completed: true, status: "completed" }),
-        task({ id: "2", title: "Archived", dueDate: todayKey, archivedAt: "2026-09-01T10:00:00Z" }),
+        task({
+          id: "1",
+          title: "Done",
+          dueDate: todayKey,
+          completed: true,
+          status: "completed",
+        }),
+        task({
+          id: "2",
+          title: "Archived",
+          dueDate: todayKey,
+          archivedAt: "2026-09-01T10:00:00Z",
+        }),
         task({ id: "3", title: "Open", dueDate: todayKey }),
       ],
       todayKey
@@ -85,64 +84,14 @@ describe("homeTaskBuckets", () => {
   });
 });
 
-describe("assignedHomeTasks", () => {
-  const userId = "user-1";
-
-  it("keeps open project tasks assigned to the viewer, most urgent first", () => {
-    const assigned = assignedHomeTasks(
-      [
-        task({ id: "1", title: "Undated", projectId: "p1", assigneeId: userId }),
-        task({ id: "2", title: "Overdue", projectId: "p1", assigneeId: userId, dueDate: "2026-08-30" }),
-        task({ id: "3", title: "Today", projectId: "p1", assigneeId: userId, dueDate: todayKey }),
-        task({ id: "4", title: "Someone else", projectId: "p1", assigneeId: "user-2" }),
-        task({ id: "5", title: "Personal", assigneeId: userId }),
-        task({
-          id: "6",
-          title: "Finished",
-          projectId: "p1",
-          assigneeId: userId,
-          completed: true,
-          status: "completed",
-        }),
-      ],
-      userId,
-      todayKey
-    );
-
-    expect(titles(assigned)).toEqual(["Overdue", "Today", "Undated"]);
-  });
-
-  it("falls back to any assigned project task when the viewer is unknown", () => {
-    const assigned = assignedHomeTasks(
-      [
-        task({ id: "1", title: "Assigned", projectId: "p1", assigneeId: "user-2" }),
-        task({ id: "2", title: "Unassigned", projectId: "p1" }),
-      ],
-      undefined,
-      todayKey
-    );
-
-    expect(titles(assigned)).toEqual(["Assigned"]);
-  });
-});
-
-describe("project and notification helpers", () => {
+describe("recentProjects", () => {
   const projects = [
-    { id: "a", name: "Apollo", status: "active", updatedAt: "2026-08-01T00:00:00Z" },
-    { id: "b", name: "Bee", status: "archived", updatedAt: "2026-09-01T00:00:00Z" },
-    { id: "c", name: "Comet", status: "active", updatedAt: "2026-09-02T00:00:00Z" },
-    { id: "d", name: "Drift", status: "active", updatedAt: null },
+    { id: "a", name: "Apollo", updatedAt: "2026-08-01T00:00:00Z" },
+    { id: "c", name: "Comet", updatedAt: "2026-09-02T00:00:00Z" },
+    { id: "d", name: "Drift", updatedAt: null },
   ];
 
-  it("keeps only active projects", () => {
-    expect(activeProjects(projects).map((project) => project.name)).toEqual([
-      "Apollo",
-      "Comet",
-      "Drift",
-    ]);
-  });
-
-  it("sorts active projects by last update and applies the limit", () => {
+  it("sorts by last update and applies the limit without mutating the input", () => {
     expect(recentProjects(projects).map((project) => project.name)).toEqual([
       "Comet",
       "Apollo",
@@ -152,8 +101,11 @@ describe("project and notification helpers", () => {
       "Comet",
       "Apollo",
     ]);
+    expect(projects.map((project) => project.id)).toEqual(["a", "c", "d"]);
   });
+});
 
+describe("latestNotifications", () => {
   it("takes the newest notifications without mutating the input", () => {
     const notifications = [
       { id: "1", createdAt: "2026-09-01T09:00:00Z" },
@@ -161,7 +113,55 @@ describe("project and notification helpers", () => {
       { id: "3", createdAt: "2026-08-30T09:00:00Z" },
     ];
 
-    expect(latestNotifications(notifications, 2).map((item) => item.id)).toEqual(["2", "1"]);
+    const newest = latestNotifications(notifications, 2);
+
+    expect(newest.map((item) => item.id)).toEqual(["2", "1"]);
     expect(notifications.map((item) => item.id)).toEqual(["1", "2", "3"]);
+  });
+});
+
+describe("notificationText", () => {
+  const notification = {
+    id: "n1",
+    type: "comment_added",
+    data: { actorId: "user-2", taskTitle: "the brief" },
+  };
+
+  it("names the actor from the profile map", () => {
+    expect(notificationText(notification, { "user-2": { displayName: "Ada" } })).toBe(
+      "Ada added a comment to the brief."
+    );
+  });
+
+  it("falls back to an unnamed actor when no profile is loaded", () => {
+    expect(notificationText(notification, {})).toBe("added a comment to the brief.");
+  });
+});
+
+describe("effectiveMyDayDate", () => {
+  const at = (iso) => new Date(iso);
+  const dayOf = dateOnlyKey;
+
+  it("keeps the calendar day when the day resets at midnight", () => {
+    const day = effectiveMyDayDate(at("2026-09-02T00:30:00"), { resetMode: "midnight" });
+    expect(dayOf(day)).toBe("2026-09-02");
+  });
+
+  it("stays on the previous day until an early-morning reset", () => {
+    const myDay = { resetMode: "early-morning", customResetTime: "06:00" };
+    expect(dayOf(effectiveMyDayDate(at("2026-09-02T00:30:00"), myDay))).toBe("2026-09-01");
+    expect(dayOf(effectiveMyDayDate(at("2026-09-02T05:59:00"), myDay))).toBe("2026-09-01");
+    expect(dayOf(effectiveMyDayDate(at("2026-09-02T06:00:00"), myDay))).toBe("2026-09-02");
+  });
+
+  it("honours a custom reset time and leaves the clock time alone", () => {
+    const myDay = { resetMode: "custom", customResetTime: "03:15" };
+    const day = effectiveMyDayDate(at("2026-09-02T03:14:00"), myDay);
+    expect(dayOf(day)).toBe("2026-09-01");
+    expect(day.getHours()).toBe(3);
+  });
+
+  it("falls back to now for an unusable date", () => {
+    expect(effectiveMyDayDate(new Date("nope"), {})).toBeInstanceOf(Date);
   });
 });

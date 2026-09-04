@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button, Field, Icon, InlineNotice, Input } from "../ui";
-import AuthBrand from "./AuthBrand";
+import { AuthBrand } from "./AuthBrand";
 
 const purposeChoices = [
   {
@@ -23,7 +23,7 @@ const purposeChoices = [
   },
 ];
 
-export default function Onboarding({ displayName, saving, onComplete, onStartOver }) {
+export function Onboarding({ displayName, saving, onComplete, onStartOver }) {
   const [step, setStep] = useState(1);
   const [name, setName] = useState(String(displayName || ""));
   const [purpose, setPurpose] = useState("work");

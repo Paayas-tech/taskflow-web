@@ -1,19 +1,23 @@
 import { useMemo } from "react";
-import CalendarEvent from "./CalendarEvent";
+import { CalendarEvent } from "./CalendarEvent";
 import {
   assignMultiDayLanes,
   buildCalendarTimeAxis,
   buildCalendarWeek,
   calendarMinutesToPixels,
   createCalendarTaskInitialValues,
-  isValidCalendarDate,
   layoutCalendarDayEvents,
-  normalizeTaskSchedule,
   segmentMultiDayItems,
-} from "../domain/calendarDomain";
-import { localDateFromDateOnly } from "../domain/taskDomain";
-import { formatTimeForDisplay } from "../domain/settingsDomain";
-import { cx } from "../ui/cx";
+} from "../domain/calendar";
+import {
+  isValidDateOnly,
+  localDateFromDateOnly,
+  normalizeTaskSchedule,
+} from "../domain/task";
+import { formatTimeForDisplay } from "../domain/settings";
+import { selectSettings } from "../store/selectors";
+import { useStore } from "../store/store";
+import { cx } from "../ui";
 
 const pixelsPerMinute = 1;
 
@@ -47,10 +51,9 @@ export function CalendarWeekView({
   onCreateTask,
   onOpenTask,
   selectedTaskId = null,
-  projectsById,
   weekStartsOn = 0,
-  formatSettings = {},
 }) {
+  const { time } = useStore(selectSettings);
   const week = useMemo(
     () => buildCalendarWeek(selectedDateKey, weekStartsOn),
     [selectedDateKey, weekStartsOn]
@@ -66,9 +69,9 @@ export function CalendarWeekView({
     () =>
       normalizedTasks.filter(
         (task) =>
-          isValidCalendarDate(task.dueDate) &&
+          isValidDateOnly(task.dueDate) &&
           (task.isAllDay ||
-            (isValidCalendarDate(task.endDate) && task.endDate > task.dueDate))
+            (isValidDateOnly(task.endDate) && task.endDate > task.dueDate))
       ),
     [normalizedTasks]
   );
@@ -85,7 +88,7 @@ export function CalendarWeekView({
       normalizedTasks.filter(
         (task) =>
           !task.isAllDay &&
-          (!isValidCalendarDate(task.endDate) || task.endDate <= task.dueDate)
+          (!isValidDateOnly(task.endDate) || task.endDate <= task.dueDate)
       ),
     [normalizedTasks]
   );
@@ -145,16 +148,14 @@ export function CalendarWeekView({
                     task={segment}
                     segment={segment}
                     viewContext="week"
-                    projectsById={projectsById}
                     selected={selectedTaskId === segment.id}
-                    formatSettings={formatSettings}
                     style={{
                       gridColumn: `${segment.startColumn + 1} / ${segment.endColumn + 2}`,
                       gridRow: segment.lane + 1,
                     }}
-                    onClick={(event) => {
+                    onClick={() => {
                       onSelectDate?.(segment.startDate);
-                      onOpenTask?.(segment, event.currentTarget);
+                      onOpenTask?.(segment);
                     }}
                   />
                 ))}
@@ -168,9 +169,9 @@ export function CalendarWeekView({
               style={{ height: calendarMinutesToPixels(1440, pixelsPerMinute) }}
             >
               <div className="cal-time-axis" aria-hidden="true">
-                {timeAxis.map(({ minutes, label, time }) => (
+                {timeAxis.map(({ minutes, label, time: slotTime }) => (
                   <span key={minutes} style={{ top: calendarMinutesToPixels(minutes) }}>
-                    {formatTimeForDisplay(time, formatSettings.format) || label}
+                    {formatTimeForDisplay(slotTime, time.format) || label}
                   </span>
                 ))}
               </div>
@@ -184,14 +185,14 @@ export function CalendarWeekView({
                   const timedEvents = layoutCalendarDayEvents(singleDayTimedTasks, key);
                   return (
                     <div className="cal-day-column" key={key}>
-                      {timeAxis.map(({ minutes, time }) => (
+                      {timeAxis.map(({ minutes, time: slotTime }) => (
                         <button
                           type="button"
                           key={minutes}
                           className="cal-slot"
                           disabled={!onCreateTask}
-                          aria-label={`Add a one-hour task on ${formatDay(key)} at ${formatTimeForDisplay(time, formatSettings.format)}`}
-                          onClick={() => createTimed(key, time)}
+                          aria-label={`Add a one-hour task on ${formatDay(key)} at ${formatTimeForDisplay(slotTime, time.format)}`}
+                          onClick={() => createTimed(key, slotTime)}
                         />
                       ))}
                       {key === todayKey && nowMinutes !== null ? (
@@ -206,17 +207,12 @@ export function CalendarWeekView({
                           key={task.id}
                           task={task}
                           viewContext="week"
-                          projectsById={projectsById}
                           selected={selectedTaskId === task.id}
-                          displayTime={formatTimeForDisplay(
-                            task.startTime,
-                            formatSettings.format
-                          )}
-                          formatSettings={formatSettings}
+                          displayTime={formatTimeForDisplay(task.startTime, time.format)}
                           style={timedEventStyle(task)}
-                          onClick={(event) => {
+                          onClick={() => {
                             onSelectDate?.(key);
-                            onOpenTask?.(task, event.currentTarget);
+                            onOpenTask?.(task);
                           }}
                         />
                       ))}
@@ -231,5 +227,3 @@ export function CalendarWeekView({
     </section>
   );
 }
-
-export default CalendarWeekView;

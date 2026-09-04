@@ -1,384 +1,237 @@
+import { act, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CalendarPage } from "./CalendarPage";
+import { makeTask } from "../test/fakeApi";
+import { renderPage, seedStore } from "../test/renderApp";
+import { loadTasks } from "../store/session";
+import { getState } from "../store/store";
+import { GOOGLE_EVENTS_STALE_MS } from "../store/calendar";
 
-const runtime = await vi.hoisted(async () => {
-  const { createHookRuntime } = await import("../test/hookRuntime");
-  return createHookRuntime();
-});
+/** 2026-09-02 is a Wednesday; the calendar reads "today" from the clock. */
+const TODAY = new Date(2026, 8, 2, 9, 0, 0);
 
-vi.mock("react", () => runtime.react);
-vi.mock("../tasks", () => ({
-  QuickAdd: function QuickAdd() {
-    return null;
-  },
-  TaskRow: function TaskRow() {
-    return null;
-  },
-}));
-
-import { find, findAll, findByText, props, textContent } from "../test/elementTree";
-import { QuickAdd, TaskRow } from "../tasks";
-import CalendarAgendaView from "../calendar/CalendarAgendaView";
-import CalendarDayView from "../calendar/CalendarDayView";
-import CalendarEvent from "../calendar/CalendarEvent";
-import CalendarWeekView from "../calendar/CalendarWeekView";
-import CalendarPage from "./CalendarPage";
-
-const todayKey = "2026-09-02";
-const busyKey = "2026-09-10";
-
-const fullDate = (dateKey) => {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  return new Intl.DateTimeFormat(undefined, {
+const fullDate = (year, month, day) =>
+  new Intl.DateTimeFormat(undefined, {
     weekday: "long",
     month: "long",
     day: "numeric",
     year: "numeric",
-  }).format(new Date(year, month - 1, day));
-};
+  }).format(new Date(year, month, day));
 
-const task = (id, title, overrides = {}) => ({
-  id,
-  title,
-  description: "",
-  status: "todo",
-  completed: false,
-  priority: "medium",
-  projectId: null,
-  archivedAt: null,
-  dueDate: todayKey,
-  ...overrides,
-});
-
-const baseTasks = [
-  task("t1", "Write spec", { projectId: "project-1" }),
-  task("t2", "Retro", { dueDate: busyKey }),
-  task("t3", "Review PR", { dueDate: busyKey }),
-  task("t4", "Ship release", { dueDate: busyKey }),
-  task("t5", "Write docs", { dueDate: busyKey }),
-  task("t6", "Sprint", { dueDate: "2026-09-14", endDate: "2026-09-16" }),
-  task("t7", "Standup", { dueDate: "2026-09-03", startTime: "09:00", endTime: "09:30" }),
-];
-
-const externalEvents = [
-  {
-    id: "evt-1",
-    calendarId: "primary",
-    title: "Design sync",
-    start: "2026-09-10T10:00:00",
-    end: "2026-09-10T11:00:00",
-    htmlLink: "https://calendar.google.com/event",
-  },
-];
-
-const createProps = (overrides = {}) => ({
-  userId: "user-1",
-  tasks: baseTasks,
-  externalEvents,
-  tasksLoading: false,
-  tasksError: "",
-  onRetry: vi.fn(),
-  taskActions: {
-    pendingIds: new Set(),
-    toggleComplete: vi.fn().mockResolvedValue(undefined),
-    createPersonal: vi.fn().mockResolvedValue({ id: "new-task" }),
-  },
-  onOpenTask: vi.fn(),
-  onOpenProject: vi.fn(),
-  selectedTaskId: null,
-  onNewTask: vi.fn(),
-  formatSettings: { format: "24-hour", dateFormat: "YYYY-MM-DD" },
-  weekStartsOn: 0,
-  projects: [{ id: "project-1", name: "Launch", color: "#5b5bd6" }],
-  ...overrides,
-});
-
-const viewControl = (tree) => find(tree, (node) => props(node).ariaLabel === "Calendar view");
-const byLabel = (tree, label) =>
-  find(tree, (node) => (props(node)["aria-label"] ?? props(node).label) === label);
-const rangeLabel = (tree) =>
-  textContent(find(tree, (node) => props(node).className === "cal-range"));
-const agendaTitle = (tree) =>
-  textContent(find(tree, (node) => props(node).className === "cal-agenda-title"));
-const cellSelect = (tree, dateKey) =>
-  find(
-    tree,
-    (node) =>
-      props(node).className === "cal-cell-select" &&
-      String(props(node)["aria-label"]).startsWith(fullDate(dateKey))
+const monthLabel = (year, month) =>
+  new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(
+    new Date(year, month, 1)
   );
 
-beforeEach(() => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(new Date(2026, 8, 2, 10, 30));
+const brief = makeTask({
+  id: "task-brief",
+  title: "Write the brief",
+  dueDate: "2026-09-15",
 });
 
-afterEach(() => {
-  vi.useRealTimers();
-});
+const googleEvent = {
+  id: "evt-1",
+  calendarId: "primary",
+  title: "Design sync",
+  start: "2026-09-02T10:00:00",
+  end: "2026-09-02T11:00:00",
+  htmlLink: "https://calendar.google.com/event?eid=1",
+};
 
-describe("CalendarPage views", () => {
-  it("offers the four views and swaps the body when one is chosen", () => {
-    const runner = runtime.createRunner(CalendarPage);
-    const tree = runner.render(createProps());
-    const control = viewControl(tree);
+let user;
 
-    expect(props(control).options.map((option) => option.id)).toEqual([
-      "month",
-      "week",
-      "day",
-      "agenda",
-    ]);
-    expect(props(control).value).toBe("month");
-    expect(find(tree, (node) => props(node).className === "cal-grid")).toBeDefined();
+const renderCalendar = async () => {
+  const view = renderPage(<CalendarPage />);
+  await waitFor(() => expect(getState().loaded.googleEvents).not.toBe("loading"));
+  return view;
+};
 
-    props(control).onChange("week");
-    const week = runner.render();
-    expect(find(week, (node) => node.type === CalendarWeekView)).toBeDefined();
-    expect(find(week, (node) => props(node).className === "cal-grid")).toBeUndefined();
-
-    props(viewControl(week)).onChange("day");
-    expect(find(runner.render(), (node) => node.type === CalendarDayView)).toBeDefined();
-
-    props(viewControl(runner.output)).onChange("agenda");
-    const agenda = runner.render();
-    expect(find(agenda, (node) => node.type === CalendarAgendaView)).toBeDefined();
-    expect(rangeLabel(agenda)).toBe("Agenda");
-    expect(byLabel(agenda, "Previous month")).toBeUndefined();
+describe("CalendarPage", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(TODAY);
+    user = userEvent.setup();
   });
 
-  it("hands the week and day grids the schedule, today marker and create handler", () => {
-    const pageProps = createProps();
-    const runner = runtime.createRunner(CalendarPage);
-    props(viewControl(runner.render(pageProps))).onChange("week");
-    const week = find(runner.render(), (node) => node.type === CalendarWeekView);
-
-    expect(props(week).todayKey).toBe(todayKey);
-    expect(props(week).nowMinutes).toBe(630);
-    expect(props(week).onCreateTask).toBe(pageProps.onNewTask);
-    expect(props(week).selectedDateKey).toBe(todayKey);
-    expect(props(week).tasks.map((item) => item.id)).toContain("t7");
-    expect(props(week).projectsById.get("project-1").name).toBe("Launch");
-  });
-});
-
-describe("CalendarPage navigation", () => {
-  it("moves through months and returns to today", () => {
-    const runner = runtime.createRunner(CalendarPage);
-    const tree = runner.render(createProps());
-
-    expect(rangeLabel(tree)).toBe("September 2026");
-
-    props(byLabel(tree, "Next month")).onClick();
-    expect(rangeLabel(runner.render())).toBe("October 2026");
-
-    props(byLabel(runner.output, "Previous month")).onClick();
-    props(byLabel(runner.render(), "Previous month")).onClick();
-    expect(rangeLabel(runner.render())).toBe("August 2026");
-
-    props(findByText(runner.output, "Today")).onClick();
-    const back = runner.render();
-    expect(rangeLabel(back)).toBe("September 2026");
-    expect(agendaTitle(back)).toBe(fullDate(todayKey));
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
-  it("steps a week at a time in week view", () => {
-    const runner = runtime.createRunner(CalendarPage);
-    props(viewControl(runner.render(createProps()))).onChange("week");
-    const week = runner.render();
-    const firstRange = rangeLabel(week);
+  it("shows a task in the month grid on its due date", async () => {
+    await seedStore({ tasks: [brief] });
+    await renderCalendar();
 
-    expect(byLabel(week, "Next week")).toBeDefined();
-    props(byLabel(week, "Next week")).onClick();
-    const next = runner.render();
-
-    expect(rangeLabel(next)).not.toBe(firstRange);
-    expect(props(find(next, (node) => node.type === CalendarWeekView)).selectedDateKey).toBe(
-      "2026-09-09"
-    );
-  });
-});
-
-describe("CalendarPage month grid", () => {
-  it("selects a day from the cell and from the +N more link", () => {
-    const runner = runtime.createRunner(CalendarPage);
-    const tree = runner.render(createProps());
-
-    expect(agendaTitle(tree)).toBe(fullDate(todayKey));
-
-    const more = find(tree, (node) => props(node).className === "cal-more");
-    expect(textContent(more)).toBe("+2 more");
-    expect(props(more)["aria-label"]).toBe(`Show 2 more on ${fullDate(busyKey)}`);
-
-    more.props.onClick({ stopPropagation: vi.fn() });
-    const busy = runner.render();
-    expect(agendaTitle(busy)).toBe(fullDate(busyKey));
     expect(
-      textContent(
-        find(busy, (node) =>
-          String(props(node).className || "").startsWith("cal-agenda-count")
-        )
-      )
-    ).toBe("5 tasks");
-
-    props(cellSelect(busy, "2026-09-04")).onClick();
-    expect(agendaTitle(runner.render())).toBe(fullDate("2026-09-04"));
+      screen.getByRole("button", { name: /^Open Write the brief\./ })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: `${fullDate(2026, 8, 15)}, 1 task` })
+    ).toBeInTheDocument();
   });
 
-  it("keeps multi-day items on their own lane in the week row", () => {
-    const runner = runtime.createRunner(CalendarPage);
-    const layer = find(
-      runner.render(createProps()),
-      (node) => props(node).className === "cal-multiday"
-    );
-    const segment = find(layer, (node) => node.type === CalendarEvent);
+  it("swaps the body between the month, week, day and agenda views", async () => {
+    await seedStore({ tasks: [brief] });
+    await renderCalendar();
 
-    expect(props(segment).segment).toMatchObject({
-      rowKey: "2026-09-13",
-      startColumn: 1,
-      endColumn: 3,
-      lane: 0,
-    });
-    expect(props(segment).style.gridColumn).toBe("2 / 5");
-    expect(props(segment).style.gridRow).toBe(1);
+    expect(screen.getByRole("grid", { name: monthLabel(2026, 8) })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Week" }));
+    expect(screen.getByRole("region", { name: "Week view" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Day" }));
+    expect(screen.getByRole("region", { name: "Day view" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Agenda" }));
+    expect(screen.getByRole("heading", { name: "Upcoming" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Next / })).not.toBeInTheDocument();
   });
 
-  it("opens a task from a month chip and marks the selected one", () => {
-    const pageProps = createProps({ selectedTaskId: "t1" });
-    const runner = runtime.createRunner(CalendarPage);
-    const chip = findAll(runner.render(pageProps), (node) => node.type === CalendarEvent).find(
-      (node) => props(node).task.id === "t1"
-    );
+  it("steps through months and jumps back to today", async () => {
+    await seedStore({ tasks: [brief] });
+    await renderCalendar();
 
-    expect(props(chip).selected).toBe(true);
-    props(chip).onClick({ currentTarget: "chip-element" });
-    expect(pageProps.onOpenTask).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "t1" }),
-      "chip-element"
-    );
-  });
-});
+    expect(screen.getByText(monthLabel(2026, 8))).toBeInTheDocument();
 
-describe("CalendarPage day agenda", () => {
-  it("creates a personal task on the selected date and hands the title to the composer", async () => {
-    const pageProps = createProps();
-    const runner = runtime.createRunner(CalendarPage);
-    const quickAdd = find(runner.render(pageProps), (node) => node.type === QuickAdd);
+    await user.click(screen.getByRole("button", { name: "Next month" }));
+    expect(screen.getByText(monthLabel(2026, 9))).toBeInTheDocument();
 
-    await props(quickAdd).onCreate("Draft agenda");
-    expect(pageProps.taskActions.createPersonal).toHaveBeenCalledWith({
-      title: "Draft agenda",
-      dueDate: todayKey,
-    });
+    await user.click(screen.getByRole("button", { name: "Previous month" }));
+    await user.click(screen.getByRole("button", { name: "Previous month" }));
+    expect(screen.getByText(monthLabel(2026, 7))).toBeInTheDocument();
 
-    props(quickAdd).onOpenDetails("Draft agenda");
-    expect(pageProps.onNewTask).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Draft agenda", dueDate: todayKey })
-    );
+    await user.click(screen.getByRole("button", { name: "Today" }));
+    expect(screen.getByText(monthLabel(2026, 8))).toBeInTheDocument();
   });
 
-  it("seeds New task with the selected date", () => {
-    const pageProps = createProps();
-    const runner = runtime.createRunner(CalendarPage);
-    const tree = runner.render(pageProps);
+  it("selects a day cell and opens the composer seeded with that date", async () => {
+    await seedStore({ tasks: [brief] });
+    await renderCalendar();
 
-    props(cellSelect(tree, busyKey)).onClick();
-    props(findByText(runner.render(), "New task")).onClick();
+    await user.click(
+      screen.getByRole("button", { name: `${fullDate(2026, 8, 15)}, 1 task` })
+    );
+    expect(
+      screen.getByRole("heading", { name: fullDate(2026, 8, 15) })
+    ).toBeInTheDocument();
 
-    expect(pageProps.onNewTask).toHaveBeenCalledWith({
-      dueDate: busyKey,
-      endDate: "",
+    await user.click(screen.getByRole("button", { name: "New task" }));
+
+    expect(getState().ui.composer.open).toBe(true);
+    expect(getState().ui.composer.initialValues).toMatchObject({
+      dueDate: "2026-09-15",
       startTime: "",
       endTime: "",
     });
   });
 
-  it("lists the day as dense rows wired to open and complete", async () => {
-    const pageProps = createProps();
-    const runner = runtime.createRunner(CalendarPage);
-    const row = find(runner.render(pageProps), (node) => node.type === TaskRow);
+  it("opens a task from its month chip", async () => {
+    await seedStore({ tasks: [brief] });
+    await renderCalendar();
 
-    expect(props(row).dense).toBe(true);
-    expect(props(row).todayKey).toBe(todayKey);
-    expect(props(row).context.projectsById.get("project-1").name).toBe("Launch");
-    expect(props(row).onOpenProject).toBe(pageProps.onOpenProject);
+    await user.click(screen.getByRole("button", { name: /^Open Write the brief\./ }));
 
-    props(row).onOpen(props(row).task, "row-element");
-    expect(pageProps.onOpenTask).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "t1" }),
-      "row-element"
-    );
-
-    await props(row).onToggleComplete(props(row).task);
-    expect(pageProps.taskActions.toggleComplete).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "t1" })
-    );
+    expect(getState().ui.selectedTaskId).toBe("task-brief");
   });
 
-  it("renders Google events as read-only rows that open the source event", () => {
-    const openSpy = vi.fn();
-    globalThis.window = { open: openSpy };
-    const pageProps = createProps();
-    const runner = runtime.createRunner(CalendarPage);
+  it("keeps Google Calendar events read-only and opens them in Google", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    await seedStore({
+      googleConnection: { email: "sam@example.com" },
+      googleEvents: [googleEvent],
+    });
+    await renderCalendar();
 
-    props(cellSelect(runner.render(pageProps), busyKey)).onClick();
-    const rows = findAll(runner.render(), (node) => node.type === TaskRow);
-    const googleRow = rows.find((node) => props(node).task.source === "google");
+    await user.click(
+      await screen.findByRole("button", {
+        name: /^Open Google Calendar event Design sync\./,
+      })
+    );
 
-    expect(props(googleRow).task.title).toBe("Design sync");
-    expect(props(googleRow).readOnly).toBe(true);
-    expect(props(googleRow).onToggleComplete).toBeUndefined();
-    expect(props(googleRow).onOpenProject).toBeUndefined();
-
-    props(googleRow).onOpen(props(googleRow).task, null);
-    expect(openSpy).toHaveBeenCalledWith(
-      "https://calendar.google.com/event",
+    expect(open).toHaveBeenCalledWith(
+      "https://calendar.google.com/event?eid=1",
       "_blank",
       "noopener,noreferrer"
     );
-    expect(pageProps.onOpenTask).not.toHaveBeenCalled();
-    delete globalThis.window;
+    expect(getState().ui.selectedTaskId).toBeNull();
   });
 
-  it("reports a failed completion without losing the day", async () => {
-    const pageProps = createProps();
-    pageProps.taskActions.toggleComplete.mockRejectedValue(new Error("offline"));
-    const runner = runtime.createRunner(CalendarPage);
-    const row = find(runner.render(pageProps), (node) => node.type === TaskRow);
+  it("re-syncs stale Google events when the Calendar page is revisited", async () => {
+    const { api } = await seedStore({
+      googleConnection: { email: "sam@example.com" },
+      googleEvents: [googleEvent],
+    });
+    const firstVisit = await renderCalendar();
+    expect(api.callCount("syncGoogleCalendar")).toBe(1);
+    firstVisit.unmount();
 
-    await props(row).onToggleComplete(props(row).task);
-    const failed = runner.render();
-    const notice = find(failed, (node) => props(node).className === "page-notice");
+    vi.setSystemTime(new Date(TODAY.getTime() + GOOGLE_EVENTS_STALE_MS + 1));
+    api.data.googleEvents.push({
+      ...googleEvent,
+      id: "evt-2",
+      title: "Planning review",
+    });
+    await renderCalendar();
 
-    expect(props(notice).tone).toBe("error");
-    expect(textContent(notice)).toContain("Write spec");
-
-    props(notice).onDismiss();
+    expect(api.callCount("syncGoogleCalendar")).toBe(2);
     expect(
-      find(runner.render(), (node) => props(node).className === "page-notice")
-    ).toBeUndefined();
+      await screen.findByRole("button", {
+        name: /^Open Google Calendar event Planning review\./,
+      })
+    ).toBeInTheDocument();
   });
-});
 
-describe("CalendarPage loading and errors", () => {
-  it("shows skeletons instead of the grid while tasks load", () => {
-    const tree = runtime
-      .createRunner(CalendarPage)
-      .render(createProps({ tasksLoading: true }));
+  it("creates a task on the selected day from the day agenda", async () => {
+    const { api } = await seedStore();
+    await renderCalendar();
 
-    expect(props(find(tree, (node) => props(node).role === "status"))["aria-label"]).toBe(
-      "Loading calendar"
+    await user.type(
+      screen.getByRole("textbox", { name: `Task name for ${fullDate(2026, 8, 2)}` }),
+      "Draft agenda"
     );
-    expect(find(tree, (node) => props(node).className === "cal-grid")).toBeUndefined();
-    expect(viewControl(tree)).toBeDefined();
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(api.callCount("createTask")).toBe(1));
+    expect(api.callsOf("createTask")[0][0]).toMatchObject({
+      title: "Draft agenda",
+      dueDate: "2026-09-02",
+      projectId: null,
+    });
   });
 
-  it("offers a retry when the task load failed", () => {
-    const pageProps = createProps({ tasksError: "We couldn't load your tasks." });
-    const tree = runtime.createRunner(CalendarPage).render(pageProps);
-    const notice = find(tree, (node) => props(node).className === "page-notice");
+  it("shows the loading skeleton only while a task load holds no data", async () => {
+    await seedStore();
+    const pending = loadTasks();
 
-    expect(textContent(notice)).toContain("We couldn't load your tasks.");
-    props(findByText(props(notice).action, "Try again")).onClick();
-    expect(pageProps.onRetry).toHaveBeenCalledOnce();
+    renderPage(<CalendarPage />);
+    expect(
+      screen.getByRole("status", { name: "Loading calendar" })
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      await pending;
+    });
+    expect(
+      screen.queryByRole("status", { name: "Loading calendar" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("reports a failed task load and retries on demand", async () => {
+    const { api } = await seedStore({ tasks: [brief] });
+    api.failNext("listPersonalTasks", new Error("offline"));
+    await loadTasks();
+
+    await renderCalendar();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "We couldn't load your tasks."
+    );
+
+    const before = api.callCount("listPersonalTasks");
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() =>
+      expect(api.callCount("listPersonalTasks")).toBe(before + 1)
+    );
   });
 });

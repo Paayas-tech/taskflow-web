@@ -1,24 +1,27 @@
+/**
+ * Recent history for a project or a single task. Activity rows come from the
+ * database's audit trail, so — like comments — they are read through the api
+ * the store was configured with, and reloaded when the realtime channel fires.
+ */
 import { useCallback, useEffect, useState } from "react";
-import ActivityRow from "./ActivityRow";
-import CommentRow from "./CommentRow";
+import { ActivityRow, CommentRow } from "./rows";
 import { Button, EmptyState, Icon, InlineNotice, Spinner } from "../ui";
-import { profileMap } from "../domain/identityDomain";
-import {
-  deleteTaskComment,
-  getTaskComments,
-  getProjectActivity,
-  getTaskActivity,
-  subscribeToProjectActivity,
-  subscribeToTaskComments,
-  subscribeToTaskActivity,
-  updateTaskComment,
-} from "../application/projectService";
+import { profileMap } from "../domain/collaboration";
+import { selectUser } from "../store/selectors";
+import { api, useStore } from "../store/store";
 
+const LIVE_PAUSED = "Live updates are paused. Refresh to check for new activity.";
+const DEAD_CHANNEL = ["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"];
+
+const startOfDay = (date) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+/** `Today | Yesterday | This week | Earlier` for one event. */
 const activityGroup = (value) => {
   const date = new Date(value);
-  const today = new Date();
-  const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const difference = Math.floor((startToday - new Date(date.getFullYear(), date.getMonth(), date.getDate())) / 86400000);
+  const difference = Math.floor(
+    (startOfDay(new Date()) - startOfDay(date)) / 86400000
+  );
   if (difference === 0) return "Today";
   if (difference === 1) return "Yesterday";
   if (difference < 7) return "This week";
@@ -30,19 +33,36 @@ const activityTimestamp = (value) => {
   return Number.isFinite(timestamp) ? timestamp : null;
 };
 
-const sortActivityItems = (items) => items
-  .map((item, index) => ({ item, index, timestamp: activityTimestamp(item.createdAt) }))
-  .sort((left, right) => {
-    if (left.timestamp !== null && right.timestamp !== null && left.timestamp !== right.timestamp) {
-      return right.timestamp - left.timestamp;
-    }
-    if (left.timestamp !== null && right.timestamp === null) return -1;
-    if (left.timestamp === null && right.timestamp !== null) return 1;
-    return left.index - right.index;
-  })
-  .map(({ item }) => item);
+/** Newest first; equal or missing timestamps keep their original order. */
+const sortActivityItems = (items) =>
+  items
+    .map((item, index) => ({
+      item,
+      index,
+      timestamp: activityTimestamp(item.createdAt),
+    }))
+    .sort((left, right) => {
+      if (
+        left.timestamp !== null &&
+        right.timestamp !== null &&
+        left.timestamp !== right.timestamp
+      ) {
+        return right.timestamp - left.timestamp;
+      }
+      if (left.timestamp !== null && right.timestamp === null) return -1;
+      if (left.timestamp === null && right.timestamp !== null) return 1;
+      return left.index - right.index;
+    })
+    .map(({ item }) => item);
 
-export default function ActivityFeed({ userId, projectId, taskId = null, compact = false, includeComments = false, members = [] }) {
+export function ActivityFeed({
+  projectId,
+  taskId = null,
+  compact = false,
+  includeComments = false,
+  members = [],
+}) {
+  const user = useStore(selectUser);
   const [activity, setActivity] = useState([]);
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -56,13 +76,17 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
     try {
       if (taskId && includeComments) {
         const [activityItems, commentItems] = await Promise.all([
-          getTaskActivity(userId, taskId, 30),
-          getTaskComments(userId, taskId),
+          api().listTaskActivity(taskId, 30),
+          api().listComments(taskId),
         ]);
         setActivity(activityItems);
         setComments(commentItems);
       } else {
-        setActivity(taskId ? await getTaskActivity(userId, taskId, 20) : await getProjectActivity(userId, projectId, 30));
+        setActivity(
+          taskId
+            ? await api().listTaskActivity(taskId, 20)
+            : await api().listProjectActivity(projectId, 30)
+        );
         setComments([]);
       }
       return true;
@@ -72,7 +96,7 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
     } finally {
       setLoading(false);
     }
-  }, [includeComments, projectId, taskId, userId]);
+  }, [includeComments, projectId, taskId]);
 
   const refreshActivity = async () => {
     if (refreshing) return;
@@ -86,36 +110,48 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
   useEffect(() => {
     setLoading(true);
     void loadActivity();
+
     const onStatus = (status) => {
       if (status === "SUBSCRIBED") setLiveNotice("");
-      else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
-        setLiveNotice("Live updates are paused. Refresh to check for new activity.");
-      }
+      else if (DEAD_CHANNEL.includes(status)) setLiveNotice(LIVE_PAUSED);
     };
+
     try {
       if (taskId) {
-        const unsubscribeActivity = subscribeToTaskActivity(taskId, () => void loadActivity(), onStatus);
+        const unsubscribeActivity = api().subscribeToTaskActivity(
+          taskId,
+          () => void loadActivity(),
+          onStatus
+        );
         const unsubscribeComments = includeComments
-          ? subscribeToTaskComments(taskId, () => void loadActivity(), onStatus)
+          ? api().subscribeToComments(taskId, () => void loadActivity(), onStatus)
           : undefined;
         return () => {
           unsubscribeActivity?.();
           unsubscribeComments?.();
         };
       }
-      return subscribeToProjectActivity(projectId, () => void loadActivity(), onStatus);
+      return api().subscribeToProjectActivity(
+        projectId,
+        () => void loadActivity(),
+        onStatus
+      );
     } catch {
-      setLiveNotice("Live updates are paused. Refresh to check for new activity.");
+      setLiveNotice(LIVE_PAUSED);
       return undefined;
     }
   }, [includeComments, loadActivity, projectId, taskId]);
 
+  // A comment that is still live is rendered once, as the comment itself.
   const activeCommentIds = new Set(comments.map((comment) => comment.id));
   const mergedActivity = sortActivityItems([
-    ...activity.filter((item) => !(
-      ["comment_added", "comment_updated"].includes(item.type)
-      && activeCommentIds.has(item.metadata?.commentId)
-    )),
+    ...activity.filter(
+      (item) =>
+        !(
+          ["comment_added", "comment_updated"].includes(item.type) &&
+          activeCommentIds.has(item.metadata?.commentId)
+        )
+    ),
     ...comments.map((comment) => ({ ...comment, itemKind: "comment" })),
   ]);
   const visible = compact ? mergedActivity.slice(0, 8) : mergedActivity;
@@ -126,12 +162,14 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
     return result;
   }, {});
   const profilesById = profileMap([...members, ...comments]);
-  const updateComment = async (commentId, content) => {
-    await updateTaskComment(userId, commentId, content);
+
+  const editComment = async (commentId, content) => {
+    await api().updateComment(commentId, content);
     await loadActivity();
   };
+
   const removeComment = async (commentId) => {
-    await deleteTaskComment(userId, commentId);
+    await api().deleteComment(commentId);
     await loadActivity();
   };
 
@@ -149,6 +187,7 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
           {refreshing ? "Refreshing…" : "Refresh"}
         </Button>
       </div>
+
       {liveNotice ? (
         <p className="collab-live-note muted" role="status">
           <Icon name="info" size={14} />
@@ -156,6 +195,7 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
         </p>
       ) : null}
       {refreshNotice ? <InlineNotice tone="success">{refreshNotice}</InlineNotice> : null}
+
       {loading ? (
         <p className="activity-state" role="status">
           <Spinner size="sm" />
@@ -181,19 +221,21 @@ export default function ActivityFeed({ userId, projectId, taskId = null, compact
           {Object.entries(groups).map(([label, items]) => (
             <section className="activity-group" key={label}>
               <h4 className="activity-group-title">{label}</h4>
-              {items.map((item) => (item.itemKind === "comment" ? (
-                <CommentRow
-                  key={`comment-${item.id}`}
-                  comment={item}
-                  currentUserId={userId}
-                  profilesById={profilesById}
-                  mentionCandidates={members}
-                  onUpdate={updateComment}
-                  onDelete={removeComment}
-                />
-              ) : (
-                <ActivityRow key={item.id} activity={item} />
-              )))}
+              {items.map((item) =>
+                item.itemKind === "comment" ? (
+                  <CommentRow
+                    key={`comment-${item.id}`}
+                    comment={item}
+                    currentUserId={user?.id || ""}
+                    profilesById={profilesById}
+                    mentionCandidates={members}
+                    onUpdate={editComment}
+                    onDelete={removeComment}
+                  />
+                ) : (
+                  <ActivityRow key={item.id} activity={item} />
+                )
+              )}
             </section>
           ))}
         </div>

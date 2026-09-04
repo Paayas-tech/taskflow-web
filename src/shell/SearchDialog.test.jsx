@@ -1,208 +1,75 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { makeProject, makeTask } from "../test/fakeApi";
+import { renderPage, seedStore } from "../test/renderApp";
+import { getState } from "../store/store";
+import { setSearchOpen } from "../store/ui";
+import { SearchDialog } from "./SearchDialog";
 
-const hookRuntime = vi.hoisted(() => {
-  let activeRunner;
-  const same = (left, right) =>
-    Boolean(
-      left &&
-        right &&
-        left.length === right.length &&
-        left.every((value, index) => Object.is(value, right[index]))
-    );
-
-  return {
-    activate(runner) {
-      activeRunner = runner;
-    },
-    useState(initialValue) {
-      const index = activeRunner.cursor++;
-      activeRunner.slots[index] ??= {
-        value: typeof initialValue === "function" ? initialValue() : initialValue,
-      };
-      const slot = activeRunner.slots[index];
-      return [
-        slot.value,
-        (next) => {
-          slot.value = typeof next === "function" ? next(slot.value) : next;
-        },
-      ];
-    },
-    useRef(initialValue) {
-      const index = activeRunner.cursor++;
-      activeRunner.slots[index] ??= { current: initialValue };
-      return activeRunner.slots[index];
-    },
-    useCallback(callback) {
-      activeRunner.cursor++;
-      return callback;
-    },
-    useMemo(factory, dependencies) {
-      const index = activeRunner.cursor++;
-      const previous = activeRunner.slots[index];
-      if (previous && same(previous.dependencies, dependencies)) {
-        return previous.value;
-      }
-      const value = factory();
-      activeRunner.slots[index] = { value, dependencies };
-      return value;
-    },
-    useEffect(effect, dependencies) {
-      const index = activeRunner.cursor++;
-      const previous = activeRunner.slots[index];
-      if (!previous || !same(previous.dependencies, dependencies)) {
-        activeRunner.pending.push({ index, effect, dependencies });
-      }
-    },
-  };
-});
-
-vi.mock("react", () => ({
-  default: {},
-  useCallback: hookRuntime.useCallback,
-  useEffect: hookRuntime.useEffect,
-  useMemo: hookRuntime.useMemo,
-  useRef: hookRuntime.useRef,
-  useState: hookRuntime.useState,
-}));
-
-import { SearchDialog, filterSearchItems } from "./SearchDialog";
-import { find, findAll, props, textContent } from "../test/elementTree";
-
-const items = [
-  { id: "project:project-a", type: "project", title: "Launch", subtitle: "Release work" },
-  { id: "task:task-1", type: "task", title: "Write the brief", subtitle: "Personal task" },
-  { id: "story:story-1", type: "story", title: "Onboarding", subtitle: "Launch" },
-];
-
-function createRunner(componentProps) {
-  const runner = { cursor: 0, pending: [], slots: [], output: null };
-
-  const render = (nextProps = componentProps) => {
-    runner.cursor = 0;
-    runner.pending = [];
-    hookRuntime.activate(runner);
-    runner.output = SearchDialog(nextProps);
-    for (const pending of runner.pending) {
-      runner.slots[pending.index]?.cleanup?.();
-      runner.slots[pending.index] = {
-        dependencies: pending.dependencies,
-        cleanup: pending.effect(),
-      };
-    }
-    return runner.output;
-  };
-
-  render();
-  return {
-    render,
-    get output() {
-      return runner.output;
-    },
-  };
-}
-
-const input = (tree) => find(tree, (node) => props(node).className === "search-input");
-const resultButtons = (tree) =>
-  findAll(tree, (node) => props(node).role === "option");
-
-beforeEach(() => {
-  globalThis.document = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
-});
-
-afterEach(() => {
-  delete globalThis.document;
-});
-
-describe("filterSearchItems", () => {
-  it("returns everything up to the limit for an empty query", () => {
-    expect(filterSearchItems(items, "  ")).toHaveLength(3);
-    expect(filterSearchItems(items, "", 2)).toHaveLength(2);
+const seed = () =>
+  seedStore({
+    projects: [makeProject({ id: "project-1", name: "Website relaunch" })],
+    tasks: [
+      makeTask({ id: "task-1", title: "Write the brief" }),
+      makeTask({ id: "task-2", title: "Book the venue" }),
+    ],
   });
-
-  it("matches the title or the subtitle, ignoring case", () => {
-    expect(filterSearchItems(items, "launch").map((item) => item.id)).toEqual([
-      "project:project-a",
-      "story:story-1",
-    ]);
-    expect(filterSearchItems(items, "BRIEF").map((item) => item.id)).toEqual([
-      "task:task-1",
-    ]);
-    expect(filterSearchItems(items, "nothing")).toEqual([]);
-  });
-});
 
 describe("SearchDialog", () => {
-  it("renders a titleless dialog with every item and the first one active", () => {
-    const runner = createRunner({ open: true, items, onClose: vi.fn(), onSelect: vi.fn() });
+  it("filters items as the query changes and prompts when nothing matches", async () => {
+    const user = userEvent.setup();
+    await seed();
+    setSearchOpen(true);
+    renderPage(<SearchDialog />);
 
-    expect(props(runner.output).title).toBeUndefined();
-    expect(props(runner.output)["aria-label"]).toBe("Search TaskFlow");
-    expect(props(runner.output).size).toBe("md");
+    expect(screen.getByText("Write the brief")).toBeInTheDocument();
 
-    const options = resultButtons(runner.output);
-    expect(options.map((node) => textContent(node))).toEqual([
-      "Launch Release work",
-      "Write the brief Personal task",
-      "Onboarding Launch",
-    ]);
-    expect(props(options[0])["aria-selected"]).toBe(true);
-    expect(props(options[1])["aria-selected"]).toBe(false);
+    await user.type(screen.getByLabelText("Search projects and tasks"), "brief");
+    expect(screen.getByText("Write the brief")).toBeInTheDocument();
+    expect(screen.queryByText("Book the venue")).toBeNull();
+
+    await user.clear(screen.getByLabelText("Search projects and tasks"));
+    await user.type(screen.getByLabelText("Search projects and tasks"), "zzz");
+    expect(screen.getByText("No matches")).toBeInTheDocument();
   });
 
-  it("filters as the query changes", () => {
-    const runner = createRunner({ open: true, items, onClose: vi.fn(), onSelect: vi.fn() });
+  it("opens the selected task and closes", async () => {
+    const user = userEvent.setup();
+    await seed();
+    setSearchOpen(true);
+    renderPage(<SearchDialog />);
 
-    props(input(runner.output)).onChange({ target: { value: "brief" } });
-    runner.render();
+    await user.click(screen.getByRole("option", { name: /Book the venue/ }));
 
-    expect(resultButtons(runner.output)).toHaveLength(1);
-    expect(textContent(resultButtons(runner.output)[0])).toBe(
-      "Write the brief Personal task"
-    );
+    expect(getState().ui.selectedTaskId).toBe("task-2");
+    expect(getState().ui.searchOpen).toBe(false);
   });
 
-  it("moves the active result with the arrow keys and selects it with Enter", () => {
-    const onSelect = vi.fn();
-    const onClose = vi.fn();
-    const runner = createRunner({ open: true, items, onClose, onSelect });
+  it("moves the active result with the arrow keys and selects it with Enter", async () => {
+    const user = userEvent.setup();
+    await seed();
+    setSearchOpen(true);
+    renderPage(<SearchDialog />);
 
-    const preventDefault = vi.fn();
-    props(input(runner.output)).onKeyDown({ key: "ArrowDown", preventDefault });
-    runner.render();
-    expect(props(resultButtons(runner.output)[1])["aria-selected"]).toBe(true);
+    const input = screen.getByLabelText("Search projects and tasks");
+    await user.type(input, "e{ArrowDown}{Enter}");
 
-    props(input(runner.output)).onKeyDown({ key: "ArrowUp", preventDefault });
-    runner.render();
-    expect(props(resultButtons(runner.output)[0])["aria-selected"]).toBe(true);
-
-    props(input(runner.output)).onKeyDown({ key: "Enter", preventDefault });
-    expect(onSelect).toHaveBeenCalledWith(items[0]);
-    expect(onClose).toHaveBeenCalledOnce();
+    // "Website relaunch", "Write the brief" and "Book the venue" all match "e";
+    // one ArrowDown moves from the project to the first task.
+    expect(getState().ui.selectedTaskId).toBe("task-1");
   });
 
-  it("selects a clicked result", () => {
-    const onSelect = vi.fn();
-    const onClose = vi.fn();
-    const runner = createRunner({ open: true, items, onClose, onSelect });
+  it("navigates to a project result on its remembered tab", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("taskflow:project-tab:project-1", "board");
+    await seed();
+    setSearchOpen(true);
+    renderPage(<SearchDialog />);
 
-    props(resultButtons(runner.output)[2]).onClick();
+    await user.click(screen.getByRole("option", { name: /Website relaunch/ }));
 
-    expect(onSelect).toHaveBeenCalledWith(items[2]);
-    expect(onClose).toHaveBeenCalledOnce();
-  });
-
-  it("prompts when nothing matches", () => {
-    const runner = createRunner({ open: true, items: [], onClose: vi.fn(), onSelect: vi.fn() });
-    expect(textContent(find(runner.output, (node) => props(node).role === "status"))).toBe(
-      "Search projects, tasks and stories"
-    );
-
-    const withItems = createRunner({ open: true, items, onClose: vi.fn(), onSelect: vi.fn() });
-    props(input(withItems.output)).onChange({ target: { value: "zzz" } });
-    withItems.render();
-
-    expect(
-      textContent(find(withItems.output, (node) => props(node).role === "status"))
-    ).toBe("No matches");
+    expect(getState().ui.path).toBe("/projects/project-1/board");
+    window.localStorage.clear();
   });
 });

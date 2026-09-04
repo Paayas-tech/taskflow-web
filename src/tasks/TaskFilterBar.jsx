@@ -1,7 +1,7 @@
 import { Button } from "../ui/Button";
 import { Checkbox, Input, Select } from "../ui/Field";
 import { Icon } from "../ui/icons";
-import { cx } from "../ui/cx";
+import { cx } from "../ui/primitives";
 
 function FilterChip({ id, label, value, options = [], defaultValue, onChange, disabled }) {
   const fallback = defaultValue ?? options[0]?.value;
@@ -104,5 +104,3 @@ export function TaskFilterBar({
     </div>
   );
 }
-
-export default TaskFilterBar;

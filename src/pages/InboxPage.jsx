@@ -1,12 +1,27 @@
 import { useMemo, useState } from "react";
-import { Button, EmptyState, Icon, IconButton, InlineNotice, Tabs } from "../ui";
-import { cx } from "../ui/cx";
-import { projectPath } from "../app/appRoutes";
 import {
   filterInboxNotifications,
-  notificationLabel,
   notificationTypeLabel,
-} from "../domain/notificationDomain";
+} from "../domain/collaboration";
+import { notificationText } from "../home/homeData";
+import { readProjectTab } from "../lib/preferences";
+import {
+  dismissNotification,
+  loadNotifications,
+  markAllRead,
+  markRead,
+} from "../store/notifications";
+import {
+  selectErrors,
+  selectLoaded,
+  selectNotifications,
+  selectNotificationsLive,
+  selectProfiles,
+} from "../store/selectors";
+import { useStore } from "../store/store";
+import { navigate, setProjectTab } from "../store/ui";
+import { Button, EmptyState, Icon, IconButton, InlineNotice, Tabs } from "../ui";
+import { cx } from "../ui/primitives";
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
   month: "short",
@@ -32,6 +47,9 @@ const emptyDescriptions = {
   mentioned: "No one has mentioned you yet.",
 };
 
+const LIVE_PAUSED_NOTICE =
+  "Live updates are paused. Refresh to check for new activity.";
+
 const stopPointer = (event) => event.stopPropagation();
 
 const stopKeys = (event) => {
@@ -41,18 +59,13 @@ const stopKeys = (event) => {
 };
 
 /** Notification feed: all activity, unread only, or mentions of you. */
-export function InboxPage({
-  notifications = [],
-  loading = false,
-  error = "",
-  liveNotice = "",
-  onMarkRead,
-  onMarkAllRead,
-  onDismiss,
-  onRefresh,
-  onNavigate,
-  onOpenSettings,
-}) {
+export function InboxPage() {
+  const notifications = useStore(selectNotifications);
+  const notificationsLive = useStore(selectNotificationsLive);
+  const profiles = useStore(selectProfiles);
+  const loaded = useStore(selectLoaded);
+  const errors = useStore(selectErrors);
+
   const [view, setView] = useState("activity");
   const [pendingId, setPendingId] = useState("");
   const [markAllPending, setMarkAllPending] = useState(false);
@@ -63,31 +76,34 @@ export function InboxPage({
   );
   const unreadCount = notifications.filter((item) => !item.readAt).length;
   const mentionCount = notifications.filter((item) => item.type === "mentioned").length;
+  const loading = loaded.notifications === "loading" && notifications.length === 0;
 
   const openNotification = async (notification) => {
     if (pendingId) return;
     setPendingId(notification.id);
     try {
-      if (!notification.readAt) await onMarkRead?.(notification.id);
-      if (notification.projectId) onNavigate?.(projectPath(notification.projectId));
+      if (!notification.readAt) await markRead(notification.id);
+      if (notification.projectId) {
+        setProjectTab(notification.projectId, readProjectTab(notification.projectId));
+      }
     } finally {
       setPendingId("");
     }
   };
 
-  const dismissNotification = async (notification) => {
+  const dismiss = async (notification) => {
     setPendingId(notification.id);
     try {
-      await onDismiss?.(notification.id);
+      await dismissNotification(notification.id);
     } finally {
       setPendingId("");
     }
   };
 
-  const markAllRead = async () => {
+  const readEverything = async () => {
     setMarkAllPending(true);
     try {
-      await onMarkAllRead?.();
+      await markAllRead();
     } finally {
       setMarkAllPending(false);
     }
@@ -112,34 +128,38 @@ export function InboxPage({
           <Button
             disabled={unreadCount === 0}
             loading={markAllPending}
-            onClick={() => void markAllRead()}
+            onClick={() => void readEverything()}
           >
             Mark all read
           </Button>
-          <Button variant="ghost" icon={<Icon name="settings" />} onClick={() => onOpenSettings?.()}>
+          <Button
+            variant="ghost"
+            icon={<Icon name="settings" />}
+            onClick={() => navigate("/settings")}
+          >
             Notification settings
           </Button>
         </div>
       </header>
 
       <div className="page-body is-narrow">
-        {liveNotice ? (
+        {!notificationsLive ? (
           <InlineNotice tone="info" className="page-notice">
-            {liveNotice}
+            {LIVE_PAUSED_NOTICE}
           </InlineNotice>
         ) : null}
 
-        {error ? (
+        {errors.notifications ? (
           <InlineNotice
             tone="error"
             className="page-notice"
             action={
-              <Button size="sm" onClick={() => onRefresh?.()}>
+              <Button size="sm" onClick={() => void loadNotifications()}>
                 Retry
               </Button>
             }
           >
-            {error}
+            {errors.notifications}
           </InlineNotice>
         ) : null}
 
@@ -160,7 +180,7 @@ export function InboxPage({
         ) : (
           <div className="row-list" aria-live="polite">
             {visibleNotifications.map((notification) => {
-              const label = notificationLabel(notification);
+              const label = notificationText(notification, profiles);
               const unread = !notification.readAt;
               const busy = pendingId === notification.id;
               const type = typeIcons[notification.type] || typeIcons.comment_added;
@@ -179,7 +199,10 @@ export function InboxPage({
                     void openNotification(notification);
                   }}
                 >
-                  <span className={cx("inbox-item-icon", type.modifier)} aria-hidden="true">
+                  <span
+                    className={cx("inbox-item-icon", type.modifier)}
+                    aria-hidden="true"
+                  >
                     {type.icon ? <Icon name={type.icon} size={14} /> : "@"}
                   </span>
 
@@ -194,14 +217,20 @@ export function InboxPage({
                     </span>
                   </div>
 
-                  {unread ? <span className="inbox-item-dot" role="img" aria-label="Unread" /> : null}
+                  {unread ? (
+                    <span className="inbox-item-dot" role="img" aria-label="Unread" />
+                  ) : null}
 
-                  <span className="inbox-item-actions" onClick={stopPointer} onKeyDown={stopKeys}>
+                  <span
+                    className="inbox-item-actions"
+                    onClick={stopPointer}
+                    onKeyDown={stopKeys}
+                  >
                     <IconButton
                       label={`Dismiss: ${label}`}
                       size="sm"
                       disabled={busy}
-                      onClick={() => void dismissNotification(notification)}
+                      onClick={() => void dismiss(notification)}
                     >
                       <Icon name="x" />
                     </IconButton>
@@ -215,5 +244,3 @@ export function InboxPage({
     </section>
   );
 }
-
-export default InboxPage;
