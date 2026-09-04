@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Menu } from "./Menu";
 
@@ -52,6 +52,19 @@ describe("Menu", () => {
     expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveFocus();
 
     await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("portals the menu outside clipping ancestors and still handles outside clicks", async () => {
+    const { container } = renderMenu([{ id: "open", label: "Open" }]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Actions" }));
+
+    const menu = screen.getByRole("menu");
+    expect(menu.parentElement).toBe(document.body);
+    expect(container).not.toContainElement(menu);
+
+    fireEvent.mouseDown(document.body);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });
