@@ -1,8 +1,3 @@
-import { BulkActionBar, TaskBoard } from "../tasks";
-import { Checkbox } from "../ui/Field";
-import { EmptyState } from "../ui/EmptyState";
-import { InlineNotice } from "../ui/InlineNotice";
-
 /**
  * The project board: the shared `TaskBoard` over the project columns, with the
  * bulk-selection strip that appears while a single story is filtered.
@@ -10,12 +5,15 @@ import { InlineNotice } from "../ui/InlineNotice";
  * `onOpenComposer({ title, column })` powers the column quick-add's "Add
  * details" button, matching the list tab's flow.
  */
+import { BulkActionBar } from "../tasks/BulkActionBar";
+import { TaskBoard } from "../tasks/TaskBoard";
+import { Checkbox } from "../ui/Field";
+import { EmptyState, InlineNotice } from "../ui/primitives";
+
 export function ProjectBoardTab({
   columns = [],
   tasks = [],
-  context,
   onMove,
-  onOpen,
   onQuickCreate,
   onOpenComposer,
   readOnly = false,
@@ -33,7 +31,6 @@ export function ProjectBoardTab({
   onBulkAction,
   onClearSelection,
   todayKey,
-  formatSettings,
 }) {
   const selectedCount = selectedIds?.size ?? 0;
   const showBulkTools = selectable && tasks.length > 0;
@@ -73,7 +70,10 @@ export function ProjectBoardTab({
       ) : null}
 
       {bulkMessage ? (
-        <InlineNotice tone={bulkMessage.error ? "error" : "success"} className="workspace-bulk-message">
+        <InlineNotice
+          tone={bulkMessage.error ? "error" : "success"}
+          className="workspace-bulk-message"
+        >
           {bulkMessage.text}
         </InlineNotice>
       ) : null}
@@ -81,9 +81,7 @@ export function ProjectBoardTab({
       <TaskBoard
         columns={columns}
         tasks={tasks}
-        context={context}
         onMove={onMove}
-        onOpen={onOpen}
         onQuickCreate={onQuickCreate}
         onOpenDetails={
           onOpenComposer ? (title, column) => onOpenComposer({ title, column }) : undefined
@@ -94,10 +92,7 @@ export function ProjectBoardTab({
         selectedIds={selectedIds}
         onToggleSelect={onToggleSelect}
         todayKey={todayKey}
-        formatSettings={formatSettings}
       />
     </div>
   );
 }
-
-export default ProjectBoardTab;

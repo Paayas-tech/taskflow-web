@@ -1,53 +1,68 @@
 import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Checkbox, Field, Input, Select, Textarea } from "./Field";
-import { find, findByRole, textContent } from "../test/elementTree";
 
 describe("Field", () => {
-  it("labels the control and shows a hint", () => {
-    const output = Field({ label: "Due date", hint: "Optional", htmlFor: "due", children: "control" });
+  it("labels its control and shows the hint", () => {
+    render(
+      <Field label="Title" hint="Keep it short" htmlFor="title">
+        <Input id="title" />
+      </Field>
+    );
 
-    expect(output.props.className).toBe("field");
-    expect(find(output, (node) => node.type === "label").props.htmlFor).toBe("due");
-    expect(textContent(find(output, (node) => node.props.className === "field-hint"))).toBe("Optional");
+    expect(screen.getByLabelText("Title")).toBeInTheDocument();
+    expect(screen.getByText("Keep it short")).toBeInTheDocument();
   });
 
   it("replaces the hint with an alert when there is an error", () => {
-    const output = Field({ label: "Title", hint: "Optional", error: "Enter a title", inline: true, children: null });
+    render(
+      <Field label="Title" hint="Keep it short" error="Title is required" htmlFor="title">
+        <Input id="title" invalid />
+      </Field>
+    );
 
-    expect(output.props.className).toBe("field field-inline");
-    expect(find(output, (node) => node.props.className === "field-hint")).toBeUndefined();
-    expect(findByRole(output, "alert").props.className).toBe("field-error");
+    expect(screen.queryByText("Keep it short")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Title is required");
+    expect(screen.getByLabelText("Title")).toHaveAttribute("aria-invalid", "true");
   });
 });
 
-describe("Input, Textarea and Select", () => {
-  it("flag invalid controls for assistive tech", () => {
-    expect(Input({ invalid: true }).props["aria-invalid"]).toBe(true);
-    expect(Input({ invalid: true }).props.className).toBe("input is-invalid");
-    expect(Textarea({}).props.className).toBe("textarea");
-    expect(Textarea({}).props["aria-invalid"]).toBeUndefined();
-    expect(Select({ children: null }).props.className).toBe("select");
+describe("inputs", () => {
+  it("types into an input and a textarea", async () => {
+    const onInput = vi.fn();
+    render(
+      <>
+        <Input aria-label="Name" onChange={onInput} />
+        <Textarea aria-label="Notes" />
+      </>
+    );
+
+    await userEvent.type(screen.getByLabelText("Name"), "Ada");
+    await userEvent.type(screen.getByLabelText("Notes"), "hi");
+
+    expect(screen.getByLabelText("Name")).toHaveValue("Ada");
+    expect(screen.getByLabelText("Notes")).toHaveValue("hi");
+    expect(onInput).toHaveBeenCalled();
   });
 
-  it("forwards refs and native props", () => {
-    const ref = { current: null };
+  it("selects an option and toggles a checkbox", async () => {
     const onChange = vi.fn();
-    const output = Input({ ref, value: "Ada", onChange, placeholder: "Name" });
+    render(
+      <>
+        <Select aria-label="Priority" defaultValue="low">
+          <option value="low">Low</option>
+          <option value="high">High</option>
+        </Select>
+        <Checkbox label="Completed" onChange={onChange} />
+      </>
+    );
 
-    expect(output.props.ref).toBe(ref);
-    expect(output.props.placeholder).toBe("Name");
-    output.props.onChange();
+    await userEvent.selectOptions(screen.getByLabelText("Priority"), "high");
+    expect(screen.getByLabelText("Priority")).toHaveValue("high");
+
+    await userEvent.click(screen.getByLabelText("Completed"));
+    expect(screen.getByLabelText("Completed")).toBeChecked();
     expect(onChange).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("Checkbox", () => {
-  it("wraps a native checkbox in a label", () => {
-    const output = Checkbox({ label: "Show completed", checked: true, onChange: vi.fn() });
-
-    expect(output.type).toBe("label");
-    expect(output.props.className).toBe("checkbox");
-    expect(find(output, (node) => node.type === "input").props.type).toBe("checkbox");
-    expect(textContent(output)).toBe("Show completed");
   });
 });

@@ -2,7 +2,9 @@ import { useId, useRef, useState } from "react";
 import { Button, IconButton } from "../ui/Button";
 import { Input } from "../ui/Field";
 import { Icon } from "../ui/icons";
-import { cx } from "../ui/cx";
+import { cx } from "../ui/primitives";
+
+const CREATE_ERROR = "We couldn't create this task. Check your connection and try again.";
 
 /**
  * Inline task creation. Enter creates and keeps the field open for rapid entry,
@@ -47,13 +49,19 @@ export function QuickAdd({
     setBusy(true);
     setError("");
     try {
-      await onCreate?.(normalizedTitle);
+      // Store actions report a failure by resolving to `null` rather than by
+      // throwing, so a null (or false) result is a failed create: keep the
+      // typed title and show the error at the field. A handler that returns
+      // nothing at all succeeded.
+      const created = await onCreate?.(normalizedTitle);
+      if (created === null || created === false) {
+        setError(CREATE_ERROR);
+        return;
+      }
       setTitle("");
       focusInput();
     } catch (createError) {
-      setError(
-        createError?.message || "We couldn't create this task. Check your connection and try again."
-      );
+      setError(createError?.message || CREATE_ERROR);
     } finally {
       submissionRef.current = false;
       setBusy(false);
@@ -141,5 +149,3 @@ export function QuickAddTrigger({ label = "Add task", onClick, className, ...res
     </button>
   );
 }
-
-export default QuickAdd;

@@ -1,10 +1,27 @@
+import { readProjectTab } from "../lib/preferences";
 import {
   isNavigationItemActive,
   navigationItems,
+  projectIdFromPath,
   projectPath,
-} from "../app/appRoutes";
+  routeViewFromPath,
+} from "../router";
+import {
+  selectActiveProjects,
+  selectInvitations,
+  selectPath,
+  selectUi,
+  selectUnreadCount,
+} from "../store/selectors";
+import { useStore } from "../store/store";
+import {
+  navigate,
+  openComposer,
+  openProjectCreate,
+  setSearchOpen,
+  toggleSidebar,
+} from "../store/ui";
 import { Button, Icon, IconButton, Kbd } from "../ui";
-import { readProjectTab } from "./projectTabPreference";
 import { UserMenu } from "./UserMenu";
 
 const badgeFor = (itemPath, unreadCount, invitationCount) => {
@@ -23,41 +40,20 @@ const badgeFor = (itemPath, unreadCount, invitationCount) => {
 };
 
 /** Primary navigation: brand, create, search, views, projects and account. */
-export function Sidebar({
-  collapsed = false,
-  onToggleCollapsed,
-  currentPath = "/",
-  currentView = "home",
-  projects = [],
-  selectedProjectId = null,
-  unreadCount = 0,
-  invitationCount = 0,
-  onNavigate,
-  onNewTask,
-  onNewProject,
-  onOpenSearch,
-  user,
-  onOpenProfile,
-  onOpenSettings,
-  onSignOut,
-  signOutPending = false,
-  signOutError = "",
-  mobileOpen = false,
-  onMobileClose,
-}) {
-  const go = (path) => {
-    onNavigate?.(path);
-    onMobileClose?.();
-  };
+export function Sidebar() {
+  const path = useStore(selectPath);
+  const projects = useStore(selectActiveProjects);
+  const unreadCount = useStore(selectUnreadCount);
+  const invitations = useStore(selectInvitations);
+  const { sidebarCollapsed: collapsed, mobileNavOpen } = useStore(selectUi);
 
-  const activeProjects = projects.filter(
-    (project) => project.status !== "archived" && !project.archivedAt
-  );
-  const settingsActive = isNavigationItemActive("/settings", currentPath, currentView);
+  const currentView = routeViewFromPath(path);
+  const selectedProjectId = projectIdFromPath(path);
+  const settingsActive = isNavigationItemActive("/settings", path, currentView);
 
   return (
     <aside
-      className={["sidebar", collapsed && "is-collapsed", mobileOpen && "is-open"]
+      className={["sidebar", collapsed && "is-collapsed", mobileNavOpen && "is-open"]
         .filter(Boolean)
         .join(" ")}
       aria-label="Sidebar"
@@ -71,7 +67,7 @@ export function Sidebar({
           className="sidebar-collapse"
           label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           size="sm"
-          onClick={onToggleCollapsed}
+          onClick={toggleSidebar}
         >
           <Icon name="panel-left" />
         </IconButton>
@@ -84,7 +80,7 @@ export function Sidebar({
           icon={<Icon name="plus" />}
           aria-label="New task"
           title={collapsed ? "New task" : undefined}
-          onClick={() => onNewTask?.()}
+          onClick={() => openComposer()}
         >
           {collapsed ? null : "New task"}
         </Button>
@@ -93,7 +89,7 @@ export function Sidebar({
           className="sidebar-search"
           aria-label="Search"
           title={collapsed ? "Search" : undefined}
-          onClick={() => onOpenSearch?.()}
+          onClick={() => setSearchOpen(true)}
         >
           <Icon name="search" />
           {collapsed ? null : (
@@ -107,8 +103,8 @@ export function Sidebar({
 
       <nav className="sidebar-nav" aria-label="Primary">
         {navigationItems.map((item) => {
-          const active = isNavigationItemActive(item.path, currentPath, currentView);
-          const badge = badgeFor(item.path, unreadCount, invitationCount);
+          const active = isNavigationItemActive(item.path, path, currentView);
+          const badge = badgeFor(item.path, unreadCount, invitations.length);
           return (
             <button
               key={item.path}
@@ -117,7 +113,7 @@ export function Sidebar({
               aria-current={active ? "page" : undefined}
               aria-label={badge ? `${item.label}, ${badge.description}` : item.label}
               title={collapsed ? item.label : undefined}
-              onClick={() => go(item.path)}
+              onClick={() => navigate(item.path)}
             >
               <Icon name={item.icon} />
               {collapsed ? null : (
@@ -137,19 +133,15 @@ export function Sidebar({
         <div className="sidebar-projects">
           <p className="sidebar-section-title">
             <span>Projects</span>
-            <IconButton
-              label="New project"
-              size="sm"
-              onClick={() => onNewProject?.()}
-            >
+            <IconButton label="New project" size="sm" onClick={openProjectCreate}>
               <Icon name="plus" />
             </IconButton>
           </p>
-          {activeProjects.length === 0 ? (
+          {projects.length === 0 ? (
             <p className="sidebar-projects-empty muted">No projects yet</p>
           ) : (
             <div className="sidebar-project-list">
-              {activeProjects.map((project) => {
+              {projects.map((project) => {
                 const active = project.id === selectedProjectId;
                 return (
                   <button
@@ -159,7 +151,7 @@ export function Sidebar({
                     aria-current={active ? "page" : undefined}
                     title={project.name}
                     onClick={() =>
-                      go(projectPath(project.id, readProjectTab(project.id)))
+                      navigate(projectPath(project.id, readProjectTab(project.id)))
                     }
                   >
                     <span
@@ -185,27 +177,13 @@ export function Sidebar({
           aria-current={settingsActive ? "page" : undefined}
           aria-label="Settings"
           title={collapsed ? "Settings" : undefined}
-          onClick={() => go("/settings")}
+          onClick={() => navigate("/settings")}
         >
           <Icon name="settings" />
           {collapsed ? null : <span className="nav-item-label">Settings</span>}
         </button>
-        <UserMenu
-          user={user}
-          collapsed={collapsed}
-          onOpenProfile={onOpenProfile}
-          onOpenSettings={onOpenSettings}
-          onSignOut={onSignOut}
-          signOutPending={signOutPending}
-        />
-        {signOutError ? (
-          <p className="sidebar-signout-error" role="alert">
-            {signOutError}
-          </p>
-        ) : null}
+        <UserMenu />
       </div>
     </aside>
   );
 }
-
-export default Sidebar;

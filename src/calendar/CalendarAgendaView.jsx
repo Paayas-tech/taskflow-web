@@ -1,9 +1,15 @@
 import { useMemo } from "react";
-import { TaskRow } from "../tasks";
+import { TaskRow } from "../tasks/TaskRow";
 import { EmptyState } from "../ui";
-import { groupCalendarAgenda, normalizeTaskSchedule } from "../domain/calendarDomain";
-import { isTaskComplete, localDateFromDateOnly } from "../domain/taskDomain";
-import { formatTimeForDisplay } from "../domain/settingsDomain";
+import { groupCalendarAgenda } from "../domain/calendar";
+import {
+  isTaskComplete,
+  localDateFromDateOnly,
+  normalizeTaskSchedule,
+} from "../domain/task";
+import { formatTimeForDisplay } from "../domain/settings";
+import { selectSettings } from "../store/selectors";
+import { useStore } from "../store/store";
 
 const formatAgendaDate = (dateKey) => {
   const date = localDateFromDateOnly(dateKey);
@@ -16,10 +22,10 @@ const formatAgendaDate = (dateKey) => {
     : dateKey;
 };
 
-const timeLabel = (task, formatSettings) => {
+const timeLabel = (task, timeFormat) => {
   const schedule = normalizeTaskSchedule(task);
   if (schedule.isAllDay) return "All day";
-  return `${formatTimeForDisplay(schedule.startTime, formatSettings.format)}–${formatTimeForDisplay(schedule.endTime, formatSettings.format)}`;
+  return `${formatTimeForDisplay(schedule.startTime, timeFormat)}–${formatTimeForDisplay(schedule.endTime, timeFormat)}`;
 };
 
 /** Chronological list of everything scheduled, grouped by date. */
@@ -27,19 +33,14 @@ export function CalendarAgendaView({
   tasks = [],
   todayKey,
   selectedTaskId = null,
-  projectsById,
-  pendingIds,
   onSelectDate,
-  onToggleComplete,
   onOpenTask,
-  onOpenProject,
-  formatSettings = {},
 }) {
+  const { time } = useStore(selectSettings);
   const groups = useMemo(
     () => groupCalendarAgenda(tasks, { expandMultiDay: true }),
     [tasks]
   );
-  const context = useMemo(() => ({ projectsById }), [projectsById]);
   const sections = [
     {
       id: "overdue",
@@ -95,29 +96,21 @@ export function CalendarAgendaView({
                 {formatAgendaDate(group.date)}
               </button>
               <div className="row-list">
-                {group.items.map((task) => {
-                  const googleEvent = task.source === "google";
-                  return (
-                    <div className="cal-agenda-entry" key={`${group.date}:${task.id}`}>
-                      <span className="cal-agenda-time muted">
-                        {timeLabel(task, formatSettings)}
-                      </span>
-                      <TaskRow
-                        task={task}
-                        context={context}
-                        dense
-                        todayKey={todayKey}
-                        selected={selectedTaskId === task.id}
-                        busy={pendingIds?.has?.(task.id) || false}
-                        readOnly={googleEvent}
-                        formatSettings={formatSettings}
-                        onOpen={onOpenTask}
-                        onOpenProject={googleEvent ? undefined : onOpenProject}
-                        onToggleComplete={googleEvent ? undefined : onToggleComplete}
-                      />
-                    </div>
-                  );
-                })}
+                {group.items.map((task) => (
+                  <div className="cal-agenda-entry" key={`${group.date}:${task.id}`}>
+                    <span className="cal-agenda-time muted">
+                      {timeLabel(task, time.format)}
+                    </span>
+                    <TaskRow
+                      task={task}
+                      dense
+                      todayKey={todayKey}
+                      selected={selectedTaskId === task.id}
+                      readOnly={task.source === "google"}
+                      onOpen={onOpenTask}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
           ))}
@@ -126,5 +119,3 @@ export function CalendarAgendaView({
     </div>
   );
 }
-
-export default CalendarAgendaView;

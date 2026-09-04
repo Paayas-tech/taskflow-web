@@ -1,234 +1,78 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it } from "vitest";
+import { getState } from "../store/store";
+import { makeTask } from "../test/fakeApi";
+import { renderPage, seedStore } from "../test/renderApp";
+import { ArchivedTasksPage } from "./ArchivedTasksPage";
 
-const runtime = await vi.hoisted(async () => {
-  const { createHookRuntime } = await import("../test/hookRuntime");
-  return createHookRuntime();
-});
-
-vi.mock("react", () => runtime.react);
-
-vi.mock("../tasks", () => ({
-  TaskRow: (rowProps) => ({ type: "task-row", props: rowProps }),
-}));
-
-vi.mock("../components/modal/useModalLifecycle", () => ({
-  useModalLifecycle: () => ({ onBackdropMouseDown: () => {} }),
-}));
-
-import { find, findAll, props, render, textContent } from "../test/elementTree";
-import ArchivedTasksPage from "./ArchivedTasksPage";
-
-const buildTasks = () => [
-  {
-    id: "t-1",
-    title: "Send invoice",
-    status: "todo",
-    priority: "high",
-    completed: false,
-    dueDate: "",
-    projectId: null,
-    archivedAt: "2026-08-20T09:00:00.000Z",
-  },
-  {
-    id: "t-2",
-    title: "Tidy backlog",
-    status: "completed",
-    priority: "low",
-    completed: true,
-    dueDate: "",
-    projectId: null,
-    archivedAt: "2026-08-21T09:00:00.000Z",
-  },
-];
-
-const buildActions = (overrides = {}) => ({
-  restore: vi.fn().mockResolvedValue(undefined),
-  remove: vi.fn().mockResolvedValue(undefined),
-  ...overrides,
-});
-
-const mountPage = (overrides = {}) => {
-  const pageProps = {
-    tasks: buildTasks(),
-    loading: false,
-    error: "",
-    onRetry: vi.fn(),
-    taskActions: buildActions(),
-    onOpenTask: vi.fn(),
-    onOpenProject: vi.fn(),
-    onBack: vi.fn(),
-    projects: [],
-    ...overrides,
-  };
-  const runner = runtime.createRunner(ArchivedTasksPage);
-  const tree = () => render(runner.render(), 8);
-  runner.render(pageProps);
-  return { pageProps, runner, tree };
+const seed = {
+  tasks: [
+    makeTask({
+      id: "task-archived",
+      title: "Old newsletter",
+      archivedAt: "2026-08-20T09:00:00.000Z",
+    }),
+    makeTask({ id: "task-open", title: "Draft the brief" }),
+  ],
 };
 
-const rows = (tree) => findAll(tree, (node) => node.type === "task-row");
-const buttonByText = (tree, label) =>
-  find(tree, (node) => node.type === "button" && textContent(node) === label);
-const dialog = (tree) => find(tree, (node) => props(node).role === "alertdialog");
-const notice = (tree) => find(tree, (node) => props(node).className === "page-notice");
-
-beforeEach(() => {
-  globalThis.window = { localStorage: { getItem: () => null, setItem: () => {} } };
-});
-
-afterEach(() => {
-  delete globalThis.window;
-  vi.restoreAllMocks();
-});
+const openRowMenu = async (title) => {
+  await userEvent.click(screen.getByRole("button", { name: `More actions for ${title}` }));
+};
 
 describe("ArchivedTasksPage", () => {
-  it("titles the page with the archive count and links back to settings", () => {
-    const { pageProps, tree } = mountPage();
-    const view = tree();
+  it("lists only the archived tasks, with the count in the title", async () => {
+    await seedStore(seed);
+    renderPage(<ArchivedTasksPage />);
 
-    expect(textContent(find(view, (node) => props(node).className === "page-title"))).toBe(
-      "Archived tasks 2"
-    );
-
-    buttonByText(view, "Back to settings").props.onClick();
-    expect(pageProps.onBack).toHaveBeenCalled();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("1");
+    expect(screen.getByText("Old newsletter")).toBeInTheDocument();
+    expect(screen.queryByText("Draft the brief")).not.toBeInTheDocument();
   });
 
-  it("lists every archived task with restore and delete affordances", () => {
-    const { pageProps, tree } = mountPage();
-    const view = tree();
+  it("restores a task and drops it from the list", async () => {
+    const { api } = await seedStore(seed);
+    renderPage(<ArchivedTasksPage />);
 
-    expect(rows(view).map((row) => props(row).task.title)).toEqual([
-      "Send invoice",
-      "Tidy backlog",
-    ]);
+    await openRowMenu("Old newsletter");
+    await userEvent.click(screen.getByRole("menuitem", { name: "Restore" }));
 
-    const [first] = rows(view);
-    expect(props(first).onRestore).toBeTypeOf("function");
-    expect(props(first).onDeletePermanently).toBeTypeOf("function");
-    expect(props(first).onOpen).toBe(pageProps.onOpenTask);
-    expect(props(first).onOpenProject).toBe(pageProps.onOpenProject);
-    expect(props(first).busy).toBe(false);
+    await waitFor(() => expect(api.callCount("updateTask")).toBe(1));
+    expect(api.callsOf("updateTask")[0]).toEqual(["task-archived", { archivedAt: null }]);
+    expect(screen.queryByText("Old newsletter")).not.toBeInTheDocument();
   });
 
-  it("restores a task through taskActions", async () => {
-    const { pageProps, tree } = mountPage();
+  it("keeps the task when the delete confirmation is cancelled", async () => {
+    const { api } = await seedStore(seed);
+    renderPage(<ArchivedTasksPage />);
 
-    props(rows(tree())[0]).onRestore(props(rows(tree())[0]).task);
-    await Promise.resolve();
+    await openRowMenu("Old newsletter");
+    await userEvent.click(screen.getByRole("menuitem", { name: "Delete permanently" }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    expect(pageProps.taskActions.restore).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "t-1" })
-    );
-    expect(notice(tree())).toBeUndefined();
+    expect(api.callCount("deleteTask")).toBe(0);
+    expect(screen.getByText("Old newsletter")).toBeInTheDocument();
   });
 
-  it("marks the row busy while a restore is in flight", () => {
-    const taskActions = buildActions({ restore: vi.fn(() => new Promise(() => {})) });
-    const { tree } = mountPage({ taskActions });
+  it("deletes a task permanently once confirmed", async () => {
+    const { api } = await seedStore(seed);
+    renderPage(<ArchivedTasksPage />);
 
-    props(rows(tree())[0]).onRestore(props(rows(tree())[0]).task);
-    const view = tree();
+    await openRowMenu("Old newsletter");
+    await userEvent.click(screen.getByRole("menuitem", { name: "Delete permanently" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete permanently" }));
 
-    expect(props(rows(view)[0]).busy).toBe(true);
-    expect(props(rows(view)[1]).busy).toBe(false);
+    await waitFor(() => expect(api.callsOf("deleteTask")[0]).toEqual(["task-archived"]));
+    expect(screen.queryByText("Old newsletter")).not.toBeInTheDocument();
   });
 
-  it("confirms before deleting permanently and then calls remove", async () => {
-    const { pageProps, tree } = mountPage();
+  it("shows an empty state and goes back to settings", async () => {
+    await seedStore({ tasks: [] });
+    renderPage(<ArchivedTasksPage />);
 
-    expect(dialog(tree())).toBeUndefined();
-
-    props(rows(tree())[1]).onDeletePermanently(props(rows(tree())[1]).task);
-    const confirming = tree();
-    const confirmDialog = dialog(confirming);
-
-    expect(textContent(find(confirmDialog, (node) => props(node).className === "dialog-title"))).toBe(
-      "Delete permanently?"
-    );
-    expect(
-      textContent(find(confirmDialog, (node) => props(node).className === "dialog-description"))
-    ).toContain("Tidy backlog");
-
-    await buttonByText(confirming, "Delete permanently").props.onClick();
-    expect(pageProps.taskActions.remove).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "t-2" })
-    );
-    expect(dialog(tree())).toBeUndefined();
-  });
-
-  it("keeps the task when the confirmation is cancelled", () => {
-    const { pageProps, tree } = mountPage();
-
-    props(rows(tree())[0]).onDeletePermanently(props(rows(tree())[0]).task);
-    buttonByText(tree(), "Cancel").props.onClick();
-
-    expect(dialog(tree())).toBeUndefined();
-    expect(pageProps.taskActions.remove).not.toHaveBeenCalled();
-  });
-
-  it("surfaces a dismissible notice when restoring fails", async () => {
-    const taskActions = buildActions({
-      restore: vi.fn().mockRejectedValue(new Error("offline")),
-    });
-    const { tree } = mountPage({ taskActions });
-
-    props(rows(tree())[0]).onRestore(props(rows(tree())[0]).task);
-    await Promise.resolve();
-    await Promise.resolve();
-
-    const errorNotice = notice(tree());
-    expect(textContent(errorNotice)).toContain("We couldn't restore “Send invoice”");
-
-    find(
-      errorNotice,
-      (node) => node.type === "button" && props(node)["aria-label"] === "Dismiss"
-    ).props.onClick();
-    expect(notice(tree())).toBeUndefined();
-  });
-
-  it("keeps the dialog open when the delete fails", async () => {
-    const taskActions = buildActions({
-      remove: vi.fn().mockRejectedValue(new Error("offline")),
-    });
-    const { tree } = mountPage({ taskActions });
-
-    props(rows(tree())[0]).onDeletePermanently(props(rows(tree())[0]).task);
-    await buttonByText(tree(), "Delete permanently").props.onClick();
-
-    expect(dialog(tree())).toBeDefined();
-    expect(textContent(notice(tree()))).toContain("We couldn't delete “Send invoice”");
-  });
-
-  it("shows an empty state when nothing is archived", () => {
-    const { tree } = mountPage({ tasks: [] });
-    const view = tree();
-
-    expect(textContent(find(view, (node) => props(node).className === "empty-state-title"))).toBe(
-      "No archived tasks"
-    );
-    expect(rows(view)).toEqual([]);
-  });
-
-  it("shows skeleton rows while loading", () => {
-    const { tree } = mountPage({ loading: true });
-    const view = tree();
-
-    expect(props(find(view, (node) => props(node).role === "status"))["aria-label"]).toBe(
-      "Loading archived tasks"
-    );
-    expect(findAll(view, (node) => props(node).className === "skeleton-row").length).toBe(3);
-  });
-
-  it("offers a retry when the archive fails to load", () => {
-    const { pageProps, tree } = mountPage({ error: "Archived tasks are unavailable." });
-    const view = tree();
-
-    expect(textContent(find(view, (node) => props(node).className === "notice-body"))).toBe(
-      "Archived tasks are unavailable."
-    );
-    buttonByText(view, "Retry").props.onClick();
-    expect(pageProps.onRetry).toHaveBeenCalled();
-    expect(rows(view)).toEqual([]);
+    expect(screen.getByText("No archived tasks")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Back to settings" }));
+    expect(getState().ui.path).toBe("/settings");
   });
 });

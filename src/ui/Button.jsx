@@ -1,5 +1,4 @@
-import { cx } from "./cx";
-import { Spinner } from "./Spinner";
+import { cx, Spinner } from "./primitives";
 
 export function Button({
   variant = "secondary",
@@ -56,5 +55,3 @@ export function IconButton({
     </button>
   );
 }
-
-export default Button;

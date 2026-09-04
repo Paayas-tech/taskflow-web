@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { readProjectTab } from "../lib/preferences";
+import { projectPath } from "../router";
+import { selectSearchItems, selectUi } from "../store/selectors";
+import { useStore } from "../store/store";
+import { navigate, openTask, openTaskInProject, setSearchOpen } from "../store/ui";
 import { Dialog, Icon, Input } from "../ui";
 
 const resultIcons = {
@@ -10,8 +15,7 @@ const resultIcons = {
 const SEARCH_RESULT_LIMIT = 12;
 
 /** Case-insensitive match over the title and subtitle of each item. */
-// eslint-disable-next-line react/only-export-components -- pure helper tested alongside the dialog
-export function filterSearchItems(items = [], query, limit = SEARCH_RESULT_LIMIT) {
+const filterSearchItems = (items, query, limit = SEARCH_RESULT_LIMIT) => {
   const term = String(query || "")
     .trim()
     .toLowerCase();
@@ -21,30 +25,47 @@ export function filterSearchItems(items = [], query, limit = SEARCH_RESULT_LIMIT
       `${item.title || ""} ${item.subtitle || ""}`.toLowerCase().includes(term)
     )
     .slice(0, limit);
-}
+};
+
+/** Opens the selected item: its project workspace, or the task detail panel. */
+const openSearchItem = (item) => {
+  if (item.type === "project") {
+    navigate(projectPath(item.project.id, readProjectTab(item.project.id)));
+    return;
+  }
+  if (item.task.projectId) {
+    openTaskInProject(item.task);
+    return;
+  }
+  openTask(item.task.id);
+};
 
 /**
  * Global search over projects, personal tasks and assigned project work.
  * Items are `{ id, type: 'project'|'task'|'story', title, subtitle }`.
  */
-export function SearchDialog({ open, onClose, items = [], onSelect }) {
+export function SearchDialog() {
+  const { searchOpen } = useStore(selectUi);
+  const items = useStore(selectSearchItems);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef(null);
 
   useEffect(() => {
-    if (open) {
+    if (searchOpen) {
       setQuery("");
       setActiveIndex(0);
     }
-  }, [open]);
+  }, [searchOpen]);
 
   const results = useMemo(() => filterSearchItems(items, query), [items, query]);
 
+  const close = () => setSearchOpen(false);
+
   const select = (item) => {
     if (!item) return;
-    onSelect?.(item);
-    onClose?.();
+    openSearchItem(item);
+    close();
   };
 
   const handleKeyDown = (event) => {
@@ -67,8 +88,8 @@ export function SearchDialog({ open, onClose, items = [], onSelect }) {
 
   return (
     <Dialog
-      open={open}
-      onClose={onClose}
+      open={searchOpen}
+      onClose={close}
       size="md"
       className="search-dialog"
       initialFocusRef={inputRef}
@@ -122,5 +143,3 @@ export function SearchDialog({ open, onClose, items = [], onSelect }) {
     </Dialog>
   );
 }
-
-export default SearchDialog;

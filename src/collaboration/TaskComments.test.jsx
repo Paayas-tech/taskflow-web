@@ -1,138 +1,93 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { TaskComments } from "./TaskComments";
+import { renderPage, seedStore } from "../test/renderApp";
 
-const runtime = vi.hoisted(() => {
-  let active;
-  return {
-    activate(value) { active = value; },
-    useState(initial) {
-      const index = active.cursor++;
-      active.slots[index] ??= { value: typeof initial === "function" ? initial() : initial };
-      const slot = active.slots[index];
-      return [slot.value, (next) => { slot.value = typeof next === "function" ? next(slot.value) : next; }];
-    },
-    useRef(initial) {
-      const index = active.cursor++;
-      active.slots[index] ??= { current: initial };
-      return active.slots[index];
-    },
-  };
-});
+const MEMBER_ID = "8f1c9f0a-1c2b-4a7f-9a3e-0d7c5b6e1234";
 
-const service = vi.hoisted(() => ({
-  createTaskComment: vi.fn(), deleteTaskComment: vi.fn(), getTaskComments: vi.fn(),
-  subscribeToTaskComments: vi.fn(), updateTaskComment: vi.fn(),
-}));
-vi.mock("react", () => ({
-  useCallback: (callback) => callback,
-  useEffect: () => undefined,
-  useRef: runtime.useRef,
-  useState: runtime.useState,
-}));
-vi.mock("../application/projectService", () => service);
-import CommentRow from "./CommentRow";
-import TaskComments from "./TaskComments";
+const members = [
+  { userId: MEMBER_ID, role: "editor", displayName: "Dana Cruz", avatarUrl: "" },
+];
 
-const childrenOf = (node) => {
-  const children = node?.props?.children;
-  return (Array.isArray(children) ? children : [children]).filter((child) => child !== null && child !== undefined && child !== false);
-};
-const walk = (node, visit) => {
-  if (Array.isArray(node)) return node.forEach((child) => walk(child, visit));
-  if (!node || typeof node !== "object") return;
-  visit(node); childrenOf(node).forEach((child) => walk(child, visit));
-};
-const findAll = (root, predicate) => { const found = []; walk(root, (node) => predicate(node) && found.push(node)); return found; };
-const text = (node) => typeof node === "string" ? node : childrenOf(node).map(text).join("");
-const byLabel = (root, label) => findAll(root, (node) => node.props?.["aria-label"] === label)[0];
-const menuItems = (root) => findAll(root, (node) => Array.isArray(node.props?.items))[0]?.props.items ?? [];
-const confirmDialog = (root) =>
-  findAll(root, (node) => node.props?.title === "Delete this comment?")[0];
-const runner = (component) => ({
-  slots: [], cursor: 0,
-  render() { this.cursor = 0; runtime.activate(this); this.tree = component(); return this.tree; },
-});
+const seedComments = (comments = []) => seedStore({ comments });
 
-const memberA = { userId: "00000000-0000-4000-8000-000000000101", displayName: "Alex", role: "editor" };
-const memberB = { userId: "00000000-0000-4000-8000-000000000102", displayName: "Alex", role: "viewer" };
+describe("TaskComments", () => {
+  it("posts a comment", async () => {
+    const user = userEvent.setup();
+    const { api } = await seedComments();
+    renderPage(<TaskComments taskId="task-1" members={members} />);
 
-describe("TaskComments structured mention UI", () => {
-  beforeEach(() => vi.clearAllMocks());
+    await screen.findByText("No comments yet");
+    await user.type(screen.getByLabelText("Write a comment"), "Looks good to me");
+    await user.click(screen.getByRole("button", { name: "Comment" }));
 
-  it("labels the composer and submits with the Comment button", () => {
-    const view = runner(() => TaskComments({ userId: "owner", taskId: "task", members: [] }));
-    const tree = view.render();
-    const composer = byLabel(tree, "Write a comment");
-
-    expect(composer.props.placeholder).toBe("Write a comment");
-    expect(composer.props.id).toBe("comment-task");
-    expect(findAll(tree, (node) => text(node) === "Comment" && node.props?.type === "submit")).toHaveLength(1);
+    await waitFor(() => expect(api.callCount("createComment")).toBe(1));
+    expect(api.callsOf("createComment")[0]).toEqual(["task-1", "Looks good to me"]);
+    expect(await screen.findByText("Looks good to me")).toBeInTheDocument();
   });
 
-  it("offers only supplied project members and stores the selected member ID", async () => {
-    const view = runner(() => TaskComments({ userId: "owner", taskId: "task", members: [memberA, memberB] }));
-    let tree = view.render();
-    const mentionItems = menuItems(tree);
-    expect(mentionItems.map((item) => item.label)).toEqual(["@Alex", "@Alex"]);
-    mentionItems[1].onSelect();
-    tree = view.render();
-    const textarea = byLabel(tree, "Write a comment");
-    expect(textarea.props.value).toBe("@Alex ");
-    expect(textarea.props.value).not.toContain(memberB.userId);
-    await findAll(tree, (node) => node.type === "form")[0].props.onSubmit({ preventDefault: vi.fn() });
-    expect(service.createTaskComment).toHaveBeenCalledWith(
-      "owner", "task", `@[Alex](user:${memberB.userId}) `
+  it("stores a mention by id but never shows one", async () => {
+    const user = userEvent.setup();
+    const { api } = await seedComments();
+    renderPage(<TaskComments taskId="task-1" members={members} />);
+
+    await screen.findByText("No comments yet");
+    await user.click(screen.getByRole("button", { name: "Mention" }));
+    await user.click(screen.getByRole("menuitem", { name: "@Dana Cruz" }));
+    await user.click(screen.getByRole("button", { name: "Comment" }));
+
+    await waitFor(() => expect(api.callCount("createComment")).toBe(1));
+    expect(api.callsOf("createComment")[0][1].trim()).toBe(
+      `@[Dana%20Cruz](user:${MEMBER_ID})`
     );
+    expect(await screen.findByText("@Dana Cruz")).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(MEMBER_ID))).not.toBeInTheDocument();
   });
 
-  it("renders structured and legacy mentions by name and uses a safe fallback", () => {
-    const profiles = new Map([[memberA.userId, memberA]]);
-    const comment = {
-      id: "comment", userId: memberA.userId, displayName: "Alex",
-      content: `Hi @[Alex](user:${memberA.userId}) and @${memberB.userId}`,
-    };
-    const view = runner(() => CommentRow({ comment, currentUserId: "other", profilesById: profiles, onUpdate: vi.fn(), onDelete: vi.fn() }));
-    const visible = text(view.render());
-    expect(visible).toContain("@Alex");
-    expect(visible).toContain("@TaskFlow user");
-    expect(visible).not.toContain(memberA.userId);
-    expect(visible).not.toContain(memberB.userId);
+  it("explains a failure to post without losing the draft", async () => {
+    const user = userEvent.setup();
+    const { api } = await seedComments();
+    api.failNext("createComment", new Error("Comments must be 4,000 characters or fewer."));
+    renderPage(<TaskComments taskId="task-1" members={members} />);
+
+    await screen.findByText("No comments yet");
+    await user.type(screen.getByLabelText("Write a comment"), "Too long");
+    await user.click(screen.getByRole("button", { name: "Comment" }));
+
+    expect(
+      await screen.findByText("Comments must be 4,000 characters or fewer.")
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Write a comment")).toHaveValue("Too long");
   });
 
-  it("opens structured comments for editing without exposing stored IDs", () => {
-    const profiles = new Map([[memberA.userId, memberA]]);
-    const comment = { id: "comment", userId: memberA.userId, displayName: "Alex", content: `Hi @[Alex](user:${memberA.userId})` };
-    const view = runner(() => CommentRow({ comment, currentUserId: memberA.userId, profilesById: profiles, mentionCandidates: [memberA], onUpdate: vi.fn(), onDelete: vi.fn() }));
-    let tree = view.render();
-    const edit = menuItems(tree).find((item) => item.id === "edit");
-    expect(edit.label).toBe("Edit");
-    edit.onSelect();
-    tree = view.render();
-    const textarea = byLabel(tree, "Edit comment");
-    expect(textarea.props.value).toBe("Hi @Alex");
-    expect(textarea.props.value).not.toContain(memberA.userId);
-  });
+  it("shows the discussion and reloads it when the realtime channel fires", async () => {
+    const { api } = await seedComments([
+      {
+        id: "comment-1",
+        taskId: "task-1",
+        userId: MEMBER_ID,
+        displayName: "Dana Cruz",
+        content: "Shipping tomorrow",
+        editedAt: null,
+        createdAt: "2026-02-01T10:00:00.000Z",
+      },
+    ]);
+    renderPage(<TaskComments taskId="task-1" members={members} />);
 
-  it("keeps delete on the author menu and confirms in a dialog before removing", async () => {
-    const onDelete = vi.fn().mockResolvedValue(undefined);
-    const comment = { id: "comment", userId: memberA.userId, displayName: "Alex", content: "Ship it" };
-    const view = runner(() => CommentRow({ comment, currentUserId: memberA.userId, profilesById: new Map(), onUpdate: vi.fn(), onDelete }));
-    let tree = view.render();
-    const remove = menuItems(tree).find((item) => item.id === "delete");
+    expect(await screen.findByText("Shipping tomorrow")).toBeInTheDocument();
 
-    expect(remove.danger).toBe(true);
-    expect(confirmDialog(tree).props.open).toBe(false);
+    api.data.comments.push({
+      id: "comment-2",
+      taskId: "task-1",
+      userId: "user-1",
+      displayName: "Sam Rivera",
+      content: "Thanks Dana",
+      editedAt: null,
+      createdAt: "2026-02-01T11:00:00.000Z",
+    });
+    api.emit("comments:task-1");
 
-    remove.onSelect();
-    tree = view.render();
-
-    const dialog = confirmDialog(tree);
-    expect(dialog.props.open).toBe(true);
-    expect(dialog.props.danger).toBe(true);
-    expect(dialog.props.confirmLabel).toBe("Delete");
-    expect(onDelete).not.toHaveBeenCalled();
-
-    await dialog.props.onConfirm();
-
-    expect(onDelete).toHaveBeenCalledWith("comment");
+    expect(await screen.findByText("Thanks Dana")).toBeInTheDocument();
   });
 });

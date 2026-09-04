@@ -101,12 +101,16 @@
   font-weight: 600;
 }
 
-.section-meta {
-  font-size: var(--text-sm);
+/* Small muted text: a section's meta line and the hint under a field. */
+.section-meta,
+.field-hint {
   color: var(--color-text-3);
+  font-size: var(--text-sm);
 }
 
-.row-list {
+/* `.option-list` is the settings page's radio list: the same surface. */
+.row-list,
+.option-list {
   display: flex;
   flex-direction: column;
   background: var(--color-surface);
@@ -115,7 +119,8 @@
   overflow: hidden;
 }
 
-.row-list > * + * {
+.row-list > * + *,
+.option-list > * + * {
   border-top: 1px solid var(--color-border);
 }
 
@@ -158,19 +163,11 @@
   gap: var(--space-4);
 }
 
-.cluster-2,
-.cluster-3 {
+.cluster-2 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-}
-
-.cluster-2 {
   gap: var(--space-2);
-}
-
-.cluster-3 {
-  gap: var(--space-3);
 }
 
 .divider {
@@ -216,11 +213,23 @@
   font-size: var(--text-md);
 }
 
-.toast {
+/* Transient messages: shell/Toasts.jsx can show a mutation notice and a task
+   reminder at the same time, so the corner holds a stack, not one toast. */
+.toast-stack {
+  display: flex;
   position: fixed;
   right: var(--space-6);
   bottom: var(--space-6);
   z-index: 60;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
   max-width: 360px;
   padding: var(--space-3) var(--space-4);
   background: var(--color-surface);
@@ -228,6 +237,28 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
   font-size: var(--text-md);
+}
+
+/* Same danger surface as .notice-error, so a failed mutation reads as one. */
+.toast-error {
+  border-color: var(--color-danger-soft);
+  background: var(--color-danger-soft);
+}
+
+.toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.toast-title {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.toast-text {
+  color: var(--color-text-2);
 }
 
 /* ---------- Button ---------- */
@@ -655,27 +686,41 @@
 
 /* ---------- Dialog ---------- */
 
-.dialog-backdrop {
+/* `<dialog>` opened with showModal(): the top layer replaces the old
+   .dialog-backdrop wrapper, so the element itself carries the centering the
+   wrapper used to provide. */
+dialog.dialog {
   position: fixed;
-  inset: 0;
+  top: var(--space-10);
+  right: var(--space-4);
+  bottom: auto;
+  left: var(--space-4);
   z-index: 50;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: var(--space-10) var(--space-4);
-  overflow-y: auto;
-  background: var(--color-scrim);
-}
-
-.dialog {
-  display: flex;
+  display: none;
   flex-direction: column;
-  width: 100%;
+  width: auto;
+  height: fit-content;
   max-height: calc(100vh - var(--space-10) * 2);
+  margin: 0 auto;
+  padding: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
+  color: inherit;
   box-shadow: var(--shadow-lg);
+}
+
+dialog.dialog[open] {
+  display: flex;
+}
+
+dialog.dialog::backdrop {
+  background: var(--color-scrim, rgba(16, 16, 24, 0.32));
+}
+
+/* The dialog sits in the top layer, so the page behind it must not scroll. */
+body:has(dialog.dialog[open]) {
+  overflow: hidden;
 }
 
 .dialog-sm {
@@ -684,10 +729,6 @@
 
 .dialog-md {
   max-width: 560px;
-}
-
-.dialog-lg {
-  max-width: 720px;
 }
 
 .dialog.is-busy {
@@ -813,11 +854,6 @@
 
 .field-inline .field-control {
   flex: 1;
-}
-
-.field-hint {
-  color: var(--color-text-3);
-  font-size: var(--text-sm);
 }
 
 .field-error {

@@ -1,3 +1,71 @@
+## v2.1.0 — Simplification
+
+An internal rebuild of the client's data layer and a systematic dead-code
+sweep. No route, page, or user-facing behavior changed. `git diff main
+--shortstat`: 275 files changed, 5,345 insertions(+), 34,608 deletions(-).
+
+### New client store
+
+- Added `src/store/*`: one in-memory store, loaded once per session
+  (`startSession`) and mutated **optimistically** — every action applies its
+  change immediately, calls the api in the background, merges the server
+  response on success, and rolls back on failure. Mutations never flip a
+  loading flag and never refetch a list, so creating, editing, or completing a
+  task no longer flashes a loading skeleton.
+- Project workspaces are cached per project (`ensureWorkspace`): a workspace's
+  tasks/columns/members load once, are served from the store on every later
+  visit, and revalidate silently in the background after 60 seconds — no more
+  refetch-on-every-mount from the old `key={projectId}` remount.
+- Replaced `src/application/*` + `src/infrastructure/supabase/*` (39 files,
+  ~4,500 lines of service/repository factories and pass-through wrappers)
+  with a flat `src/api/*`: plain async functions, no store or React imports,
+  one module per concern (`auth`, `tasks`, `projects`, `collaboration`,
+  `attachments`, `settings`, `calendar`).
+- Consolidated the domain layer: 16 `src/domain/*Domain.js` files merged into
+  eight modules (`task`, `calendar`, `reminder`, `settings`, `collaboration`,
+  `attachment`, `auth`, `board`), removing due-date and calendar-month logic
+  that had been duplicated two or three times over.
+
+### Testing
+
+- Replaced the test suite that rendered against a custom React mock
+  (`src/test/hookRuntime.js`) and asserted on element props
+  (`src/test/elementTree.js`) with `@testing-library/react` tests that render
+  real components and interact through roles and text.
+- Added `src/test/fakeApi.js`, an in-memory implementation of the `api/`
+  contract (with `failNext()` for rollback tests and a recorded `calls` log),
+  and `src/test/renderApp.jsx` for seeding the store in page tests.
+
+### Removed dead code
+
+- Personal lists plumbing (`listService`, `listRepository`, `setTaskList`,
+  `task_list_placements`, `listId` on tasks and task defaults).
+- Decorative background themes (`TASKFLOW_BACKGROUNDS`, `settings.background`,
+  the `data-background` attribute).
+- Legacy task/story schema fallbacks (`missingStorySchema`, `legacy*Select`).
+  Project reads retain one narrow fallback for a remote missing migration 017,
+  keeping projects usable while project health remains read-only.
+- The `localStorage` settings migration and legacy column mapping in
+  `settingsFromRow` (`settings_data` has been canonical since migration 005).
+- The dev preview harness (`src/dev/`, ~1,700 lines) and its `/__preview`
+  route.
+- Unused assets: `src/assets/hero.png`, `react.svg`, `vite.svg`,
+  `public/icons.svg`.
+
+### Docs
+
+- Deleted stale planning documents: `TASKFLOW_A_TO_Z_AUDIT.md`,
+  `TASKFLOW_ATTACHMENTS_DEPLOYMENT.md`, `TASKFLOW_FINDINGS_TRIAGE.md`,
+  `TASKFLOW_INSPECTION.md`, `docs/ui-redesign/INTEGRATION_NOTES.md`, and
+  `docs/ui-redesign/packages/` (18 files). The still-relevant deployment
+  steps from the attachments doc (bucket name, migrations, privacy check) now
+  live in an "Attachments" section of the README next to Google Calendar.
+- Moved `docs/ui-redesign/DESIGN_SPEC.md` to `docs/DESIGN_SPEC.md`.
+- `README.md`: replaced the architecture description with a two-sentence
+  pointer to `docs/ARCHITECTURE.md`, fixed the routes table to the current
+  page files, removed the `/__preview` mention, and trimmed Validation to
+  `npm test`, `npm run test:db`, `npm run lint`, `npm run build`.
+
 ## v2.0.0 — UI redesign
 
 A full front-end rebuild against `docs/ui-redesign/DESIGN_SPEC.md`. The data,

@@ -1,15 +1,23 @@
-import { Avatar } from "../ui/Avatar";
-import { Badge } from "../ui/Badge";
+import { Avatar, Badge, Spinner, cx } from "../ui/primitives";
 import { IconButton } from "../ui/Button";
 import { Checkbox } from "../ui/Field";
 import { Icon, PriorityIcon } from "../ui/icons";
 import { Menu } from "../ui/Menu";
-import { cx } from "../ui/cx";
-import { isArchived, isTaskComplete } from "../domain/taskDomain";
-import { formatDateOnlyForDisplay } from "../domain/settingsDomain";
-import { safeDisplayName } from "../domain/identityDomain";
-import { dueDateTone, formatDueLabel } from "./taskPresentation";
-import { TaskCheckbox } from "./TaskCheckbox";
+import {
+  dueDateTone,
+  formatDueLabel,
+  isArchived,
+  isTaskComplete,
+} from "../domain/task";
+import { formatDateOnlyForDisplay } from "../domain/settings";
+import {
+  selectPending,
+  selectProject,
+  selectSettings,
+} from "../store/selectors";
+import { useStore } from "../store/store";
+import { toggleComplete } from "../store/tasks";
+import { openTask, openTaskInProject } from "../store/ui";
 
 const stopPointer = (event) => event.stopPropagation();
 
@@ -19,23 +27,18 @@ const stopKeys = (event) => {
   }
 };
 
-const assigneeLabel = (task, membersById) => {
-  const member = membersById?.get?.(task.assigneeId);
-  return task.assigneeName || (member ? safeDisplayName(member) : "TaskFlow user");
-};
-
-/** The single task row used by every list in the app. */
+/**
+ * The single task row used by every list in the app. It takes an enriched task
+ * (from the selectors) and reads everything else it needs — the busy state, the
+ * project color, the date format — from the store.
+ */
 export function TaskRow({
   task,
-  context = {},
   selected = false,
   onOpen,
-  onOpenProject,
-  onToggleComplete,
   onArchive,
   onRestore,
   onDeletePermanently,
-  busy = false,
   readOnly = false,
   showProject = true,
   showStory = true,
@@ -45,30 +48,43 @@ export function TaskRow({
   selectable = false,
   selectedForBulk = false,
   onToggleSelect,
-  formatSettings = {},
   className,
   ...rest
 }) {
-  const { projectsById, membersById } = context;
+  const settings = useStore(selectSettings);
+  const pending = useStore(selectPending);
+  const project = useStore(selectProject(task.projectId));
+
+  const busy = (pending[task.id] || 0) > 0;
   const completed = isTaskComplete(task);
   const archived = isArchived(task);
   const googleEvent = task.source === "google";
-  const project = task.projectId ? projectsById?.get?.(task.projectId) : null;
-  const projectName = project?.name || task.projectName || "";
+  const projectName = task.projectName || project?.name || "";
   const dueDate = typeof task.dueDate === "string" ? task.dueDate.trim() : "";
   const tone = dueDateTone(dueDate, todayKey, completed);
   const dueLabel = formatDueLabel(dueDate, todayKey);
   const attachmentCount = Number(task.attachmentCount) || 0;
   const attachmentLabel = `${attachmentCount} ${attachmentCount === 1 ? "attachment" : "attachments"}`;
+  const completeLabel = completed
+    ? `Mark ${task.title} incomplete`
+    : `Mark ${task.title} complete`;
 
-  const open = (element) => onOpen?.(task, element);
-  const openProject = (event) => {
-    event.stopPropagation();
-    onOpenProject?.(task);
+  const open = (element) => {
+    if (onOpen) onOpen(task, element);
+    else openTask(task.id);
   };
 
+  const openProject = (event) => {
+    event.stopPropagation();
+    openTaskInProject(task);
+  };
+
+  const projectBadge = projectName ? (
+    <span className="task-badge-dot" style={{ backgroundColor: project?.color || "var(--color-accent)" }} aria-hidden="true" />
+  ) : null;
+
   const menuItems = [
-    onOpen && { id: "open", label: "Open", icon: <Icon name="external-link" />, onSelect: () => open(null) },
+    { id: "open", label: "Open", icon: <Icon name="external-link" />, onSelect: () => open(null) },
     !readOnly && !archived && onArchive
       ? { id: "archive", label: "Archive", icon: <Icon name="archive" />, onSelect: () => onArchive(task) }
       : null,
@@ -128,14 +144,28 @@ export function TaskRow({
           Archived
         </Badge>
       ) : (
-        <TaskCheckbox
-          checked={completed}
-          busy={busy}
-          disabled={readOnly || !onToggleComplete}
-          size={dense ? "sm" : "md"}
-          label={completed ? `Mark ${task.title} incomplete` : `Mark ${task.title} complete`}
-          onChange={() => onToggleComplete?.(task)}
-        />
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={completed}
+          aria-label={completeLabel}
+          title={completeLabel}
+          className={cx(
+            "task-check",
+            dense && "task-check-sm",
+            completed && "is-complete",
+            busy && "is-busy"
+          )}
+          disabled={readOnly || busy}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (readOnly || busy) return;
+            void toggleComplete(task.id);
+          }}
+          onKeyDown={stopKeys}
+        >
+          {busy ? <Spinner size="sm" /> : <Icon name="check" size={12} className="task-check-mark" />}
+        </button>
       )}
 
       <div className="task-row-main">
@@ -145,7 +175,7 @@ export function TaskRow({
         {(showProject && projectName) || (showStory && task.storyName) ? (
           <span className="task-row-badges">
             {showProject && projectName ? (
-              onOpenProject && task.projectId ? (
+              task.projectId ? (
                 <button
                   type="button"
                   className="task-badge task-badge-project is-link"
@@ -154,20 +184,12 @@ export function TaskRow({
                   onClick={openProject}
                   onKeyDown={stopKeys}
                 >
-                  <span
-                    className="task-badge-dot"
-                    style={{ backgroundColor: project?.color || "var(--color-accent)" }}
-                    aria-hidden="true"
-                  />
+                  {projectBadge}
                   {projectName}
                 </button>
               ) : (
                 <span className="task-badge task-badge-project" title={projectName}>
-                  <span
-                    className="task-badge-dot"
-                    style={{ backgroundColor: project?.color || "var(--color-accent)" }}
-                    aria-hidden="true"
-                  />
+                  {projectBadge}
                   {projectName}
                 </span>
               )
@@ -194,7 +216,7 @@ export function TaskRow({
           <time
             className={cx("task-due", `is-${tone}`)}
             dateTime={dueDate}
-            title={formatDateOnlyForDisplay(dueDate, formatSettings.dateFormat)}
+            title={formatDateOnlyForDisplay(dueDate, settings.time.dateFormat)}
           >
             <Icon name="calendar" size={12} />
             {dueLabel}
@@ -204,25 +226,21 @@ export function TaskRow({
         <PriorityIcon priority={task.priority} size={14} />
 
         {showAssignee && task.assigneeId ? (
-          <Avatar size="sm" name={assigneeLabel(task, membersById)} />
+          <Avatar size="sm" name={task.assigneeName || "TaskFlow user"} />
         ) : null}
 
-        {menuItems.length > 0 ? (
-          <span className="task-row-menu" onClick={stopPointer} onKeyDown={stopKeys}>
-            <Menu
-              align="end"
-              items={menuItems}
-              trigger={(triggerProps) => (
-                <IconButton label={`More actions for ${task.title}`} size="sm" {...triggerProps}>
-                  <Icon name="more-horizontal" />
-                </IconButton>
-              )}
-            />
-          </span>
-        ) : null}
+        <span className="task-row-menu" onClick={stopPointer} onKeyDown={stopKeys}>
+          <Menu
+            align="end"
+            items={menuItems}
+            trigger={(triggerProps) => (
+              <IconButton label={`More actions for ${task.title}`} size="sm" {...triggerProps}>
+                <Icon name="more-horizontal" />
+              </IconButton>
+            )}
+          />
+        </span>
       </div>
     </div>
   );
 }
-
-export default TaskRow;

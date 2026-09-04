@@ -1,18 +1,19 @@
 import { useId, useState } from "react";
-import { Avatar } from "../ui/Avatar";
+import { Avatar, cx } from "../ui/primitives";
 import { IconButton } from "../ui/Button";
 import { Checkbox, Select } from "../ui/Field";
 import { Icon, PriorityIcon, StatusIcon } from "../ui/icons";
-import { cx } from "../ui/cx";
-import { safeDisplayName } from "../domain/identityDomain";
+import { safeDisplayName } from "../domain/collaboration";
+import { priorityLabel, statusLabel } from "../domain/task";
 import {
   calculateReminderPreset,
   defaultReminderAt,
   getReminderValidationError,
   toDateTimeLocalValue,
-} from "../domain/reminderDomain";
-import { requestNotificationPermission } from "../services/reminderService";
-import { priorityLabel, statusLabel } from "./taskPresentation";
+} from "../domain/reminder";
+import { requestNotificationPermission } from "../store/reminders";
+import { selectSettings } from "../store/selectors";
+import { useStore } from "../store/store";
 
 const REMINDER_PRESETS = [
   ["at-time", "At time of task"],
@@ -23,8 +24,15 @@ const REMINDER_PRESETS = [
   ["1-day", "1 day before"],
 ];
 
-const STATUS_OPTIONS = ["todo", "in-progress", "completed"];
-const PRIORITY_OPTIONS = ["low", "medium", "high"];
+// `[value, label]` pairs, the shape every property `<Select>` takes.
+const STATUS_OPTIONS = ["todo", "in-progress", "completed"].map((status) => [
+  status,
+  statusLabel(status),
+]);
+const PRIORITY_OPTIONS = ["low", "medium", "high"].map((priority) => [
+  priority,
+  priorityLabel(priority),
+]);
 
 /**
  * The property rows shared by the detail panel (`mode="panel"`, a label grid)
@@ -45,8 +53,6 @@ export function TaskProperties({
   projectStories = [],
   showProject,
   showReminder = true,
-  browserNotificationsEnabled = true,
-  defaultReminderMinutes = 15,
   errors = {},
   className,
   ...rest
@@ -54,14 +60,9 @@ export function TaskProperties({
   const fieldId = useId();
   const [reminderPreset, setReminderPreset] = useState("custom");
   const [presetError, setPresetError] = useState("");
+  const { enableBrowserNotifications, defaultTime } = useStore(selectSettings).reminder;
 
-  const emit = (nameOrPatch, value) => {
-    if (nameOrPatch && typeof nameOrPatch === "object") {
-      onChange?.(nameOrPatch);
-      return;
-    }
-    onChange?.(nameOrPatch, value);
-  };
+  const emit = (nameOrPatch, value) => onChange?.(nameOrPatch, value);
 
   const projectVisible = showProject ?? isPersonal;
   const assigneeVisible = !isPersonal && projectMembers.length > 0;
@@ -72,7 +73,8 @@ export function TaskProperties({
   const selectedProjectMissing =
     selectedProjectId && !projects.some((project) => project.id === selectedProjectId);
   const selectedMember = projectMembers.find((member) => member.userId === values.assigneeId);
-  const reminderError = errors.reminderAt || (reminderVisible ? getReminderValidationError(values) : "");
+  const reminderError =
+    errors.reminderAt || (reminderVisible ? getReminderValidationError(values) : "");
 
   const handleReminderToggle = (enabled) => {
     setPresetError("");
@@ -83,12 +85,12 @@ export function TaskProperties({
       return;
     }
 
-    if (browserNotificationsEnabled) void requestNotificationPermission();
+    if (enableBrowserNotifications) void requestNotificationPermission();
     emit({
       reminder: true,
       reminderAt:
         values.reminderAt ||
-        toDateTimeLocalValue(defaultReminderAt(values, new Date(), defaultReminderMinutes)),
+        toDateTimeLocalValue(defaultReminderAt(values, new Date(), defaultTime)),
     });
   };
 
@@ -103,94 +105,85 @@ export function TaskProperties({
       return;
     }
 
-    if (browserNotificationsEnabled && !values.reminder) void requestNotificationPermission();
+    if (enableBrowserNotifications && !values.reminder) void requestNotificationPermission();
     emit({ reminder: true, reminderAt: toDateTimeLocalValue(reminderAt) });
   };
 
-  const rows = [];
+  /** One property `<Select>`. `options` are `[value, label]` pairs. */
+  const select = (idSuffix, label, name, value, options) => (
+    <Select
+      id={`${fieldId}-${idSuffix}`}
+      aria-label={label}
+      value={value}
+      disabled={disabled}
+      onChange={(event) => emit(name, event.target.value)}
+    >
+      {options.map(([optionValue, optionLabel]) => (
+        <option key={optionValue} value={optionValue}>
+          {optionLabel}
+        </option>
+      ))}
+    </Select>
+  );
 
-  rows.push({
-    id: "status",
-    label: "Status",
-    labelIcon: <Icon name="circle-dot" />,
-    icon: <StatusIcon status={values.status || "todo"} size={14} />,
-    slotIcon: <StatusIcon status={values.status || "todo"} size={14} />,
-    control: (
-      <Select
-        id={`${fieldId}-status`}
-        aria-label="Status"
-        value={values.status || "todo"}
-        disabled={disabled}
-        onChange={(event) => emit("status", event.target.value)}
-      >
-        {STATUS_OPTIONS.map((status) => (
-          <option key={status} value={status}>
-            {statusLabel(status)}
-          </option>
-        ))}
-      </Select>
-    ),
-  });
-
-  rows.push({
-    id: "priority",
-    label: "Priority",
-    labelIcon: <Icon name="flag" />,
-    icon: <PriorityIcon priority={values.priority || "medium"} size={14} />,
-    slotIcon: <PriorityIcon priority={values.priority || "medium"} size={14} />,
-    control: (
-      <Select
-        id={`${fieldId}-priority`}
-        aria-label="Priority"
-        value={values.priority || "medium"}
-        disabled={disabled}
-        onChange={(event) => emit("priority", event.target.value)}
-      >
-        {PRIORITY_OPTIONS.map((priority) => (
-          <option key={priority} value={priority}>
-            {priorityLabel(priority)}
-          </option>
-        ))}
-      </Select>
-    ),
-  });
-
-  rows.push({
-    id: "dueDate",
-    label: "Due date",
-    labelIcon: <Icon name="calendar" />,
-    icon: <Icon name="calendar" size={14} />,
-    error: errors.dueDate,
-    control: (
-      <span className="prop-date">
-        <input
-          id={`${fieldId}-due-date`}
-          className="input"
-          type="date"
-          aria-label="Due date"
-          value={values.dueDate || ""}
-          disabled={disabled}
-          onChange={(event) => emit("dueDate", event.target.value)}
-        />
-        {values.dueDate ? (
-          <IconButton
-            label="Clear due date"
-            size="sm"
+  // `labelIcon` names the icon of the row's label; a row without its own `icon`
+  // reuses it at chip size. `slot` puts that icon inside the select itself.
+  const rows = [
+    {
+      id: "status",
+      label: "Status",
+      labelIcon: "circle-dot",
+      icon: <StatusIcon status={values.status || "todo"} size={14} />,
+      slot: true,
+      control: select("status", "Status", "status", values.status || "todo", STATUS_OPTIONS),
+    },
+    {
+      id: "priority",
+      label: "Priority",
+      labelIcon: "flag",
+      icon: <PriorityIcon priority={values.priority || "medium"} size={14} />,
+      slot: true,
+      control: select(
+        "priority",
+        "Priority",
+        "priority",
+        values.priority || "medium",
+        PRIORITY_OPTIONS
+      ),
+    },
+    {
+      id: "dueDate",
+      label: "Due date",
+      labelIcon: "calendar",
+      error: errors.dueDate,
+      control: (
+        <span className="prop-date">
+          <input
+            id={`${fieldId}-due-date`}
+            className="input"
+            type="date"
+            aria-label="Due date"
+            value={values.dueDate || ""}
             disabled={disabled}
-            onClick={() => emit("dueDate", "")}
-          >
-            <Icon name="x" />
-          </IconButton>
-        ) : null}
-      </span>
-    ),
-  });
-
-  if (assigneeVisible) {
-    rows.push({
+            onChange={(event) => emit("dueDate", event.target.value)}
+          />
+          {values.dueDate ? (
+            <IconButton
+              label="Clear due date"
+              size="sm"
+              disabled={disabled}
+              onClick={() => emit("dueDate", "")}
+            >
+              <Icon name="x" />
+            </IconButton>
+          ) : null}
+        </span>
+      ),
+    },
+    assigneeVisible && {
       id: "assigneeId",
       label: "Assignee",
-      labelIcon: <Icon name="user" />,
+      labelIcon: "user",
       icon: values.assigneeId ? (
         <Avatar
           size="sm"
@@ -199,89 +192,42 @@ export function TaskProperties({
             (selectedMember ? safeDisplayName(selectedMember) : "TaskFlow user")
           }
         />
-      ) : (
-        <Icon name="user" size={14} />
-      ),
+      ) : null,
       error: errors.assigneeId,
-      control: (
-        <Select
-          id={`${fieldId}-assignee`}
-          aria-label="Assignee"
-          value={values.assigneeId || ""}
-          disabled={disabled}
-          onChange={(event) => emit("assigneeId", event.target.value)}
-        >
-          <option value="">Unassigned</option>
-          {projectMembers.map((member) => (
-            <option key={member.userId} value={member.userId}>
-              {`${safeDisplayName(member)} · ${member.role}`}
-            </option>
-          ))}
-        </Select>
-      ),
-    });
-  }
-
-  if (storyVisible) {
-    rows.push({
+      control: select("assignee", "Assignee", "assigneeId", values.assigneeId || "", [
+        ["", "Unassigned"],
+        ...projectMembers.map((member) => [
+          member.userId,
+          `${safeDisplayName(member)} · ${member.role}`,
+        ]),
+      ]),
+    },
+    storyVisible && {
       id: "storyId",
       label: "Story",
-      labelIcon: <Icon name="book" />,
-      icon: <Icon name="book" size={14} />,
-      control: (
-        <Select
-          id={`${fieldId}-story`}
-          aria-label="Story"
-          value={values.storyId || ""}
-          disabled={disabled}
-          onChange={(event) => emit("storyId", event.target.value)}
-        >
-          <option value="">No story</option>
-          {projectStories.map((story) => (
-            <option key={story.id} value={story.id}>
-              {story.title}
-            </option>
-          ))}
-        </Select>
-      ),
-    });
-  }
-
-  if (projectVisible) {
-    rows.push({
+      labelIcon: "book",
+      control: select("story", "Story", "storyId", values.storyId || "", [
+        ["", "No story"],
+        ...projectStories.map((story) => [story.id, story.title]),
+      ]),
+    },
+    projectVisible && {
       id: "projectId",
       label: "Project",
-      labelIcon: <Icon name="folder" />,
-      icon: <Icon name="folder" size={14} />,
+      labelIcon: "folder",
       error: errors.projectId,
-      control: (
-        <Select
-          id={`${fieldId}-project`}
-          aria-label="Project"
-          value={selectedProjectId}
-          disabled={disabled}
-          onChange={(event) => emit("projectId", event.target.value)}
-        >
-          <option value="">No project</option>
-          {selectedProjectMissing ? (
-            <option value={selectedProjectId}>Current project (unavailable)</option>
-          ) : null}
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </Select>
-      ),
-    });
-  }
-
-  if (reminderVisible) {
-    rows.push({
+      control: select("project", "Project", "projectId", selectedProjectId, [
+        ["", "No project"],
+        ...(selectedProjectMissing
+          ? [[selectedProjectId, "Current project (unavailable)"]]
+          : []),
+        ...projects.map((project) => [project.id, project.name]),
+      ]),
+    },
+    reminderVisible && {
       id: "reminder",
       label: "Reminder",
-      labelIcon: <Icon name="bell" />,
-      icon: <Icon name="bell" size={14} />,
+      labelIcon: "bell",
       error: presetError || reminderError,
       control: (
         <div className="prop-reminder">
@@ -317,30 +263,25 @@ export function TaskProperties({
                 onChange={(event) => {
                   setReminderPreset("custom");
                   setPresetError("");
-                  emit({ reminder: true, reminderAt: event.target.value });
+                  const reminderAt = event.target.value;
+                  emit({ reminder: Boolean(reminderAt), reminderAt });
                 }}
               />
             </>
           ) : null}
         </div>
       ),
-    });
-  }
+    },
+  ].filter(Boolean);
 
   if (mode === "composer") {
     return (
       <div className={cx("props", "props-chips", className)} {...rest}>
         {rows.map((row) => (
           <div className={cx("props-chip", `props-chip-${row.id}`)} key={row.id}>
-            <span className="props-chip-icon" aria-hidden="true">
-              {row.icon}
-            </span>
+            <span className="props-chip-icon" aria-hidden="true">{row.icon || <Icon name={row.labelIcon} size={14} />}</span>
             {row.control}
-            {row.error ? (
-              <p className="prop-error" role="alert">
-                {row.error}
-              </p>
-            ) : null}
+            {row.error ? <p className="prop-error" role="alert">{row.error}</p> : null}
           </div>
         ))}
       </div>
@@ -352,32 +293,22 @@ export function TaskProperties({
       {rows.map((row) => (
         <div className={cx("prop-row", `prop-row-${row.id}`)} key={row.id}>
           <span className="prop-label">
-            <span className="prop-label-icon" aria-hidden="true">
-              {row.labelIcon}
-            </span>
+            <span className="prop-label-icon" aria-hidden="true"><Icon name={row.labelIcon} /></span>
             <span className="prop-label-text">{row.label}</span>
           </span>
           <div className="prop-control">
-            {row.slotIcon ? (
+            {row.slot ? (
               <span className="prop-select">
-                <span className="prop-select-icon" aria-hidden="true">
-                  {row.slotIcon}
-                </span>
+                <span className="prop-select-icon" aria-hidden="true">{row.icon}</span>
                 {row.control}
               </span>
             ) : (
               row.control
             )}
-            {row.error ? (
-              <p className="prop-error" role="alert">
-                {row.error}
-              </p>
-            ) : null}
+            {row.error ? <p className="prop-error" role="alert">{row.error}</p> : null}
           </div>
         </div>
       ))}
     </div>
   );
 }
-
-export default TaskProperties;

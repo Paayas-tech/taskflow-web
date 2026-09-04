@@ -1,9 +1,9 @@
 import { Button, Icon } from "../ui";
 
-export const CONFIGURATION_ERROR_MESSAGE =
+const CONFIGURATION_ERROR_MESSAGE =
   "TaskFlow setup is incomplete. Contact your administrator.";
 
-export default function ConfigurationErrorScreen({ onRetry }) {
+export function ConfigurationErrorScreen({ onRetry }) {
   return (
     <main className="auth-page">
       <section

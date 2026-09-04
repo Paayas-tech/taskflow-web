@@ -1,4 +1,4 @@
-import { cx } from "./cx";
+import { cx } from "./primitives";
 
 export function Field({ label, hint, error, htmlFor, inline = false, className, children, ...rest }) {
   return (
@@ -62,5 +62,3 @@ export function Checkbox({ label, className, ref, ...rest }) {
     </label>
   );
 }
-
-export default Field;

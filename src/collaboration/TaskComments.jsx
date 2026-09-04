@@ -1,15 +1,24 @@
+/**
+ * The comment thread of one task. Comments are not part of the client store —
+ * they are read through the api the store was configured with and reloaded
+ * silently whenever the realtime channel reports a change.
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
-import CommentRow from "./CommentRow";
+import { CommentRow } from "./rows";
 import { Button, EmptyState, Icon, InlineNotice, Menu, Spinner, Textarea } from "../ui";
-import { profileMap, safeDisplayName } from "../domain/identityDomain";
-import { insertMention, reconcileMentions, serializeMentionContent } from "../domain/mentionDomain";
 import {
-  createTaskComment,
-  deleteTaskComment,
-  getTaskComments,
-  subscribeToTaskComments,
-  updateTaskComment,
-} from "../application/projectService";
+  insertMention,
+  profileMap,
+  reconcileMentions,
+  safeDisplayName,
+  serializeMentionContent,
+} from "../domain/collaboration";
+import { selectUser } from "../store/selectors";
+import { api, useStore } from "../store/store";
+
+const COMMENT_LIMIT = 4000;
+const LIVE_PAUSED = "Live updates are paused. Refresh to check for new comments.";
+const DEAD_CHANNEL = ["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"];
 
 const autoGrow = (element) => {
   if (!element?.style) return;
@@ -17,7 +26,17 @@ const autoGrow = (element) => {
   element.style.height = `${element.scrollHeight}px`;
 };
 
-export default function TaskComments({ userId, taskId, members = [], compact = false }) {
+const commentLengthError = (content) => {
+  const normalized = String(content || "").trim();
+  if (!normalized) return "Write a comment before posting.";
+  if (normalized.length > COMMENT_LIMIT) {
+    return "Comments must be 4,000 characters or fewer.";
+  }
+  return "";
+};
+
+export function TaskComments({ taskId, members = [], compact = false }) {
+  const user = useStore(selectUser);
   const [comments, setComments] = useState([]);
   const [content, setContent] = useState("");
   const [mentions, setMentions] = useState([]);
@@ -30,26 +49,28 @@ export default function TaskComments({ userId, taskId, members = [], compact = f
   const loadComments = useCallback(async () => {
     setError("");
     try {
-      setComments(await getTaskComments(userId, taskId));
+      setComments(await api().listComments(taskId));
     } catch {
       setError("We couldn't load this discussion. Try again.");
     } finally {
       setLoading(false);
     }
-  }, [taskId, userId]);
+  }, [taskId]);
 
   useEffect(() => {
     setLoading(true);
     void loadComments();
     try {
-      return subscribeToTaskComments(taskId, () => void loadComments(), (status) => {
-        if (status === "SUBSCRIBED") setLiveNotice("");
-        else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
-          setLiveNotice("Live updates are paused. Refresh to check for new comments.");
+      return api().subscribeToComments(
+        taskId,
+        () => void loadComments(),
+        (status) => {
+          if (status === "SUBSCRIBED") setLiveNotice("");
+          else if (DEAD_CHANNEL.includes(status)) setLiveNotice(LIVE_PAUSED);
         }
-      });
+      );
     } catch {
-      setLiveNotice("Live updates are paused. Refresh to check for new comments.");
+      setLiveNotice(LIVE_PAUSED);
       return undefined;
     }
   }, [loadComments, taskId]);
@@ -57,11 +78,18 @@ export default function TaskComments({ userId, taskId, members = [], compact = f
   const postComment = async (event) => {
     event.preventDefault();
     if (postingRef.current) return;
+
+    const invalid = commentLengthError(content);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+
     postingRef.current = true;
     setPosting(true);
     setError("");
     try {
-      await createTaskComment(userId, taskId, serializeMentionContent(content, mentions));
+      await api().createComment(taskId, serializeMentionContent(content, mentions));
       setContent("");
       setMentions([]);
       await loadComments();
@@ -73,24 +101,30 @@ export default function TaskComments({ userId, taskId, members = [], compact = f
     }
   };
 
-  const updateComment = async (commentId, nextContent) => {
-    await updateTaskComment(userId, commentId, nextContent);
+  const editComment = async (commentId, nextContent) => {
+    const invalid = commentLengthError(nextContent);
+    if (invalid) throw new Error(invalid);
+    await api().updateComment(commentId, nextContent);
     await loadComments();
   };
-  const deleteComment = async (commentId) => {
-    await deleteTaskComment(userId, commentId);
+
+  const removeComment = async (commentId) => {
+    await api().deleteComment(commentId);
     await loadComments();
   };
-  const profilesById = profileMap([...members, ...comments]);
+
   const changeContent = (nextContent) => {
     setMentions((current) => reconcileMentions(content, nextContent, current));
     setContent(nextContent);
   };
+
   const addMention = (member) => {
     const next = insertMention(content, mentions, member);
     setContent(next.value);
     setMentions(next.mentions);
   };
+
+  const profilesById = profileMap([...members, ...comments]);
 
   return (
     <section className="comment-thread" aria-label="Comments">
@@ -100,6 +134,7 @@ export default function TaskComments({ userId, taskId, members = [], compact = f
           {liveNotice}
         </p>
       ) : null}
+
       {loading ? (
         <p className="comment-thread-state" role="status">
           <Spinner size="sm" />
@@ -119,15 +154,16 @@ export default function TaskComments({ userId, taskId, members = [], compact = f
             <CommentRow
               key={comment.id}
               comment={comment}
-              currentUserId={userId}
+              currentUserId={user?.id || ""}
               profilesById={profilesById}
               mentionCandidates={members}
-              onUpdate={updateComment}
-              onDelete={deleteComment}
+              onUpdate={editComment}
+              onDelete={removeComment}
             />
           ))}
         </div>
       )}
+
       <form onSubmit={postComment} className="comment-composer">
         <Textarea
           id={`comment-${taskId}`}
@@ -140,10 +176,11 @@ export default function TaskComments({ userId, taskId, members = [], compact = f
           placeholder="Write a comment"
           aria-label="Write a comment"
           rows={1}
-          maxLength={4000}
+          maxLength={COMMENT_LIMIT}
           disabled={posting}
         />
         {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
+
         <div className="comment-composer-actions">
           {members.length > 0 ? (
             <Menu
@@ -167,8 +204,8 @@ export default function TaskComments({ userId, taskId, members = [], compact = f
               }))}
             />
           ) : null}
-          {String(content || "").length > 3600 ? (
-            <span className="comment-counter">{String(content || "").length}/4000</span>
+          {content.length > 3600 ? (
+            <span className="comment-counter">{`${content.length}/${COMMENT_LIMIT}`}</span>
           ) : null}
           <span className="toolbar-spacer" />
           <Button

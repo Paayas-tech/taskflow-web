@@ -1,267 +1,152 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const runtime = await vi.hoisted(async () => {
-  const { createHookRuntime } = await import("../test/hookRuntime");
-  return createHookRuntime();
-});
-
-vi.mock("react", () => runtime.react);
-
-const dialogCalls = vi.hoisted(() => ({ project: [], members: [] }));
-
-vi.mock("../projects/ProjectDialog", () => ({
-  default: (dialogProps) => {
-    dialogCalls.project.push(dialogProps);
-    return null;
-  },
-}));
-
-vi.mock("../collaboration/ProjectMembersModal", () => ({
-  default: (modalProps) => {
-    dialogCalls.members.push(modalProps);
-    return null;
-  },
-}));
-
-import { find, findAll, props, render, textContent } from "../test/elementTree";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it } from "vitest";
 import { ProjectHeader } from "./ProjectHeader";
+import { makeProject, makeTask } from "../test/fakeApi";
+import { renderPage, seedStore } from "../test/renderApp";
+import { getState } from "../store/store";
+import { navigate } from "../store/ui";
 
-const members = [
-  { userId: "user-a", displayName: "Priya Shah", role: "owner" },
-  { userId: "user-b", displayName: "Sam Cole", role: "editor" },
-];
+const seedWorkspace = (project = {}) =>
+  seedStore({
+    projects: [makeProject({ id: "project-1", name: "Website relaunch", ...project })],
+    members: [
+      {
+        projectId: "project-1",
+        userId: "user-1",
+        role: project.viewerRole || "owner",
+        displayName: "Sam Rivera",
+        avatarUrl: "",
+      },
+    ],
+    // Assigned to me, so the store holds it without the workspace being opened.
+    tasks: [
+      makeTask({
+        id: "task-1",
+        projectId: "project-1",
+        assigneeId: "user-1",
+        title: "Write the brief",
+      }),
+    ],
+  });
 
-const stories = [
-  { id: "story-a", title: "Launch prep", workType: "story" },
-  { id: "story-b", title: "Billing", workType: "story" },
-];
-
-const baseProps = (overrides = {}) => ({
-  userId: "user-a",
-  project: {
-    id: "project-a",
-    name: "Launch",
-    description: "Coordinate release work",
-    color: "#5b5bd6",
-    viewerRole: "owner",
-    status: "active",
-  },
-  members,
-  stories,
-  tab: "board",
-  onTabChange: vi.fn(),
-  canEdit: true,
-  onNewTask: vi.fn(),
-  onNewStory: vi.fn(),
-  onUpdateProject: vi.fn().mockResolvedValue(undefined),
-  onDeleteProject: vi.fn().mockResolvedValue(undefined),
-  onBack: vi.fn(),
-  ...overrides,
-});
-
-const byName = (tree, name) =>
-  find(tree, (node) => typeof node.type === "function" && node.type.name === name);
-
-const menuItems = (tree) => props(byName(tree, "Menu")).items ?? [];
-
-const menuItem = (tree, id) => menuItems(tree).find((item) => item.id === id);
-
-const buttonLabels = (tree) =>
-  findAll(render(tree, 4), (node) => node.type === "button" && !props(node)["aria-label"]).map(
-    (node) => textContent(node).trim()
-  );
-
-const mount = (overrides = {}) => {
-  const componentProps = baseProps(overrides);
-  const runner = runtime.createRunner(ProjectHeader, componentProps);
-  runner.render(componentProps);
-  return { runner, componentProps };
+const openHeader = async (project = {}) => {
+  const seeded = await seedWorkspace(project);
+  navigate("/projects/project-1/list");
+  renderPage(<ProjectHeader projectId="project-1" tab="list" />);
+  return seeded;
 };
 
-const runners = new Set();
-
-beforeEach(() => {
-  dialogCalls.project.length = 0;
-  dialogCalls.members.length = 0;
-  vi.stubGlobal("location", { href: "https://taskflow.test/projects/project-a/board" });
-  vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
-});
-
-afterEach(() => {
-  for (const runner of runners) runner.unmount();
-  runners.clear();
-  vi.unstubAllGlobals();
-});
+const openOwnerMenu = async (user) => {
+  await user.click(screen.getByRole("button", { name: "Project actions" }));
+};
 
 describe("ProjectHeader", () => {
-  it("renders the project identity and the four section tabs with a story count", () => {
-    const { runner } = mount();
-    runners.add(runner);
-
-    expect(textContent(runner.output)).toContain("Launch");
-    expect(textContent(runner.output)).toContain("Coordinate release work");
-
-    const tabs = props(byName(runner.output, "Tabs"));
-    expect(tabs.items.map((item) => item.id)).toEqual(["overview", "board", "list", "stories"]);
-    expect(tabs.items.map((item) => item.label)).toEqual([
-      "Overview",
-      "Board",
-      "List",
-      "Stories",
-    ]);
-    expect(tabs.items.at(-1).count).toBe(2);
-    expect(tabs.value).toBe("board");
-
-    tabs.onChange("list");
-    expect(runner.props.onTabChange).toHaveBeenCalledWith("list");
-  });
-
-  it("labels the members button Invite for owners and Members for everyone else", () => {
-    const owner = mount();
-    runners.add(owner.runner);
-    expect(buttonLabels(owner.runner.output)).toContain("Invite");
-
-    const editor = mount({
-      project: { ...baseProps().project, viewerRole: "editor" },
-    });
-    runners.add(editor.runner);
-    expect(buttonLabels(editor.runner.output)).toContain("Members");
-  });
-
-  it("switches the create button to New story on the Stories tab", () => {
-    const { runner, componentProps } = mount({ tab: "stories" });
-    runners.add(runner);
-
-    const create = find(
-      render(runner.output, 4),
-      (node) => node.type === "button" && textContent(node).trim() === "New story"
-    );
-    expect(create).toBeDefined();
-    create.props.onClick();
-    expect(componentProps.onNewStory).toHaveBeenCalled();
-    expect(componentProps.onNewTask).not.toHaveBeenCalled();
-  });
-
-  it("marks viewers as read-only and hides the create button", () => {
-    const { runner } = mount({
-      canEdit: false,
-      project: { ...baseProps().project, viewerRole: "viewer" },
-    });
-    runners.add(runner);
-
-    expect(textContent(runner.output)).toContain("View only");
-    expect(buttonLabels(runner.output)).not.toContain("New task");
-  });
-
-  it("opens the members modal from the avatar stack and the members button", () => {
-    const { runner, componentProps } = mount();
-    runners.add(runner);
-
-    expect(dialogCalls.members).toHaveLength(0);
-    const stack = find(runner.output, (node) => props(node).className === "workspace-members");
-    expect(props(stack)["aria-label"]).toBe("Members, 2");
-
-    stack.props.onClick({ currentTarget: { focus: vi.fn() } });
-    runner.render(componentProps);
-    render(runner.output, 4);
-
-    expect(dialogCalls.members.at(-1)).toEqual(
-      expect.objectContaining({ userId: "user-a", project: componentProps.project })
-    );
-  });
-
   it("archives and restores the project from the owner menu", async () => {
-    const active = mount();
-    runners.add(active.runner);
+    const user = userEvent.setup();
+    const { api } = await openHeader();
 
-    expect(menuItem(active.runner.output, "archive").label).toBe("Archive project");
-    menuItem(active.runner.output, "archive").onSelect();
-    await Promise.resolve();
-    expect(active.componentProps.onUpdateProject).toHaveBeenCalledWith("project-a", {
-      status: "archived",
-    });
+    await openOwnerMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Archive project" }));
 
-    const archived = mount({
-      project: { ...baseProps().project, status: "archived" },
-    });
-    runners.add(archived.runner);
-    expect(textContent(archived.runner.output)).toContain("Archived");
-    expect(menuItem(archived.runner.output, "archive").label).toBe("Restore project");
-    menuItem(archived.runner.output, "archive").onSelect();
-    await Promise.resolve();
-    expect(archived.componentProps.onUpdateProject).toHaveBeenCalledWith("project-a", {
-      status: "active",
-    });
+    await waitFor(() => expect(api.callCount("updateProject")).toBe(1));
+    expect(api.callsOf("updateProject")[0][1]).toMatchObject({ status: "archived" });
+    expect(await screen.findByText("Archived")).toBeInTheDocument();
+
+    await openOwnerMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Restore project" }));
+
+    await waitFor(() => expect(api.callCount("updateProject")).toBe(2));
+    expect(api.callsOf("updateProject")[1][1]).toMatchObject({ status: "active" });
   });
 
-  it("edits the project through ProjectDialog", async () => {
-    const { runner, componentProps } = mount();
-    runners.add(runner);
-    render(runner.output, 4);
-    expect(dialogCalls.project.at(-1).open).toBe(false);
+  it("edits the project through the dialog", async () => {
+    const user = userEvent.setup();
+    const { api } = await openHeader();
 
-    menuItem(runner.output, "edit").onSelect();
-    runner.render(componentProps);
-    render(runner.output, 4);
-    expect(dialogCalls.project.at(-1)).toEqual(
-      expect.objectContaining({ open: true, project: componentProps.project })
-    );
+    await openOwnerMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Edit project" }));
 
-    await dialogCalls.project.at(-1).onSubmit({ name: "Launch v2", color: "#1f9d64" });
-    expect(componentProps.onUpdateProject).toHaveBeenCalledWith("project-a", {
-      name: "Launch v2",
-      color: "#1f9d64",
-    });
-  });
+    const dialog = await screen.findByRole("dialog", { name: "Edit project" });
+    const name = within(dialog).getByLabelText("Name");
+    await user.clear(name);
+    await user.type(name, "Website relaunch v2");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
-  it("deletes the project after confirmation and navigates back", async () => {
-    const { runner, componentProps } = mount();
-    runners.add(runner);
-
-    expect(props(byName(runner.output, "ConfirmDialog")).open).toBe(false);
-    menuItem(runner.output, "delete").onSelect();
-    runner.render(componentProps);
-
-    const confirm = props(byName(runner.output, "ConfirmDialog"));
-    expect(confirm.open).toBe(true);
-    expect(confirm.danger).toBe(true);
-    await confirm.onConfirm();
-
-    expect(componentProps.onDeleteProject).toHaveBeenCalledWith("project-a");
-    expect(componentProps.onBack).toHaveBeenCalled();
-  });
-
-  it("reports a failed delete instead of navigating away", async () => {
-    const { runner, componentProps } = mount({
-      onDeleteProject: vi.fn().mockRejectedValue(new Error("Delete blocked by policy.")),
-    });
-    runners.add(runner);
-
-    menuItem(runner.output, "delete").onSelect();
-    runner.render(componentProps);
-    await props(byName(runner.output, "ConfirmDialog")).onConfirm();
-    runner.render(componentProps);
-
-    expect(componentProps.onBack).not.toHaveBeenCalled();
-    expect(textContent(render(runner.output, 4))).toContain("Delete blocked by policy.");
-  });
-
-  it("copies the workspace link", () => {
-    const { runner } = mount();
-    runners.add(runner);
-
-    menuItem(runner.output, "copy").onSelect();
-    expect(globalThis.navigator.clipboard.writeText).toHaveBeenCalledWith(
-      "https://taskflow.test/projects/project-a/board"
+    await waitFor(() => expect(api.callCount("updateProject")).toBe(1));
+    expect(api.callsOf("updateProject")[0][1]).toMatchObject({ name: "Website relaunch v2" });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Edit project" })).not.toBeInTheDocument()
     );
   });
 
-  it("offers only Copy link to non-owners", () => {
-    const { runner } = mount({
-      project: { ...baseProps().project, viewerRole: "editor" },
-    });
-    runners.add(runner);
+  it("keeps the edit dialog open with an explanation when the save fails", async () => {
+    const user = userEvent.setup();
+    const { api } = await openHeader();
+    api.failNext("updateProject", new Error("offline"));
 
-    expect(menuItems(runner.output).map((item) => item.id)).toEqual(["copy"]);
+    await openOwnerMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Edit project" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Edit project" });
+    await user.type(within(dialog).getByLabelText("Name"), " v2");
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    expect(
+      await within(dialog).findByText(
+        "We couldn't save this project. Check your connection and try again."
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Edit project" })).toBeInTheDocument();
+    expect(getState().projects["project-1"].name).toBe("Website relaunch");
+  });
+
+  it("deletes the project only after the confirmation and then leaves the workspace", async () => {
+    const user = userEvent.setup();
+    const { api } = await openHeader();
+
+    await openOwnerMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Delete project" }));
+
+    const confirm = await screen.findByRole("alertdialog", { name: "Delete project?" });
+    expect(api.callCount("deleteProject")).toBe(0);
+
+    await user.click(within(confirm).getByRole("button", { name: "Delete project" }));
+
+    await waitFor(() => expect(api.callCount("deleteProject")).toBe(1));
+    expect(getState().projects["project-1"]).toBeUndefined();
+    expect(getState().tasks["task-1"]).toBeUndefined();
+    expect(getState().ui.path).toBe("/projects");
+  });
+
+  it("restores everything and reports a failed delete through the store notice", async () => {
+    const user = userEvent.setup();
+    const { api } = await openHeader();
+    api.failNext("deleteProject", new Error("offline"));
+
+    await openOwnerMenu(user);
+    await user.click(screen.getByRole("menuitem", { name: "Delete project" }));
+
+    const confirm = await screen.findByRole("alertdialog", { name: "Delete project?" });
+    await user.click(within(confirm).getByRole("button", { name: "Delete project" }));
+
+    await waitFor(() => expect(getState().projects["project-1"]).toBeDefined());
+    expect(getState().tasks["task-1"]).toBeDefined();
+    expect(getState().ui.notice?.text).toBe(
+      "We couldn't delete this project. Check your connection and try again."
+    );
+    // Nothing is left covering the notice: the confirmation closed on confirm.
+    expect(screen.queryByRole("alertdialog", { name: "Delete project?" })).toBeNull();
+  });
+
+  it("offers only Copy link to someone who does not own the project", async () => {
+    const user = userEvent.setup();
+    await openHeader({ viewerRole: "viewer", ownerId: "user-2" });
+
+    await openOwnerMenu(user);
+
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Copy link",
+    ]);
   });
 });

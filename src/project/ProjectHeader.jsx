@@ -1,21 +1,36 @@
+/**
+ * Identity, members, owner actions and the section tabs of one project
+ * workspace. Everything it shows comes from the store; it owns only the
+ * surfaces it opens: the members modal, the edit dialog and the delete
+ * confirmation.
+ */
 import { useRef, useState } from "react";
-import ProjectMembersModal from "../collaboration/ProjectMembersModal";
-import ProjectDialog from "../projects/ProjectDialog";
-import { AvatarStack } from "../ui/Avatar";
-import { Badge } from "../ui/Badge";
+import { ProjectDialog } from "./ProjectDialog";
+import { ProjectMembersModal } from "../collaboration/ProjectMembersModal";
+import { AvatarStack, Badge, Tabs } from "../ui/primitives";
 import { Button, IconButton } from "../ui/Button";
 import { ConfirmDialog } from "../ui/Dialog";
 import { Icon } from "../ui/icons";
-import { InlineNotice } from "../ui/InlineNotice";
 import { Menu } from "../ui/Menu";
-import { Tabs } from "../ui/Tabs";
-import { safeDisplayName } from "../domain/identityDomain";
+import { safeDisplayName } from "../domain/collaboration";
+import { deleteProject, updateProject } from "../store/projects";
+import { navigate, openComposer, setProjectTab } from "../store/ui";
+import { selectWorkspace } from "../store/selectors";
+import { useStore } from "../store/store";
+
+// A dialog covers the shell's toast, so its own failures are shown inside it.
+const SAVE_ERROR = "We couldn't save this project. Check your connection and try again.";
 
 const tabItems = (storyCount) => [
   { id: "overview", label: "Overview", icon: <Icon name="layers" size={14} /> },
   { id: "board", label: "Board", icon: <Icon name="layout-board" size={14} /> },
   { id: "list", label: "List", icon: <Icon name="list" size={14} /> },
-  { id: "stories", label: "Stories", icon: <Icon name="book" size={14} />, count: storyCount },
+  {
+    id: "stories",
+    label: "Stories",
+    icon: <Icon name="book" size={14} />,
+    count: storyCount,
+  },
 ];
 
 const copyWorkspaceLink = () => {
@@ -24,37 +39,21 @@ const copyWorkspaceLink = () => {
   void globalThis.navigator?.clipboard?.writeText?.(href);
 };
 
-/**
- * Identity, members, owner actions and the section tabs for one project
- * workspace. Owns the surfaces it opens: members modal, edit dialog and the
- * delete confirmation.
- */
-export function ProjectHeader({
-  userId,
-  project,
-  members = [],
-  stories = [],
-  tab = "overview",
-  onTabChange,
-  canEdit = false,
-  onNewTask,
-  onNewStory,
-  onUpdateProject,
-  onDeleteProject,
-  onBack,
-}) {
+export function ProjectHeader({ projectId, tab = "overview", storyId = "" }) {
+  const { project, members, stories, canEdit } = useStore(selectWorkspace(projectId));
   const [showMembers, setShowMembers] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
-  const [actionError, setActionError] = useState("");
   const membersButtonRef = useRef(null);
 
-  const isOwner = project?.viewerRole === "owner";
-  const archived = project?.status === "archived";
+  if (!project) return null;
+
+  const isOwner = project.viewerRole === "owner";
+  const archived = project.status === "archived";
+  const onStories = tab === "stories";
   const people = members.map((member) => ({
     id: member.userId,
     name: safeDisplayName(member),
@@ -68,48 +67,43 @@ export function ProjectHeader({
 
   const changeStatus = async (status) => {
     setStatusBusy(true);
-    setActionError("");
-    try {
-      await onUpdateProject?.(project.id, { status });
-    } catch (error) {
-      setActionError(
-        error?.message || "We couldn't update this project. Check your connection and try again."
-      );
-    } finally {
-      setStatusBusy(false);
-    }
+    await updateProject(projectId, { status });
+    setStatusBusy(false);
+  };
+
+  const openEdit = () => {
+    setEditError("");
+    setEditing(true);
   };
 
   const submitEdit = async (values) => {
     setEditBusy(true);
     setEditError("");
-    try {
-      await onUpdateProject?.(project.id, values);
-      setEditing(false);
-    } catch (error) {
-      setEditError(
-        error?.message || "We couldn't save this project. Check your connection and try again."
-      );
-    } finally {
-      setEditBusy(false);
-    }
+    const saved = await updateProject(projectId, values);
+    setEditBusy(false);
+    if (saved) setEditing(false);
+    else setEditError(SAVE_ERROR);
   };
 
-  const confirmDelete = async () => {
-    setDeleting(true);
-    setActionError("");
-    try {
-      await onDeleteProject?.(project.id);
-      setConfirmingDelete(false);
-      onBack?.();
-    } catch (error) {
-      setActionError(
-        error?.message || "We couldn't delete this project. Check your connection and try again."
-      );
-    } finally {
-      setDeleting(false);
-    }
+  const confirmDelete = () => {
+    // The store drops the project from state before the request settles, which
+    // leaves this workspace with nothing to render, so the page goes back to
+    // the projects list first. A failure there restores the project and raises
+    // the store's notice, which the list shows with no dialog covering it.
+    setConfirmingDelete(false);
+    navigate("/projects");
+    void deleteProject(projectId);
   };
+
+  const newItem = () =>
+    openComposer(
+      {
+        projectId,
+        workType: onStories ? "story" : "task",
+        storyId: onStories ? "" : storyId,
+      },
+      { lockProject: true }
+    );
 
   const menuItems = [
     isOwner
@@ -118,10 +112,7 @@ export function ProjectHeader({
           label: "Edit project",
           icon: <Icon name="edit" />,
           disabled: statusBusy,
-          onSelect: () => {
-            setEditError("");
-            setEditing(true);
-          },
+          onSelect: openEdit,
         }
       : null,
     isOwner
@@ -145,8 +136,6 @@ export function ProjectHeader({
         }
       : null,
   ].filter(Boolean);
-
-  const onStories = tab === "stories";
 
   return (
     <div className="workspace-head">
@@ -198,7 +187,7 @@ export function ProjectHeader({
         <Tabs
           items={tabItems(stories.length)}
           value={tab}
-          onChange={onTabChange}
+          onChange={(next) => setProjectTab(projectId, next)}
           ariaLabel="Project sections"
         />
         <div className="toolbar-spacer" />
@@ -207,24 +196,15 @@ export function ProjectHeader({
             variant="primary"
             size="sm"
             icon={<Icon name="plus" size={14} />}
-            onClick={onStories ? onNewStory : onNewTask}
+            onClick={newItem}
           >
             {onStories ? "New story" : "New task"}
           </Button>
         ) : null}
       </div>
 
-      {actionError ? (
-        <div className="page-notice workspace-head-notice">
-          <InlineNotice tone="error" onDismiss={() => setActionError("")}>
-            {actionError}
-          </InlineNotice>
-        </div>
-      ) : null}
-
       {showMembers ? (
         <ProjectMembersModal
-          userId={userId}
           project={project}
           onClose={() => setShowMembers(false)}
           returnFocusElement={membersButtonRef.current}
@@ -246,12 +226,9 @@ export function ProjectHeader({
         description={`“${project.name}” and everything inside it will be removed. This can't be undone.`}
         confirmLabel="Delete project"
         danger
-        busy={deleting}
         onCancel={() => setConfirmingDelete(false)}
         onConfirm={confirmDelete}
       />
     </div>
   );
 }
-
-export default ProjectHeader;

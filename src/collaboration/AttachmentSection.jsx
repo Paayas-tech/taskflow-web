@@ -1,3 +1,8 @@
+/**
+ * Files attached to one task, story or project. The list is storage-backed and
+ * read through the api the store was configured with; the count is mirrored
+ * into the store so every task surface shows the paperclip badge for free.
+ */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Button,
@@ -8,8 +13,11 @@ import {
   InlineNotice,
   Menu,
 } from "../ui";
-import { ATTACHMENT_ACCEPT, formatAttachmentSize } from "../domain/attachmentDomain";
-import { attachmentService } from "../application/attachmentService";
+import { ATTACHMENT_ACCEPT, formatAttachmentSize } from "../domain/attachment";
+import { safeDisplayName } from "../domain/collaboration";
+import { setAttachmentCount } from "../store/projects";
+import { selectUser } from "../store/selectors";
+import { api, useStore } from "../store/store";
 
 const relativeDate = (value) => {
   const timestamp = new Date(value).getTime();
@@ -21,10 +29,16 @@ const relativeDate = (value) => {
   return new Date(timestamp).toLocaleDateString();
 };
 
-export default function AttachmentSection({
-  projectId, entityType, entityId, userId, uploaderName = "TaskFlow user",
-  canManage = false, compact = false, allowDrop = false, onCountChange, onMutation,
+export function AttachmentSection({
+  projectId,
+  entityType,
+  entityId,
+  canManage = false,
+  compact = false,
+  allowDrop = false,
+  onMutation,
 }) {
+  const user = useStore(selectUser);
   const [attachments, setAttachments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -38,42 +52,60 @@ export default function AttachmentSection({
   const [dragActive, setDragActive] = useState(false);
   const inputRef = useRef(null);
 
-  const updateItems = useCallback((items) => {
-    setAttachments(items);
-    onCountChange?.(entityId, items.length);
-  }, [entityId, onCountChange]);
+  const updateItems = useCallback(
+    (items) => {
+      setAttachments(items);
+      setAttachmentCount(entityId, items.length);
+    },
+    [entityId]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     setErrorKind("");
     setErrorHidden(false);
-    try { updateItems(await attachmentService.list({ projectId, entityType, entityId })); }
-    catch {
+    try {
+      updateItems(await api().listAttachments({ projectId, entityType, entityId }));
+    } catch {
       setError("Failed to load attachments.");
       setErrorKind("load");
+    } finally {
+      setLoading(false);
     }
-    finally { setLoading(false); }
   }, [entityId, entityType, projectId, updateItems]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const clearNotices = () => {
+    setError("");
+    setErrorKind("");
+    setErrorHidden(false);
+  };
 
   const upload = async (file) => {
     if (!file || uploadingName || !canManage) return;
     setUploadingName(file.name);
-    setError("");
-    setErrorKind("");
-    setErrorHidden(false);
+    clearNotices();
     setMessage("");
     try {
-      const created = await attachmentService.upload({
-        projectId, entityType, entityId, file, userId, uploaderName,
+      const created = await api().uploadAttachment({
+        projectId,
+        entityType,
+        entityId,
+        file,
+        userId: user?.id || "",
+        uploaderName: safeDisplayName(user),
       });
       updateItems([created, ...attachments]);
       setMessage("Uploaded · saved automatically.");
       onMutation?.("upload", created);
-    } catch (uploadError) { setError(uploadError.message); setErrorKind("action"); }
-    finally {
+    } catch (uploadError) {
+      setError(uploadError.message);
+      setErrorKind("action");
+    } finally {
       setUploadingName("");
       if (inputRef.current) inputRef.current.value = "";
     }
@@ -81,48 +113,60 @@ export default function AttachmentSection({
 
   const openAttachment = async (attachment) => {
     setOpeningId(attachment.id);
-    setError("");
-    setErrorKind("");
-    setErrorHidden(false);
+    clearNotices();
     try {
-      const url = await attachmentService.open(attachment);
+      const url = await api().openAttachment(attachment);
       const link = document.createElement("a");
       link.href = url;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       link.click();
-    } catch (openError) { setError(openError.message); setErrorKind("action"); }
-    finally { setOpeningId(""); }
+    } catch (openError) {
+      setError(openError.message);
+      setErrorKind("action");
+    } finally {
+      setOpeningId("");
+    }
   };
 
   const deleteAttachment = async (attachment) => {
     setDeletingId(attachment.id);
-    setError("");
-    setErrorKind("");
-    setErrorHidden(false);
+    clearNotices();
     try {
-      await attachmentService.remove(attachment);
+      await api().removeAttachment(attachment);
       updateItems(attachments.filter((item) => item.id !== attachment.id));
       setConfirmingDeleteId("");
       setMessage("Deleted · saved automatically.");
       onMutation?.("delete", attachment);
-    } catch (deleteError) { setError(deleteError.message); setErrorKind("action"); }
-    finally { setDeletingId(""); }
+    } catch (deleteError) {
+      setError(deleteError.message);
+      setErrorKind("action");
+    } finally {
+      setDeletingId("");
+    }
   };
 
-  const dropHandlers = allowDrop && canManage ? {
-    onDragEnter: (event) => { event.preventDefault(); setDragActive(true); },
-    onDragOver: (event) => event.preventDefault(),
-    onDragLeave: (event) => {
-      if (!event.currentTarget.contains(event.relatedTarget)) setDragActive(false);
-    },
-    onDrop: (event) => {
-      event.preventDefault();
-      setDragActive(false);
-      void upload(event.dataTransfer.files?.[0]);
-    },
-  } : {};
-  const pendingDelete = attachments.find((item) => item.id === confirmingDeleteId) ?? null;
+  const dropHandlers =
+    allowDrop && canManage
+      ? {
+          onDragEnter: (event) => {
+            event.preventDefault();
+            setDragActive(true);
+          },
+          onDragOver: (event) => event.preventDefault(),
+          onDragLeave: (event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setDragActive(false);
+          },
+          onDrop: (event) => {
+            event.preventDefault();
+            setDragActive(false);
+            void upload(event.dataTransfer.files?.[0]);
+          },
+        }
+      : {};
+
+  const pendingDelete =
+    attachments.find((item) => item.id === confirmingDeleteId) ?? null;
 
   return (
     <section
@@ -163,27 +207,40 @@ export default function AttachmentSection({
       {allowDrop && canManage && (!compact || (!loading && attachments.length === 0)) ? (
         <p className="attachment-dropzone">
           {compact ? <Icon name="paperclip" size={14} /> : null}
-          <span>{compact ? "Drop a file here · 10 MB max" : "Drop a file here, or choose Upload. 10 MB max."}</span>
+          <span>
+            {compact
+              ? "Drop a file here · 10 MB max"
+              : "Drop a file here, or choose Upload. 10 MB max."}
+          </span>
         </p>
       ) : null}
+
       {uploadingName ? (
         <InlineNotice tone="info">{`Uploading ${uploadingName}…`}</InlineNotice>
       ) : null}
+
       {!loading && error && !errorHidden ? (
         <InlineNotice
           tone="error"
           onDismiss={() => setErrorHidden(true)}
-          action={errorKind === "load" ? (
-            <Button variant="secondary" size="sm" onClick={() => void load()}>Retry</Button>
-          ) : null}
+          action={
+            errorKind === "load" ? (
+              <Button variant="secondary" size="sm" onClick={() => void load()}>
+                Retry
+              </Button>
+            ) : null
+          }
         >
           {error}
         </InlineNotice>
       ) : null}
+
       {message ? <InlineNotice tone="success">{message}</InlineNotice> : null}
 
       {loading ? (
-        <p className="attachment-state" role="status">Loading attachments…</p>
+        <p className="attachment-state" role="status">
+          Loading attachments…
+        </p>
       ) : attachments.length === 0 && compact ? (
         allowDrop && canManage ? null : <p className="attachment-state">No attachments</p>
       ) : attachments.length === 0 ? (
@@ -210,7 +267,11 @@ export default function AttachmentSection({
               <Menu
                 align="end"
                 trigger={(triggerProps) => (
-                  <IconButton label={`Actions for ${attachment.fileName}`} size="sm" {...triggerProps}>
+                  <IconButton
+                    label={`Actions for ${attachment.fileName}`}
+                    size="sm"
+                    {...triggerProps}
+                  >
                     <Icon name="more-horizontal" />
                   </IconButton>
                 )}
@@ -222,13 +283,17 @@ export default function AttachmentSection({
                     disabled: openingId === attachment.id,
                     onSelect: () => void openAttachment(attachment),
                   },
-                  ...(canManage ? [{
-                    id: "delete",
-                    label: "Delete",
-                    icon: <Icon name="trash" />,
-                    danger: true,
-                    onSelect: () => setConfirmingDeleteId(attachment.id),
-                  }] : []),
+                  ...(canManage
+                    ? [
+                        {
+                          id: "delete",
+                          label: "Delete",
+                          icon: <Icon name="trash" />,
+                          danger: true,
+                          onSelect: () => setConfirmingDeleteId(attachment.id),
+                        },
+                      ]
+                    : []),
                 ]}
               />
             </article>
@@ -241,7 +306,11 @@ export default function AttachmentSection({
         onCancel={() => setConfirmingDeleteId("")}
         onConfirm={() => void deleteAttachment(pendingDelete)}
         title="Delete attachment?"
-        description={pendingDelete ? `${pendingDelete.fileName} is removed for everyone on this project.` : ""}
+        description={
+          pendingDelete
+            ? `${pendingDelete.fileName} is removed for everyone on this project.`
+            : ""
+        }
         confirmLabel="Delete"
         danger
         busy={Boolean(deletingId)}

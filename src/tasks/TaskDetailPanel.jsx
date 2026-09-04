@@ -1,18 +1,33 @@
-import { useEffect, useRef, useState } from "react";
-import { Badge } from "../ui/Badge";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Badge, InlineNotice, cx } from "../ui/primitives";
 import { Button, IconButton } from "../ui/Button";
-import { ConfirmDialog } from "../ui/Dialog";
+import { ConfirmDialog, SidePanel } from "../ui/Dialog";
 import { Checkbox } from "../ui/Field";
 import { Icon } from "../ui/icons";
-import { InlineNotice } from "../ui/InlineNotice";
-import { SidePanel } from "../ui/SidePanel";
-import { cx } from "../ui/cx";
-import ActivityFeed from "../collaboration/ActivityFeed";
-import AttachmentSection from "../collaboration/AttachmentSection";
-import TaskComments from "../collaboration/TaskComments";
-import { isArchived, isTaskComplete, taskFormValuesFromTask } from "../domain/taskDomain";
-import { dateTimeLocalToIso } from "../domain/reminderDomain";
-import { safeDisplayName } from "../domain/identityDomain";
+import { ActivityFeed } from "../collaboration/ActivityFeed";
+import { AttachmentSection } from "../collaboration/AttachmentSection";
+import { TaskComments } from "../collaboration/TaskComments";
+import { isArchived, isTaskComplete, taskFormValuesFromTask } from "../domain/task";
+import { dateTimeLocalToIso } from "../domain/reminder";
+import {
+  selectEditableProjects,
+  selectTask,
+  selectUser,
+  selectWorkspace,
+} from "../store/selectors";
+import { useStore } from "../store/store";
+import { ensureWorkspace } from "../store/projects";
+import {
+  archiveTask,
+  bulkUpdate,
+  createTask,
+  deleteTask,
+  restoreTask,
+  setAssignee,
+  toggleComplete,
+  updateTask,
+} from "../store/tasks";
+import { closeTask, openTask, openTaskInProject } from "../store/ui";
 import { BulkActionBar } from "./BulkActionBar";
 import { QuickAdd, QuickAddTrigger } from "./QuickAdd";
 import { StoryProgress } from "./StoryProgress";
@@ -20,9 +35,21 @@ import { TaskProperties } from "./TaskProperties";
 import { TaskRow } from "./TaskRow";
 
 const REMINDER_FIELDS = ["reminder", "reminderAt"];
+const SAVE_TEXT = { saving: "Saving…", saved: "Saved", error: "Couldn't save" };
+const ACTIVITY_VIEWS = [
+  ["comments", "Comments"],
+  ["all", "All"],
+];
+
+/**
+ * Opening a task from a story's task list remembers the story, so closing that
+ * task returns to it. Module scope, not component state: it is set while the
+ * previous task is still rendered, and cleared once the panel closes.
+ */
+let storyReturn = null;
 
 const seedValues = (task) => ({
-  ...taskFormValuesFromTask(task, []),
+  ...taskFormValuesFromTask(task),
   assigneeId: task.assigneeId || "",
   assigneeName: task.assigneeName || "",
 });
@@ -38,117 +65,93 @@ const autoGrow = (element) => {
   element.style.height = `${element.scrollHeight}px`;
 };
 
+/**
+ * Form values → the fields the store saves. Only the reminder needs rewriting:
+ * the input holds a `datetime-local` value and the store stores an ISO one, and
+ * the pair is saved together so a reminder without a time keeps neither.
+ * Everything else (status ↔ completed, blank ids → null) `updateTask` derives.
+ */
 const savePatchFor = (patch, values) => {
-  const saved = {};
+  if (!REMINDER_FIELDS.some((field) => field in patch)) return patch;
 
-  Object.entries(patch).forEach(([name, value]) => {
-    if (REMINDER_FIELDS.includes(name)) return;
-    if (name === "status") {
-      saved.status = value;
-      saved.completed = value === "completed";
-      return;
-    }
-    if (name === "projectId" || name === "storyId") {
-      saved[name] = value || null;
-      return;
-    }
-    saved[name] = value;
-  });
-
-  if (REMINDER_FIELDS.some((field) => field in patch)) {
-    const reminder = ("reminder" in patch ? patch.reminder : values.reminder) === true;
-    const reminderAt = "reminderAt" in patch ? patch.reminderAt : values.reminderAt;
-    saved.reminder = reminder;
-    saved.reminderAt = reminder ? dateTimeLocalToIso(reminderAt) || "" : "";
-  }
-
-  return saved;
+  const merged = { ...values, ...patch };
+  const reminder = merged.reminder === true;
+  return {
+    ...patch,
+    reminder,
+    reminderAt: reminder ? dateTimeLocalToIso(merged.reminderAt) || "" : "",
+  };
 };
 
 /**
- * The one task/story detail surface. Every field auto-saves: the title and
- * description on blur or Enter, every other property immediately.
+ * The one task/story detail surface. It reads the task and its project context
+ * from the store and every field auto-saves through the store actions: the
+ * title and description on blur or Enter, every other property immediately.
  */
-export function TaskDetailPanel({
-  task,
-  userId = null,
-  project = null,
-  projectMembers = [],
-  projectStories = [],
-  projectColumns = [],
-  projects = [],
-  readOnly = false,
-  contextLoading = false,
-  onUpdate,
-  onToggleComplete,
-  onArchive,
-  onRestore,
-  onDelete,
-  onSetAssignee,
-  onClose,
-  onOpenProject,
-  returnFocusElement,
-  relatedTasks = [],
-  onOpenRelatedTask,
-  onCreateRelatedTask,
-  onBulkUpdateRelatedTasks,
-  archiveLinkedTaskCount = 0,
-  onAttachmentCountChange,
-  browserNotificationsEnabled = true,
-  defaultReminderMinutes = 15,
-  formatSettings = {},
-  todayKey,
-  className,
-}) {
-  const [values, setValues] = useState(() => seedValues(task));
-  const [saveState, setSaveState] = useState("idle");
-  const [saveError, setSaveError] = useState("");
+export function TaskDetailPanel({ taskId }) {
+  const task = useStore(selectTask(taskId));
+  const projectId = task?.projectId || "";
+  const workspace = useStore(selectWorkspace(projectId));
+  const projects = useStore(selectEditableProjects);
+  const userId = useStore(selectUser)?.id || null;
+
+  const [values, setValues] = useState(() => seedValues(task || {}));
+  /** `{ state, error }`: one save is in flight at a time, so one status line. */
+  const [saveStatus, setSaveStatus] = useState({ state: "idle", error: "" });
   const [titleError, setTitleError] = useState("");
-  const [completeBusy, setCompleteBusy] = useState(false);
-  const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  /** The one action in flight: complete | lifecycle | delete | bulk. */
+  const [pending, setPending] = useState("");
+  /** The open confirmation, if any: delete | story-archive. */
+  const [confirming, setConfirming] = useState("");
   const [lifecycleError, setLifecycleError] = useState("");
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [confirmingStoryArchive, setConfirmingStoryArchive] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [activityView, setActivityView] = useState("comments");
   const [selectedRelatedIds, setSelectedRelatedIds] = useState(() => new Set());
-  const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkMessage, setBulkMessage] = useState(null);
   const [relatedQuickAddOpen, setRelatedQuickAddOpen] = useState(false);
 
   const dirtyFieldRef = useRef(null);
-  const seededTaskIdRef = useRef(task.id);
+  const seededTaskIdRef = useRef(taskId);
   const lastPatchRef = useRef(null);
   const titleRef = useRef(null);
   const descriptionRef = useRef(null);
-  const returnFocusRef = useRef(returnFocusElement);
-  returnFocusRef.current = returnFocusElement;
 
-  const isStory = task.workType === "story";
-  const archived = isArchived(task);
-  const completed = isTaskComplete(task);
-  const isPersonal = !task.projectId;
-  const canCollaborate = Boolean(userId && task.projectId);
-  const storyName = task.storyName || projectStories.find((story) => story.id === task.storyId)?.title || "";
-  const projectCrumb = task.projectId
-    ? project?.name || task.projectName || "Project"
-    : "My tasks";
-  const storyCrumb = !isStory && task.projectId ? storyName : "";
-  const canOpenProject = Boolean(onOpenProject && task.projectId);
-  const allRelatedSelected =
-    relatedTasks.length > 0 && relatedTasks.every((related) => selectedRelatedIds.has(related.id));
+  /**
+   * Everything above that belongs to one task and one visit. The panel is never
+   * unmounted — App renders it for whichever task is selected — so switching
+   * tasks, or closing it, has to clear this by hand; otherwise a stale error, an
+   * open confirmation or a queued retry patch lands on the next task.
+   */
+  const resetTaskState = () => {
+    dirtyFieldRef.current = null;
+    lastPatchRef.current = null;
+    setTitleError("");
+    setSaveStatus({ state: "idle", error: "" });
+    setLifecycleError("");
+    setDeleteError("");
+    setConfirming("");
+    setBulkMessage(null);
+  };
+
+  const isStory = task?.workType === "story";
+  const relatedTasks = useMemo(
+    () =>
+      isStory ? workspace.tasks.filter((related) => related.storyId === taskId) : [],
+    [isStory, workspace.tasks, taskId]
+  );
+
+  useEffect(() => {
+    if (projectId) void ensureWorkspace(projectId);
+  }, [projectId]);
 
   useEffect(() => {
     // A different task always wins; an edit in flight only survives a refresh of
     // the task it belongs to, so switching tasks can never show a stale (or
     // half-typed, or emptied) title.
+    if (!task) return;
     const sameTask = seededTaskIdRef.current === task.id;
     seededTaskIdRef.current = task.id;
-    if (!sameTask) {
-      dirtyFieldRef.current = null;
-      setTitleError("");
-    }
+    if (!sameTask) resetTaskState();
     const dirty = dirtyFieldRef.current;
     const next = seedValues(task);
     setValues((current) => (dirty ? { ...next, [dirty]: current[dirty] } : next));
@@ -156,65 +159,100 @@ export function TaskDetailPanel({
 
   useEffect(() => {
     autoGrow(titleRef.current);
-  }, [values.title]);
-
-  useEffect(() => {
     autoGrow(descriptionRef.current);
-  }, [values.description]);
+  }, [values.title, values.description]);
 
   useEffect(() => {
     const visibleIds = new Set(relatedTasks.map((related) => related.id));
     setSelectedRelatedIds((current) => {
-      const next = new Set([...current].filter((taskId) => visibleIds.has(taskId)));
+      const next = new Set([...current].filter((id) => visibleIds.has(id)));
       return next.size === current.size ? current : next;
     });
   }, [relatedTasks]);
 
   useEffect(() => {
-    if (saveState !== "saved" || typeof window === "undefined") return undefined;
-    const timer = window.setTimeout(() => setSaveState("idle"), 1500);
+    if (saveStatus.state !== "saved") return undefined;
+    const timer = window.setTimeout(() => setSaveStatus({ state: "idle", error: "" }), 1500);
     return () => window.clearTimeout(timer);
-  }, [saveState]);
+  }, [saveStatus.state]);
 
-  useEffect(
-    () => () => {
-      returnFocusRef.current?.focus?.({ preventScroll: true });
-    },
-    []
-  );
+  // Closing the panel returns focus to whatever opened it, so a keyboard user
+  // keeps their place in the list, and forgets the story to step back to. The
+  // trigger is captured when the panel opens and focused again when it closes —
+  // never when it switches from one task to another.
+  const panelOpen = Boolean(taskId);
+  useEffect(() => {
+    if (!panelOpen || typeof document === "undefined") return undefined;
+    const trigger = document.activeElement;
+    return () => {
+      storyReturn = null;
+      if (trigger && trigger !== document.body && trigger.isConnected) {
+        trigger.focus?.({ preventScroll: true });
+      }
+    };
+  }, [panelOpen]);
 
-  const save = async (patch) => {
-    if (!onUpdate || Object.keys(patch).length === 0) return;
-    lastPatchRef.current = patch;
-    setSaveState("saving");
-    setSaveError("");
-    try {
-      await onUpdate(patch);
-      setSaveState("saved");
-      lastPatchRef.current = null;
-    } catch (error) {
-      setSaveState("error");
-      setSaveError(error?.message || "We couldn't save your changes.");
-    }
+  if (!task) return null;
+
+  const { members, stories, columns, project } = workspace;
+  const readOnly = project?.viewerRole === "viewer";
+  const contextLoading = Boolean(projectId) && workspace.status === "loading";
+  const archived = isArchived(task);
+  const completed = isTaskComplete(task);
+  const canCollaborate = Boolean(userId && task.projectId);
+  const projectCrumb = task.projectId
+    ? task.projectName || project?.name || "Project"
+    : "My tasks";
+  const storyCrumb =
+    !isStory && task.projectId
+      ? task.storyName || stories.find((story) => story.id === task.storyId)?.title || ""
+      : "";
+  const allRelatedSelected =
+    relatedTasks.length > 0 &&
+    relatedTasks.every((related) => selectedRelatedIds.has(related.id));
+
+  /** Closes the panel, or steps back to the story this task was opened from. */
+  const close = () => {
+    const back = storyReturn?.toTaskId === task.id ? storyReturn.fromStoryId : "";
+    storyReturn = null;
+    resetTaskState();
+    if (back) openTask(back);
+    else closeTask();
   };
 
-  const retrySave = () => {
-    const patch = lastPatchRef.current;
-    if (patch) void save(patch);
+  const openRelatedTask = (related) => {
+    storyReturn = { fromStoryId: task.id, toTaskId: related.id };
+    openTask(related.id);
+  };
+
+  /** Runs one auto-save and reports it in the save-state line. */
+  const autosave = async (run, errorText) => {
+    setSaveStatus({ state: "saving", error: "" });
+    const saved = await run();
+    setSaveStatus(saved ? { state: "saved", error: "" } : { state: "error", error: errorText });
+    return saved;
+  };
+
+  const save = async (patch) => {
+    if (Object.keys(patch).length === 0) return;
+    lastPatchRef.current = patch;
+    const saved = await autosave(
+      () => updateTask(task.id, patch),
+      "We couldn't save your changes."
+    );
+    if (saved) lastPatchRef.current = null;
   };
 
   const changeAssignee = async (assigneeId) => {
-    if (!onSetAssignee) return;
-    setSaveState("saving");
-    setSaveError("");
-    try {
-      await onSetAssignee(assigneeId || null);
-      setSaveState("saved");
-    } catch (error) {
-      setValues((current) => ({ ...current, assigneeId: task.assigneeId || "" }));
-      setSaveState("error");
-      setSaveError(error?.message || "We couldn't update this task's assignee.");
-    }
+    const saved = await autosave(
+      () => setAssignee(task.id, assigneeId || null),
+      "We couldn't update this task's assignee."
+    );
+    if (!saved) setValues((current) => ({ ...current, assigneeId: task.assigneeId || "" }));
+  };
+
+  const retrySave = () => {
+    if (lastPatchRef.current) void save(lastPatchRef.current);
   };
 
   const handlePropertyChange = (nameOrPatch, value) => {
@@ -223,93 +261,83 @@ export function TaskDetailPanel({
       nameOrPatch && typeof nameOrPatch === "object" ? nameOrPatch : { [nameOrPatch]: value };
     setValues((current) => ({ ...current, ...patch }));
 
-    if ("assigneeId" in patch) {
-      void changeAssignee(patch.assigneeId);
-      return;
-    }
-    void save(savePatchFor(patch, values));
+    if ("assigneeId" in patch) void changeAssignee(patch.assigneeId);
+    else void save(savePatchFor(patch, values));
   };
 
   const commitTitle = () => {
     dirtyFieldRef.current = null;
-    const nextTitle = String(values.title || "").trim();
+    const nextTitle = values.title.trim();
     if (!nextTitle) {
       setTitleError("Enter a task title.");
       return;
     }
     setTitleError("");
-    if (nextTitle === (task.title || "")) return;
-    void save({ title: nextTitle });
+    if (nextTitle !== (task.title || "")) void save({ title: nextTitle });
   };
 
   const commitDescription = () => {
     dirtyFieldRef.current = null;
-    const nextDescription = values.description || "";
-    if (nextDescription === (task.description || "")) return;
-    void save({ description: nextDescription });
+    if (values.description !== (task.description || "")) {
+      void save({ description: values.description });
+    }
   };
 
   const handleToggleComplete = async () => {
-    if (!onToggleComplete || completeBusy) return;
-    setCompleteBusy(true);
-    try {
-      await onToggleComplete();
-    } catch (error) {
-      setSaveState("error");
-      setSaveError(error?.message || "We couldn't update this task.");
-    } finally {
-      setCompleteBusy(false);
-    }
+    setPending("complete");
+    await toggleComplete(task.id);
+    setPending("");
   };
 
-  const performLifecycle = async (options) => {
-    const action = archived ? onRestore : onArchive;
-    if (!action || lifecycleBusy) return;
-    setLifecycleBusy(true);
+  const performLifecycle = async (moveLinkedTasksToUncategorized = false) => {
+    setPending("lifecycle");
     setLifecycleError("");
-    try {
-      await (options === undefined ? action() : action(options));
-      setConfirmingStoryArchive(false);
-      onClose?.();
-    } catch {
-      setLifecycleError(
-        `We couldn't ${archived ? "restore" : "archive"} this ${isStory ? "story" : "task"}. Check your connection and try again.`
-      );
-    } finally {
-      setLifecycleBusy(false);
+    const done = archived
+      ? await restoreTask(task.id)
+      : await archiveTask(task.id, { moveLinkedTasksToUncategorized });
+    setPending("");
+    if (done) {
+      setConfirming("");
+      close();
+      return;
     }
+    setLifecycleError(
+      `We couldn't ${archived ? "restore" : "archive"} this ${isStory ? "story" : "task"}. Check your connection and try again.`
+    );
   };
 
   const handleLifecycle = () => {
-    if (!archived && isStory && archiveLinkedTaskCount > 0) {
+    if (!archived && isStory && relatedTasks.length > 0) {
       setLifecycleError("");
-      setConfirmingStoryArchive(true);
+      setConfirming("story-archive");
       return;
     }
     void performLifecycle();
   };
 
   const confirmDelete = async () => {
-    if (!onDelete || deleting) return;
-    setDeleting(true);
+    const deletedTaskId = task.id;
+    setPending("delete");
     setDeleteError("");
-    try {
-      await onDelete();
-      setConfirmingDelete(false);
-      onClose?.();
-    } catch {
-      setDeleteError("We couldn't delete this task. Check your connection and try again.");
-    } finally {
-      setDeleting(false);
+    const done = await deleteTask(deletedTaskId);
+    setPending("");
+    if (done) {
+      setConfirming("");
+      close();
+      return;
     }
+    // The store drops the row — and the selection with it — as soon as the
+    // delete starts, and only puts the row back when it fails. Re-select the
+    // task so this panel and its confirmation are still here to explain why.
+    openTask(deletedTaskId);
+    setDeleteError("We couldn't delete this task. Check your connection and try again.");
   };
 
-  const toggleRelatedSelection = (taskId) => {
+  const toggleRelatedSelection = (relatedId) => {
     setBulkMessage(null);
     setSelectedRelatedIds((current) => {
       const next = new Set(current);
-      if (next.has(taskId)) next.delete(taskId);
-      else next.add(taskId);
+      if (!next.delete(relatedId)) next.add(relatedId);
       return next;
     });
   };
@@ -322,53 +350,39 @@ export function TaskDetailPanel({
   };
 
   const runBulkUpdate = async (type, value) => {
-    if (!onBulkUpdateRelatedTasks || bulkBusy || selectedRelatedIds.size === 0) return;
-    setBulkBusy(true);
+    setPending("bulk");
     setBulkMessage(null);
-    try {
-      const result = await onBulkUpdateRelatedTasks([...selectedRelatedIds], { type, value });
-      const updated = result?.updated || 0;
-      const failed = result?.failed || 0;
-      setSelectedRelatedIds(new Set(result?.failedIds || []));
-      setBulkMessage({
-        error: failed > 0,
-        text:
-          failed > 0
-            ? `${updated} of ${updated + failed} tasks updated; ${failed} failed due to permissions or another error.`
-            : `${updated} ${updated === 1 ? "task" : "tasks"} updated.`,
-      });
-    } catch (error) {
-      setBulkMessage({
-        error: true,
-        text: error?.message || "We couldn't update the selected tasks.",
-      });
-    } finally {
-      setBulkBusy(false);
+    const { updated, failed, failedIds } = await bulkUpdate([...selectedRelatedIds], {
+      type,
+      value,
+    });
+    setPending("");
+    setSelectedRelatedIds(new Set(failedIds));
+    setBulkMessage({
+      error: failed > 0,
+      text:
+        failed > 0
+          ? `${updated} of ${updated + failed} tasks updated; ${failed} failed due to permissions or another error.`
+          : `${updated} ${updated === 1 ? "task" : "tasks"} updated.`,
+    });
+  };
+
+  const createRelatedTask = async (title) => {
+    const created = await createTask({ title, projectId: task.projectId, storyId: task.id });
+    if (!created) {
+      throw new Error("We couldn't create this task. Check your connection and try again.");
     }
   };
-
-  const handleAttachmentCount = (entityId, count) => {
-    onAttachmentCountChange?.(entityId, count);
-  };
-
-  const saveStateText =
-    saveState === "saving"
-      ? "Saving…"
-      : saveState === "saved"
-        ? "Saved"
-        : saveState === "error"
-          ? "Couldn't save"
-          : "";
 
   const header = (
     <div className="panel-head">
       <div className="panel-crumbs">
-        {canOpenProject ? (
+        {task.projectId ? (
           <button
             type="button"
             className="panel-crumb panel-crumb-link truncate"
             title={projectCrumb}
-            onClick={() => onOpenProject()}
+            onClick={() => openTaskInProject(task)}
           >
             {projectCrumb}
           </button>
@@ -393,43 +407,37 @@ export function TaskDetailPanel({
           <Badge tone="neutral">View only</Badge>
         ) : (
           <>
-            {onToggleComplete ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                className={cx("panel-complete", completed && "is-complete")}
-                icon={<Icon name="check" />}
-                loading={completeBusy}
-                onClick={handleToggleComplete}
-              >
-                {completed ? "Completed" : "Mark complete"}
-              </Button>
-            ) : null}
-            {(archived ? onRestore : onArchive) ? (
-              <IconButton
-                label={archived ? "Restore task" : "Archive task"}
-                size="sm"
-                disabled={lifecycleBusy}
-                onClick={handleLifecycle}
-              >
-                <Icon name={archived ? "archive-restore" : "archive"} />
-              </IconButton>
-            ) : null}
-            {onDelete ? (
-              <IconButton
-                label={archived ? "Delete permanently" : isStory ? "Delete story" : "Delete task"}
-                size="sm"
-                onClick={() => {
-                  setDeleteError("");
-                  setConfirmingDelete(true);
-                }}
-              >
-                <Icon name="trash" />
-              </IconButton>
-            ) : null}
+            <Button
+              variant="secondary"
+              size="sm"
+              className={cx("panel-complete", completed && "is-complete")}
+              icon={<Icon name="check" />}
+              loading={pending === "complete"}
+              onClick={handleToggleComplete}
+            >
+              {completed ? "Completed" : "Mark complete"}
+            </Button>
+            <IconButton
+              label={archived ? "Restore task" : "Archive task"}
+              size="sm"
+              disabled={pending === "lifecycle"}
+              onClick={handleLifecycle}
+            >
+              <Icon name={archived ? "archive-restore" : "archive"} />
+            </IconButton>
+            <IconButton
+              label={archived ? "Delete permanently" : isStory ? "Delete story" : "Delete task"}
+              size="sm"
+              onClick={() => {
+                setDeleteError("");
+                setConfirming("delete");
+              }}
+            >
+              <Icon name="trash" />
+            </IconButton>
           </>
         )}
-        <IconButton label="Close panel" size="sm" onClick={onClose}>
+        <IconButton label="Close panel" size="sm" onClick={close}>
           <Icon name="x" />
         </IconButton>
       </div>
@@ -440,19 +448,19 @@ export function TaskDetailPanel({
     <>
       <SidePanel
         open
-        onClose={onClose}
+        onClose={close}
         ariaLabel={isStory ? "Story details" : "Task details"}
         header={header}
-        className={cx("task-panel", className)}
+        className="task-panel"
       >
         {lifecycleError ? <InlineNotice tone="error">{lifecycleError}</InlineNotice> : null}
 
         <div className="panel-heading">
           <p className="panel-save-state" role="status" aria-live="polite">
-            {saveStateText}
-            {saveState === "error" ? (
+            {SAVE_TEXT[saveStatus.state] || ""}
+            {saveStatus.error ? (
               <>
-                <span className="panel-save-error">{saveError}</span>
+                <span className="panel-save-error">{saveStatus.error}</span>
                 <Button variant="ghost" size="sm" onClick={retrySave}>
                   Retry
                 </Button>
@@ -466,7 +474,7 @@ export function TaskDetailPanel({
             rows={1}
             placeholder="Untitled task"
             aria-label={isStory ? "Story title" : "Task title"}
-            value={values.title ?? ""}
+            value={values.title}
             disabled={readOnly}
             onChange={(event) => {
               dirtyFieldRef.current = "title";
@@ -475,17 +483,15 @@ export function TaskDetailPanel({
             }}
             onBlur={commitTitle}
             onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== "Escape") return;
+              event.preventDefault();
               if (event.key === "Enter") {
-                event.preventDefault();
                 commitTitle();
                 return;
               }
-              if (event.key === "Escape") {
-                event.preventDefault();
-                dirtyFieldRef.current = null;
-                setTitleError("");
-                setValues((current) => ({ ...current, title: task.title || "" }));
-              }
+              dirtyFieldRef.current = null;
+              setTitleError("");
+              setValues((current) => ({ ...current, title: task.title || "" }));
             }}
           />
           {titleError ? (
@@ -499,13 +505,11 @@ export function TaskDetailPanel({
           values={values}
           mode="panel"
           isStory={isStory}
-          isPersonal={isPersonal}
+          isPersonal={!task.projectId}
           projects={projects}
-          projectMembers={projectMembers}
-          projectStories={projectStories.filter((story) => story.id !== task.id)}
+          projectMembers={members}
+          projectStories={stories.filter((story) => story.id !== task.id)}
           disabled={readOnly || contextLoading}
-          browserNotificationsEnabled={browserNotificationsEnabled}
-          defaultReminderMinutes={defaultReminderMinutes}
           onChange={handlePropertyChange}
         />
 
@@ -517,7 +521,7 @@ export function TaskDetailPanel({
             placeholder="Add a description…"
             maxLength={1000}
             rows={3}
-            value={values.description ?? ""}
+            value={values.description}
             disabled={readOnly}
             onChange={(event) => {
               dirtyFieldRef.current = "description";
@@ -525,8 +529,8 @@ export function TaskDetailPanel({
             }}
             onBlur={commitDescription}
           />
-          {String(values.description || "").length > 900 ? (
-            <span className="panel-char-count">{`${String(values.description).length}/1000`}</span>
+          {values.description.length > 900 ? (
+            <span className="panel-char-count">{`${values.description.length}/1000`}</span>
           ) : null}
         </label>
 
@@ -534,36 +538,36 @@ export function TaskDetailPanel({
           <>
             <div className="divider" />
             <section className="panel-section" aria-label={`Tasks in ${task.title}`}>
-              <StoryProgress tasks={relatedTasks} columns={projectColumns} />
+              <StoryProgress tasks={relatedTasks} columns={columns} />
 
               <div className="panel-section-header">
                 <h3 className="section-title">Tasks</h3>
                 <span className="section-meta">{relatedTasks.length}</span>
-                {!readOnly && onBulkUpdateRelatedTasks && relatedTasks.length > 0 ? (
+                {!readOnly && relatedTasks.length > 0 ? (
                   <Checkbox
                     className="panel-select-all"
                     label="Select all"
                     checked={allRelatedSelected}
-                    disabled={bulkBusy}
+                    disabled={pending === "bulk"}
                     onChange={toggleAllRelated}
                   />
                 ) : null}
               </div>
 
-              {!readOnly && onBulkUpdateRelatedTasks ? (
+              {readOnly ? null : (
                 <BulkActionBar
                   selectedCount={selectedRelatedIds.size}
-                  members={projectMembers}
-                  stories={projectStories}
+                  members={members}
+                  stories={stories}
                   currentStoryId={task.id}
-                  busy={bulkBusy}
+                  busy={pending === "bulk"}
                   onAction={runBulkUpdate}
                   onClear={() => {
                     setSelectedRelatedIds(new Set());
                     setBulkMessage(null);
                   }}
                 />
-              ) : null}
+              )}
 
               {bulkMessage ? (
                 <p
@@ -583,28 +587,23 @@ export function TaskDetailPanel({
                     showProject={false}
                     showStory={false}
                     readOnly={readOnly}
-                    selectable={!readOnly && Boolean(onBulkUpdateRelatedTasks)}
+                    selectable={!readOnly}
                     selectedForBulk={selectedRelatedIds.has(related.id)}
                     onToggleSelect={toggleRelatedSelection}
-                    onOpen={onOpenRelatedTask ? (openedTask) => onOpenRelatedTask(openedTask) : undefined}
-                    todayKey={todayKey}
-                    formatSettings={formatSettings}
-                    context={{ membersById: new Map(projectMembers.map((member) => [member.userId, member])) }}
+                    onOpen={openRelatedTask}
                   />
                 ))}
               </div>
 
-              {!readOnly && onCreateRelatedTask ? (
-                relatedQuickAddOpen ? (
-                  <QuickAdd
-                    contextLabel={task.title}
-                    onCreate={(title) => onCreateRelatedTask(title)}
-                    onCancel={() => setRelatedQuickAddOpen(false)}
-                  />
-                ) : (
-                  <QuickAddTrigger onClick={() => setRelatedQuickAddOpen(true)} />
-                )
-              ) : null}
+              {readOnly ? null : relatedQuickAddOpen ? (
+                <QuickAdd
+                  contextLabel={task.title}
+                  onCreate={createRelatedTask}
+                  onCancel={() => setRelatedQuickAddOpen(false)}
+                />
+              ) : (
+                <QuickAddTrigger onClick={() => setRelatedQuickAddOpen(true)} />
+              )}
             </section>
           </>
         ) : null}
@@ -617,12 +616,9 @@ export function TaskDetailPanel({
                 projectId={task.projectId}
                 entityType={isStory ? "story" : "task"}
                 entityId={task.id}
-                userId={userId}
-                uploaderName={safeDisplayName(projectMembers.find((member) => member.userId === userId))}
                 canManage={!readOnly}
                 compact
                 allowDrop={!isStory}
-                onCountChange={handleAttachmentCount}
               />
             </div>
 
@@ -631,41 +627,29 @@ export function TaskDetailPanel({
               <div className="panel-section-header">
                 <h3 className="section-title">Activity</h3>
                 <div className="text-switch" role="tablist" aria-label="Activity view">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={activityView === "comments"}
-                    className={cx("text-switch-option", activityView === "comments" && "is-active")}
-                    onClick={() => setActivityView("comments")}
-                  >
-                    Comments
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={activityView === "all"}
-                    className={cx("text-switch-option", activityView === "all" && "is-active")}
-                    onClick={() => setActivityView("all")}
-                  >
-                    All
-                  </button>
+                  {ACTIVITY_VIEWS.map(([view, label]) => (
+                    <button
+                      key={view}
+                      type="button"
+                      role="tab"
+                      aria-selected={activityView === view}
+                      className={cx("text-switch-option", activityView === view && "is-active")}
+                      onClick={() => setActivityView(view)}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </div>
               {activityView === "comments" ? (
-                <TaskComments
-                  userId={userId}
-                  taskId={task.id}
-                  members={projectMembers}
-                  compact
-                />
+                <TaskComments taskId={task.id} members={members} compact />
               ) : (
                 <ActivityFeed
-                  userId={userId}
                   projectId={task.projectId}
                   taskId={task.id}
                   includeComments
                   compact
-                  members={projectMembers}
+                  members={members}
                 />
               )}
             </section>
@@ -674,9 +658,9 @@ export function TaskDetailPanel({
       </SidePanel>
 
       <ConfirmDialog
-        open={confirmingDelete}
+        open={confirming === "delete"}
         danger
-        busy={deleting}
+        busy={pending === "delete"}
         title={
           isStory
             ? "Delete this story?"
@@ -690,33 +674,26 @@ export function TaskDetailPanel({
             : `Delete “${task.title}” permanently?`
         }
         confirmLabel={isStory ? "Delete story" : archived ? "Delete permanently" : "Delete task"}
-        onCancel={() => {
-          if (deleting) return;
-          setDeleteError("");
-          setConfirmingDelete(false);
-        }}
+        onCancel={() => setConfirming("")}
         onConfirm={confirmDelete}
       >
         {deleteError ? <InlineNotice tone="error">{deleteError}</InlineNotice> : null}
       </ConfirmDialog>
 
       <ConfirmDialog
-        open={confirmingStoryArchive}
-        busy={lifecycleBusy}
+        open={confirming === "story-archive"}
+        busy={pending === "lifecycle"}
         title="Move linked tasks before archiving?"
-        description={`“${task.title}” has ${archiveLinkedTaskCount} linked ${archiveLinkedTaskCount === 1 ? "task" : "tasks"}. They move to “No story” before this story is archived.`}
+        description={`“${task.title}” has ${relatedTasks.length} linked ${relatedTasks.length === 1 ? "task" : "tasks"}. They move to “No story” before this story is archived.`}
         confirmLabel="Move tasks to no story"
         onCancel={() => {
-          if (lifecycleBusy) return;
           setLifecycleError("");
-          setConfirmingStoryArchive(false);
+          setConfirming("");
         }}
-        onConfirm={() => performLifecycle({ moveLinkedTasksToUncategorized: true })}
+        onConfirm={() => performLifecycle(true)}
       >
         {lifecycleError ? <InlineNotice tone="error">{lifecycleError}</InlineNotice> : null}
       </ConfirmDialog>
     </>
   );
 }
-
-export default TaskDetailPanel;

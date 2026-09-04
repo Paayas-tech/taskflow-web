@@ -1,30 +1,49 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import App from './App.jsx'
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import * as api from "./api";
+import { App } from "./App.jsx";
+import { handleAuthEvent, revalidate } from "./store/session";
+import {
+  startReminderScheduler,
+  stopReminderScheduler,
+} from "./store/reminders";
+import { configureStore, subscribe } from "./store/store";
+import { syncPathFromBrowser } from "./store/ui";
+import "./styles/index.css";
 
-const root = createRoot(document.getElementById('root'))
+configureStore({ api });
 
-const renderApp = () =>
-  root.render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  )
-
-// Visual QA harness: only bundled in development, never in production.
-if (import.meta.env.DEV && window.location.pathname === '/__preview') {
-  import('./dev/PreviewApp.jsx')
-    .then(({ default: PreviewApp }) =>
-      root.render(
-        <StrictMode>
-          <PreviewApp />
-        </StrictMode>,
-      ),
-    )
-    .catch((error) => {
-      console.error('The preview harness could not be loaded:', error)
-      renderApp()
-    })
-} else {
-  renderApp()
+// Supabase drives the session: the first event (with or without a user) takes
+// the store out of its booting state.
+if (api.isSupabaseConfigured) {
+  api.onAuthStateChange((event, user) => {
+    void handleAuthEvent(event, user);
+  });
 }
+
+window.addEventListener("popstate", syncPathFromBrowser);
+
+// Coming back to the tab silently refreshes anything that went stale.
+const revalidateSession = () => {
+  void revalidate();
+};
+window.addEventListener("focus", revalidateSession);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") revalidateSession();
+});
+
+// Reminders run for exactly as long as somebody is signed in.
+let sessionActive = false;
+subscribe((state) => {
+  const active = Boolean(state.auth.user);
+  if (active === sessionActive) return;
+  sessionActive = active;
+  if (active) startReminderScheduler();
+  else stopReminderScheduler();
+});
+
+createRoot(document.getElementById("root")).render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);

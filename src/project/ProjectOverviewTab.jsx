@@ -1,20 +1,30 @@
-import { useCallback, useEffect, useState } from "react";
-import { Avatar } from "../ui/Avatar";
-import { Badge } from "../ui/Badge";
+/**
+ * Project overview: status distribution, overdue and recently completed work,
+ * project details and members. Every number is derived from the workspace
+ * tasks already in the store — there is no separate overview request.
+ */
+import { useMemo } from "react";
+import { Avatar, Badge, EmptyState, InlineNotice, cx } from "../ui/primitives";
 import { Button } from "../ui/Button";
-import { EmptyState } from "../ui/EmptyState";
 import { Select } from "../ui/Field";
-import { InlineNotice } from "../ui/InlineNotice";
-import { cx } from "../ui/cx";
-import { safeDisplayName } from "../domain/identityDomain";
+import { safeDisplayName } from "../domain/collaboration";
 import {
+  classifyDateOnly,
+  compareDateOnly,
+  dateOnlyKey,
   formatOverviewDate,
+  isTaskComplete,
   PROJECT_HEALTH_OPTIONS,
   statusLabel,
-} from "../domain/projectOverviewDomain";
-import { projectOverviewService } from "../application/projectOverviewService";
+  taskTimestampToMillis,
+} from "../domain/task";
+import { ensureWorkspace, setProjectHealth } from "../store/projects";
+import { openTask } from "../store/ui";
+import { selectWorkspace } from "../store/selectors";
+import { useStore } from "../store/store";
 
 const MEMBER_LIMIT = 8;
+const TASK_LIMIT = 10;
 
 const HEALTH_TONES = {
   on_track: "success",
@@ -24,13 +34,11 @@ const HEALTH_TONES = {
   complete: "info",
 };
 
-const STATUS_ORDER = ["todo", "in_progress", "in-progress", "done", "completed"];
+const STATUS_ORDER = ["todo", "in-progress", "completed"];
 
 const BAR_TONES = {
   todo: "is-todo",
-  in_progress: "is-progress",
   "in-progress": "is-progress",
-  done: "is-done",
   completed: "is-done",
 };
 
@@ -41,15 +49,60 @@ const roleLabel = (role) => ROLE_LABELS[role] || "Member";
 const healthLabel = (value) =>
   PROJECT_HEALTH_OPTIONS.find((option) => option.value === value)?.label || "On track";
 
-const orderedDistribution = (distribution = {}) =>
-  Object.entries(distribution).sort(
-    ([first], [second]) =>
-      (STATUS_ORDER.indexOf(first) + 1 || STATUS_ORDER.length + 1) -
-      (STATUS_ORDER.indexOf(second) + 1 || STATUS_ORDER.length + 1)
-  );
+const statusOf = (task) => {
+  if (isTaskComplete(task)) return "completed";
+  return task.status === "in-progress" || task.status === "in_progress"
+    ? "in-progress"
+    : "todo";
+};
 
 const assigneeName = (task) =>
   task.assigneeId ? task.assigneeName || "TaskFlow user" : "Unassigned";
+
+/** Everything the tab charts, in one pass over the project's active tasks. */
+const overviewFrom = (tasks, todayKey) => {
+  const distribution = { todo: 0, "in-progress": 0, completed: 0 };
+  let overdue = 0;
+
+  tasks.forEach((task) => {
+    const status = statusOf(task);
+    distribution[status] += 1;
+    if (status !== "completed" && classifyDateOnly(task.dueDate, todayKey) === "overdue") {
+      overdue += 1;
+    }
+  });
+
+  const overdueTasks = tasks
+    .filter(
+      (task) =>
+        !isTaskComplete(task) && classifyDateOnly(task.dueDate, todayKey) === "overdue"
+    )
+    .sort((first, second) => compareDateOnly(first.dueDate, second.dueDate))
+    .slice(0, TASK_LIMIT);
+
+  const recentlyCompletedTasks = tasks
+    .filter(isTaskComplete)
+    .sort(
+      (first, second) =>
+        (taskTimestampToMillis(second.completedAt) ?? 0) -
+        (taskTimestampToMillis(first.completedAt) ?? 0)
+    )
+    .slice(0, TASK_LIMIT);
+
+  return {
+    metrics: {
+      total: tasks.length,
+      completed: distribution.completed,
+      inProgress: distribution["in-progress"],
+      overdue,
+    },
+    statusDistribution: STATUS_ORDER.filter(
+      (status) => distribution[status] > 0
+    ).map((status) => [status, distribution[status]]),
+    overdueTasks,
+    recentlyCompletedTasks,
+  };
+};
 
 function OverviewSkeleton() {
   return (
@@ -76,8 +129,8 @@ function OverviewSkeleton() {
   );
 }
 
-function OverviewTaskRow({ task, dateValue, tone, statusBadge = false, onOpenTask }) {
-  const open = () => onOpenTask?.(task.id);
+function OverviewTaskRow({ task, dateValue, tone, statusBadge = false }) {
+  const open = () => openTask(task.id);
   const name = assigneeName(task);
 
   return (
@@ -107,66 +160,22 @@ function OverviewTaskRow({ task, dateValue, tone, statusBadge = false, onOpenTas
   );
 }
 
-/**
- * Project overview tab: status distribution, overdue and recently completed
- * work, project details and members.
- */
-export function ProjectOverviewTab({
-  userId,
-  projectId,
-  project = null,
-  onOpenTask,
-  members = [],
-}) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [savingHealth, setSavingHealth] = useState(false);
-  const [healthError, setHealthError] = useState("");
+export function ProjectOverviewTab({ projectId }) {
+  const { status, error, project, tasks, members, canEdit } = useStore(
+    selectWorkspace(projectId)
+  );
+  const todayKey = useMemo(() => dateOnlyKey(new Date()), []);
+  const overview = useMemo(() => overviewFrom(tasks, todayKey), [tasks, todayKey]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      setData(await projectOverviewService.load(userId, projectId));
-    } catch (loadError) {
-      setError(loadError.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId, userId]);
+  if (status === "loading" && tasks.length === 0) return <OverviewSkeleton />;
 
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const updateHealth = async (healthStatus) => {
-    const previous = data?.project?.healthStatus;
-    const patchHealth = (value) => (current) =>
-      current ? { ...current, project: { ...current.project, healthStatus: value } } : current;
-
-    setData(patchHealth(healthStatus));
-    setSavingHealth(true);
-    setHealthError("");
-    try {
-      await projectOverviewService.updateHealth(projectId, healthStatus);
-    } catch (updateError) {
-      setData(patchHealth(previous));
-      setHealthError(updateError.message);
-    } finally {
-      setSavingHealth(false);
-    }
-  };
-
-  if (loading) return <OverviewSkeleton />;
-
-  if (error) {
+  if (error && tasks.length === 0) {
     return (
       <section className="overview-tab" aria-label="Project overview">
         <InlineNotice
           tone="error"
           action={
-            <Button size="sm" onClick={() => void load()}>
+            <Button size="sm" onClick={() => void ensureWorkspace(projectId)}>
               Retry
             </Button>
           }
@@ -177,7 +186,7 @@ export function ProjectOverviewTab({
     );
   }
 
-  if (!data) {
+  if (!project) {
     return (
       <section className="overview-tab" aria-label="Project overview">
         <EmptyState
@@ -189,23 +198,14 @@ export function ProjectOverviewTab({
     );
   }
 
-  const { metrics, statusDistribution, overdueTasks, recentlyCompletedTasks } = data;
-  const record = { ...(project || {}), ...data.project };
-  const canEditHealth =
-    record.healthSupported !== false && ["owner", "editor"].includes(record.viewerRole);
-  const distribution = orderedDistribution(statusDistribution);
-  const maximum = Math.max(1, ...distribution.map(([, count]) => count));
+  const { metrics, statusDistribution, overdueTasks, recentlyCompletedTasks } = overview;
+  const maximum = Math.max(1, ...statusDistribution.map(([, count]) => count));
   const visibleMembers = members.slice(0, MEMBER_LIMIT);
   const hiddenMembers = members.length - visibleMembers.length;
+  const healthSupported = project.healthSupported !== false;
 
   return (
     <section className="overview-tab" aria-label="Project overview">
-      {healthError ? (
-        <InlineNotice tone="error" onDismiss={() => setHealthError("")}>
-          {healthError}
-        </InlineNotice>
-      ) : null}
-
       <div className="overview-grid">
         <div className="stack-4">
           <div className="card stack-3">
@@ -214,15 +214,17 @@ export function ProjectOverviewTab({
               <span className="toolbar-spacer" />
               <span className="section-meta">{`${metrics.total} total`}</span>
             </div>
-            {distribution.length ? (
+            {statusDistribution.length ? (
               <div className="stack-2">
-                {distribution.map(([status, count]) => (
-                  <div className="bar-row" key={status}>
-                    <span className="bar-label muted">{statusLabel(status)}</span>
+                {statusDistribution.map(([status_, count]) => (
+                  <div className="bar-row" key={status_}>
+                    <span className="bar-label muted">{statusLabel(status_)}</span>
                     <span className="progress">
                       <span
-                        className={cx("progress-fill", BAR_TONES[status])}
-                        style={{ width: `${Math.max(4, Math.round((count / maximum) * 100))}%` }}
+                        className={cx("progress-fill", BAR_TONES[status_])}
+                        style={{
+                          width: `${Math.max(4, Math.round((count / maximum) * 100))}%`,
+                        }}
                       />
                     </span>
                     <strong className="bar-value">{count}</strong>
@@ -249,7 +251,6 @@ export function ProjectOverviewTab({
                     dateValue={task.dueDate}
                     tone="is-overdue"
                     statusBadge
-                    onOpenTask={onOpenTask}
                   />
                 ))}
               </div>
@@ -267,12 +268,7 @@ export function ProjectOverviewTab({
             {recentlyCompletedTasks.length ? (
               <div className="overview-task-list">
                 {recentlyCompletedTasks.map((task) => (
-                  <OverviewTaskRow
-                    key={task.id}
-                    task={task}
-                    dateValue={task.completedAt}
-                    onOpenTask={onOpenTask}
-                  />
+                  <OverviewTaskRow key={task.id} task={task} dateValue={task.completedAt} />
                 ))}
               </div>
             ) : (
@@ -286,21 +282,20 @@ export function ProjectOverviewTab({
             <div className="section-header">
               <h3 className="section-title">About</h3>
             </div>
-            {record.description ? (
-              <p className="overview-description">{record.description}</p>
+            {project.description ? (
+              <p className="overview-description">{project.description}</p>
             ) : (
               <p className="muted">No description</p>
             )}
 
             <div className="about-row">
               <span className="about-label muted">Health</span>
-              {canEditHealth ? (
+              {canEdit && healthSupported ? (
                 <Select
                   aria-label="Project health"
                   className="overview-health-select"
-                  value={record.healthStatus}
-                  disabled={savingHealth}
-                  onChange={(event) => void updateHealth(event.target.value)}
+                  value={project.healthStatus}
+                  onChange={(event) => void setProjectHealth(projectId, event.target.value)}
                 >
                   {PROJECT_HEALTH_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -309,24 +304,22 @@ export function ProjectOverviewTab({
                   ))}
                 </Select>
               ) : (
-                <Badge tone={HEALTH_TONES[record.healthStatus] || "neutral"} dot>
-                  {healthLabel(record.healthStatus)}
+                <Badge tone={HEALTH_TONES[project.healthStatus] || "neutral"} dot>
+                  {healthLabel(project.healthStatus)}
                 </Badge>
               )}
+              {!healthSupported ? (
+                <small className="field-hint">Read-only until migration 017.</small>
+              ) : null}
             </div>
-            {record.healthSupported === false ? (
-              <p className="muted overview-health-note">
-                Health editing is unavailable until migration 017 is applied.
-              </p>
-            ) : null}
 
             <div className="about-row">
               <span className="about-label muted">Due date</span>
-              <span>{formatOverviewDate(record.dueDate)}</span>
+              <span>{formatOverviewDate(project.dueDate)}</span>
             </div>
             <div className="about-row">
               <span className="about-label muted">Created</span>
-              <span>{formatOverviewDate(record.createdAt)}</span>
+              <span>{formatOverviewDate(project.createdAt)}</span>
             </div>
           </div>
 
@@ -345,9 +338,7 @@ export function ProjectOverviewTab({
                     <Badge tone="neutral">{roleLabel(member.role)}</Badge>
                   </div>
                 ))}
-                {hiddenMembers > 0 ? (
-                  <p className="muted">{`+${hiddenMembers} more`}</p>
-                ) : null}
+                {hiddenMembers > 0 ? <p className="muted">{`+${hiddenMembers} more`}</p> : null}
               </div>
             ) : (
               <p className="muted">No members yet</p>
@@ -358,5 +349,3 @@ export function ProjectOverviewTab({
     </section>
   );
 }
-
-export default ProjectOverviewTab;

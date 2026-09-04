@@ -4,16 +4,16 @@ import {
   signIn,
   signUp,
   verifySignupOtp,
-} from "../application/authService";
+} from "../api/auth";
 import {
   friendlyAuthError,
   getSignUpOutcome,
   isEmailConfirmationError,
   isInvalidCredentialsError,
   validateSignUpName,
-} from "../domain/authDomain";
+} from "../domain/auth";
 import { Button, Field, IconButton, Icon, Input, InlineNotice, SegmentedControl } from "../ui";
-import AuthBrand from "./AuthBrand";
+import { AuthBrand } from "./AuthBrand";
 
 const PENDING_SIGNUP_EMAIL_KEY = "taskflow.pendingSignupEmail";
 const SIGNUP_OTP_LENGTH = 6;
@@ -47,7 +47,7 @@ const forgetPendingSignupEmail = () => {
   }
 };
 
-export default function Login({ onSignInSuccess, onRecoverPassword, initialMode = "signin" }) {
+export function Login({ onSignInSuccess, onRecoverPassword, initialMode = "signin" }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");

@@ -1,5 +1,6 @@
-/* Shared task surfaces (src/tasks/*): rows, completion checkbox, quick add,
-   board columns and cards, filter bar, bulk action bar, story progress. */
+/* Task surfaces: the shared row/card/board/composer pieces in src/tasks/*, the
+   My Tasks and Archived Tasks pages, and the collaboration blocks (comments,
+   activity, attachments, members) the detail panel and the workspace embed. */
 
 /* ---------- Completion checkbox ---------- */
 
@@ -586,8 +587,7 @@ button.task-badge {
   color: var(--color-text);
 }
 
-/* ===== My Tasks page (P3-b) ===== */
-/* Also styles src/pages/ArchivedTasksPage.jsx (same row-list surfaces). */
+/* ---------- My Tasks and Archived Tasks pages ---------- */
 
 .my-tasks-views {
   margin-inline: auto;
@@ -663,4 +663,942 @@ button.task-badge {
 .archived-tasks-skeleton-line {
   flex: 1;
   max-width: 320px;
+}
+
+/* =========================================================================
+   Task detail panel and composer (TaskDetailPanel, TaskComposerDialog,
+   TaskProperties)
+   ========================================================================= */
+
+/* ---------- Panel header ---------- */
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+}
+
+.panel-crumbs {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+}
+
+.panel-crumb {
+  min-width: 0;
+  max-width: 220px;
+}
+
+.panel-crumb-link {
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  transition: color var(--transition);
+}
+
+.panel-crumb-link:hover {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
+.panel-crumb-separator {
+  flex: none;
+}
+
+.panel-head-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.panel-complete.is-complete {
+  border-color: var(--color-success);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+/* ---------- Panel body ---------- */
+
+.task-panel .side-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.task-panel {
+  container-type: inline-size;
+}
+
+/* Every block sizes itself. Without this, a body taller than the panel shrinks
+   its children (flex items default to `flex-shrink: 1`), and a textarea — a
+   scroll container, so its automatic minimum size is 0 — collapses to an empty
+   strip. That is what emptied `.panel-title` on project tasks, whose comments
+   and attachments make the body overflow. */
+.task-panel .side-panel-body > * {
+  flex: none;
+}
+
+.panel-heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.panel-title {
+  width: 100%;
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  /* The auto-grow effect in TaskDetailPanel owns the height; `field-sizing`
+     keeps it right in browsers that support it even before the effect runs. */
+  overflow: hidden;
+  resize: none;
+  field-sizing: content;
+}
+
+.panel-title::placeholder {
+  color: var(--color-text-3);
+  font-weight: 500;
+}
+
+.panel-title:disabled {
+  color: var(--color-text-2);
+}
+
+.panel-error {
+  color: var(--color-danger);
+  font-size: var(--text-md);
+}
+
+.panel-save-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 16px;
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+}
+
+.panel-save-error {
+  color: var(--color-danger);
+}
+
+.panel-section-label {
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.panel-description-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.panel-description {
+  width: 100%;
+  min-height: 56px;
+  padding: var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font-size: var(--text-base);
+  line-height: var(--leading);
+  overflow: hidden;
+  resize: none;
+  field-sizing: content;
+  transition: background-color var(--transition), border-color var(--transition);
+}
+
+.panel-description:hover:not(:disabled) {
+  background-color: var(--color-surface-2);
+}
+
+.panel-description:focus {
+  border-color: var(--color-accent);
+  background-color: var(--color-surface);
+}
+
+.panel-char-count {
+  align-self: flex-end;
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+}
+
+.panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.task-panel .panel-attachments,
+.task-panel .panel-activity {
+  gap: var(--space-2);
+}
+
+.task-panel .comment-thread,
+.task-panel .comment-list {
+  gap: var(--space-3);
+}
+
+.task-panel .comment {
+  gap: var(--space-2);
+}
+
+.panel-section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.panel-select-all {
+  margin-left: auto;
+  font-size: var(--text-md);
+}
+
+.panel-bulk-message {
+  color: var(--color-text-2);
+  font-size: var(--text-md);
+}
+
+.panel-bulk-message.is-error {
+  color: var(--color-danger);
+}
+
+/* Two text buttons instead of a pill tab bar (Comments | All). */
+.text-switch {
+  display: inline-flex;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+.text-switch-option {
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  background: none;
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: color var(--transition);
+}
+
+.text-switch-option:hover {
+  color: var(--color-text-2);
+}
+
+.text-switch-option.is-active {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+/* The panel names the Activity section itself, so the feed's own heading would
+   read twice. */
+.task-panel .activity-feed .activity-header {
+  justify-content: flex-end;
+}
+
+.task-panel .activity-feed .activity-header .section-title {
+  display: none;
+}
+
+/* ---------- Live-updates note ----------
+   TaskComments.jsx and ActivityFeed.jsx render this line in place of a full
+   notice box. */
+
+.collab-live-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-md);
+}
+
+/* ---------- Property grid ---------- */
+
+.props-grid {
+  --prop-label-w: 112px;
+
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1) var(--space-4);
+}
+
+.prop-row {
+  display: grid;
+  grid-template-columns: var(--prop-label-w) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h);
+}
+
+.prop-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+}
+
+.prop-label-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+.prop-label-text {
+  min-width: 0;
+}
+
+.prop-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.prop-control .select,
+.prop-control .input {
+  width: 100%;
+}
+
+/* Controls read as text until they are touched. */
+.props-grid .select,
+.props-grid .input {
+  border-color: transparent;
+  background-color: transparent;
+  font-size: var(--text-md);
+}
+
+.props-grid .select:hover:not(:disabled),
+.props-grid .input:hover:not(:disabled) {
+  background-color: var(--color-surface-2);
+}
+
+.props-grid .select:focus,
+.props-grid .input:focus {
+  border-color: var(--color-accent);
+  background-color: var(--color-surface);
+}
+
+.props-grid .select:disabled,
+.props-grid .input:disabled {
+  background-color: transparent;
+}
+
+.prop-select {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.prop-select-icon {
+  position: absolute;
+  top: 50%;
+  left: var(--space-2);
+  display: inline-flex;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.prop-select .select {
+  padding-left: 26px;
+}
+
+.prop-date {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.prop-date .input {
+  min-width: 0;
+}
+
+.prop-date .btn {
+  flex: none;
+}
+
+.prop-reminder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.prop-error {
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+/* Two property columns once the panel itself, rather than the viewport, is
+   wide enough for them. */
+@container (min-width: 520px) {
+  .task-panel .props-grid {
+    --prop-label-w: 96px;
+
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .task-panel .prop-row-storyId,
+  .task-panel .prop-row-projectId,
+  .task-panel .prop-row-reminder {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---------- Property chips (composer) ---------- */
+
+.props-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.props-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--control-h);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-text-2);
+}
+
+.props-chip-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.props-chip .select,
+.props-chip .input {
+  height: auto;
+  padding: 0 var(--space-5) 0 0;
+  border: 0;
+  background-color: transparent;
+  font-size: var(--text-md);
+}
+
+.props-chip .checkbox {
+  font-size: var(--text-md);
+}
+
+.props-chip-reminder {
+  flex-wrap: wrap;
+  height: auto;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+}
+
+/* ---------- Composer ---------- */
+
+.composer-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.composer-title {
+  height: var(--control-h-lg);
+  border-color: transparent;
+  font-size: var(--text-lg);
+  font-weight: 500;
+}
+
+.composer-description {
+  min-height: 56px;
+  border-color: transparent;
+  resize: vertical;
+  field-sizing: content;
+}
+
+.composer-title:focus,
+.composer-description:focus {
+  border-color: var(--color-border-strong);
+}
+
+.composer-schedule {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  color: var(--color-text-2);
+  font-size: var(--text-sm);
+}
+
+.composer-error {
+  margin-top: var(--space-1);
+}
+
+/* =========================================================================
+   Collaboration blocks (src/collaboration/*): comments, activity feed,
+   attachments, members, invitations, profile completion prompt
+   ========================================================================= */
+
+/* ---------- Comments ---------- */
+
+.comment-thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.comment-thread-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+}
+
+.comment {
+  display: flex;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.comment[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+.comment-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.comment-author {
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.comment-time {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comment-menu {
+  flex: none;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.comment:hover .comment-menu,
+.comment:focus-within .comment-menu {
+  opacity: 1;
+}
+
+.comment-text {
+  margin: 0;
+  font-size: var(--text-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-mention {
+  border-radius: var(--radius-sm);
+  padding: 0 3px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+  font-weight: 500;
+}
+
+.comment-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--text-md);
+}
+
+.comment-editor,
+.comment-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.comment-composer {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+}
+
+.comment-composer-input {
+  min-height: 40px;
+  max-height: 160px;
+  resize: none;
+}
+
+.comment-mentions {
+  position: static;
+  flex-flow: row wrap;
+  gap: var(--space-1);
+  width: 100%;
+  min-width: 0;
+  box-shadow: none;
+}
+
+.comment-mentions .menu-item {
+  width: auto;
+  font-size: var(--text-sm);
+}
+
+.comment-editor-actions,
+.comment-composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.comment-counter {
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Activity feed ---------- */
+
+.activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.activity-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.activity-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.activity-group-title {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.activity-row {
+  position: relative;
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-2) 0 var(--space-2) var(--space-1);
+}
+
+.activity-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 7px;
+  width: 1px;
+  background: var(--color-border);
+}
+
+.activity-row:first-of-type::before {
+  top: 12px;
+}
+
+.activity-row:last-of-type::before {
+  bottom: calc(100% - 12px);
+}
+
+.activity-dot {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 7px;
+  border-radius: var(--radius-full);
+  background: var(--color-border-strong);
+  box-shadow: 0 0 0 3px var(--color-surface);
+}
+
+.activity-dot.is-done {
+  background: var(--status-done);
+}
+
+.activity-dot.is-comment {
+  background: var(--color-accent);
+}
+
+.activity-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.activity-text {
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--color-text-2);
+}
+
+.activity-text strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.activity-subject {
+  margin-left: var(--space-1);
+  color: var(--color-text);
+}
+
+.activity-time {
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+}
+
+.activity-list .comment {
+  padding: var(--space-2) 0 var(--space-2) calc(var(--space-1) + 7px + var(--space-3));
+}
+
+/* ---------- Attachments ---------- */
+
+.attachment-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.attachment-section.is-compact {
+  gap: var(--space-2);
+}
+
+.attachment-section.is-compact .attachment-toolbar {
+  min-height: var(--control-h-sm);
+}
+
+.attachment-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.attachment-toolbar .section-meta {
+  margin-left: var(--space-1);
+}
+
+.attachment-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+  text-align: center;
+  transition: border-color var(--transition), background var(--transition);
+}
+
+.attachment-section.is-compact .attachment-dropzone {
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.attachment-section.is-drag-active .attachment-dropzone {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+}
+
+.attachment-state {
+  margin: 0;
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+}
+
+/* Attachment, member and invitation rows are the same row card. */
+.attachment-row,
+.member-row,
+.invitation-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.attachment-section.is-compact .attachment-row {
+  padding: var(--space-1) var(--space-2);
+}
+
+.attachment-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--color-text-3);
+}
+
+.attachment-main,
+.member-main,
+.invitation-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.attachment-name,
+.member-name,
+.invitation-title {
+  font-size: var(--text-base);
+  font-weight: 500;
+}
+
+.attachment-meta {
+  color: var(--color-text-3);
+  font-size: var(--text-sm);
+}
+
+/* ---------- Members and invitations ---------- */
+
+.members-dialog .dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.members-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+}
+
+.member-invite {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.member-invite-email {
+  flex: 1;
+  min-width: 0;
+}
+
+.member-invite-role {
+  flex: none;
+  width: 110px;
+}
+
+.member-list {
+  min-width: 0;
+}
+
+.member-email,
+.invitation-meta {
+  color: var(--color-text-3);
+  font-size: var(--text-md);
+}
+
+.member-role {
+  flex: none;
+  width: 110px;
+}
+
+.members-pending .row-list {
+  min-width: 0;
+}
+
+.invitation-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ---------- Profile completion ---------- */
+
+.profile-completion-prompt {
+  margin: var(--space-4) var(--space-6) 0;
+}
+
+@media (max-width: 640px) {
+  .member-invite {
+    flex-wrap: wrap;
+  }
+
+  .member-invite-email {
+    flex-basis: 100%;
+  }
 }

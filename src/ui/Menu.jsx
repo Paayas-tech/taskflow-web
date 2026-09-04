@@ -1,6 +1,45 @@
-import { useEffect, useRef, useState } from "react";
-import { cx } from "./cx";
-import { usePopover } from "./usePopover";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { cx } from "./primitives";
+
+/**
+ * Open/close state for the menu popover.
+ * Closes on outside mousedown and on Escape while open.
+ */
+function usePopover(initialOpen = false) {
+  const [open, setOpen] = useState(initialOpen);
+  const rootRef = useRef(null);
+
+  const close = useCallback(() => setOpen(false), []);
+  const toggle = useCallback(() => setOpen((current) => !current), []);
+
+  useEffect(() => {
+    if (!open || typeof document === "undefined") {
+      return undefined;
+    }
+
+    const handleMouseDown = (event) => {
+      const root = rootRef.current;
+      if (root && !root.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return { open, setOpen, toggle, close, rootRef };
+}
 
 const isSelectable = (item) =>
   Boolean(item) && !item.separator && !item.heading && !item.disabled;
@@ -150,5 +189,3 @@ export function Menu({ trigger, items = [], align = "start", className, ...rest 
     </div>
   );
 }
-
-export default Menu;

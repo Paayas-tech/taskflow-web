@@ -1,13 +1,13 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Avatar } from "../ui/Avatar";
+import { Avatar, cx } from "../ui/primitives";
 import { Checkbox } from "../ui/Field";
 import { Icon, PriorityIcon } from "../ui/icons";
-import { cx } from "../ui/cx";
-import { isTaskComplete } from "../domain/taskDomain";
-import { formatDateOnlyForDisplay } from "../domain/settingsDomain";
-import { safeDisplayName } from "../domain/identityDomain";
-import { dueDateTone, formatDueLabel } from "./taskPresentation";
+import { dueDateTone, formatDueLabel, isTaskComplete } from "../domain/task";
+import { formatDateOnlyForDisplay } from "../domain/settings";
+import { selectProject, selectSettings } from "../store/selectors";
+import { useStore } from "../store/store";
+import { openTask, openTaskInProject } from "../store/ui";
 
 const stopPointer = (event) => event.stopPropagation();
 
@@ -23,16 +23,13 @@ const stopKeys = (event) => {
  */
 export function TaskCard({
   task,
-  context = {},
   onOpen,
-  onOpenProject,
   selected = false,
   selectable = false,
   selectedForBulk = false,
   onToggleSelect,
   readOnly = false,
   todayKey,
-  formatSettings = {},
   className,
   ...rest
 }) {
@@ -40,21 +37,23 @@ export function TaskCard({
     id: `task:${task.id}`,
     disabled: readOnly,
   });
-  const { projectsById, membersById } = context;
+  const settings = useStore(selectSettings);
+  const project = useStore(selectProject(task.projectId));
+
   const completed = isTaskComplete(task);
   const dueDate = typeof task.dueDate === "string" ? task.dueDate.trim() : "";
   const dueLabel = formatDueLabel(dueDate, todayKey);
   const tone = dueDateTone(dueDate, todayKey, completed);
-  const member = membersById?.get?.(task.assigneeId);
-  const project = task.projectId ? projectsById?.get?.(task.projectId) : null;
-  const projectName = project?.name || task.projectName || "";
-  const assigneeName =
-    task.assigneeName || (member ? safeDisplayName(member) : "TaskFlow user");
+  const projectName = task.projectName || project?.name || "";
 
-  const open = (element) => onOpen?.(task, element);
+  const open = (element) => {
+    if (onOpen) onOpen(task, element);
+    else openTask(task.id);
+  };
+
   const openProject = (event) => {
     event.stopPropagation();
-    onOpenProject?.(task);
+    openTaskInProject(task);
   };
 
   return (
@@ -98,7 +97,7 @@ export function TaskCard({
       </div>
 
       {projectName ? (
-        onOpenProject && task.projectId ? (
+        task.projectId ? (
           <button
             type="button"
             className="task-badge task-badge-project is-link"
@@ -117,11 +116,7 @@ export function TaskCard({
           </button>
         ) : (
           <span className="task-badge task-badge-project" title={projectName}>
-            <span
-              className="task-badge-dot"
-              style={{ backgroundColor: project?.color || "var(--color-accent)" }}
-              aria-hidden="true"
-            />
+            <span className="task-badge-dot" style={{ backgroundColor: "var(--color-accent)" }} aria-hidden="true" />
             {projectName}
           </span>
         )
@@ -140,16 +135,14 @@ export function TaskCard({
           <time
             className={cx("task-due", `is-${tone}`)}
             dateTime={dueDate}
-            title={formatDateOnlyForDisplay(dueDate, formatSettings.dateFormat)}
+            title={formatDateOnlyForDisplay(dueDate, settings.time.dateFormat)}
           >
             {dueLabel}
           </time>
         ) : null}
         <span className="task-card-spacer" />
-        {task.assigneeId ? <Avatar size="sm" name={assigneeName} /> : null}
+        {task.assigneeId ? <Avatar size="sm" name={task.assigneeName || "TaskFlow user"} /> : null}
       </div>
     </article>
   );
 }
-
-export default TaskCard;
