@@ -403,7 +403,7 @@ export function MyTasksPage() {
         </div>
       </header>
 
-      <div className={cx("page-body", view === "board" ? "my-tasks-board-body" : "is-narrow")}>
+      <div className={cx("page-body", view === "board" && "my-tasks-board-body")}>
         {renderBody()}
       </div>
     </div>

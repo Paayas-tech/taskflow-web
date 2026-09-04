@@ -433,7 +433,7 @@ export function ProjectWorkspacePage() {
         </div>
       ) : null}
 
-      <div className={cx("page-body workspace-content", tab === "board" ? "is-board" : "is-narrow")}>
+      <div className={cx("page-body workspace-content", tab === "board" && "is-board")}>
         {workspace.error && !loadFailedEmpty ? (
           <div className="page-notice">
             <InlineNotice tone="error" action={retryButton}>

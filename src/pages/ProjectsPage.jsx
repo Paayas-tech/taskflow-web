@@ -378,7 +378,7 @@ export function ProjectsPage() {
         </div>
       </header>
 
-      <div className="page-body is-narrow">
+      <div className="page-body">
         {showInvitations ? (
           <section className="section" aria-labelledby="projects-invitations-title">
             <div className="section-header">
