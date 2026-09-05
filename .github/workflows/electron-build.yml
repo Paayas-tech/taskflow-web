@@ -54,7 +54,8 @@ jobs:
 
       # Build the Vite renderer and package it for the native runner platform.
       - name: Build Electron installer
-        run: npm run electron:dist
+        # Prevent electron-builder from treating CI detection as a release publish request.
+        run: npm run electron:dist -- --publish never
 
       # Keep the native installers available from the completed workflow run.
       - name: Upload installer artifacts
