@@ -1,5 +1,6 @@
 appId: com.paayas.taskflow
 productName: TaskFlow
+executableName: TaskFlow
 
 directories:
   output: ../../release
