@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - feature/electron-alpha
+      - feature/mobile-monorepo
   workflow_dispatch:
 
 # The workflow only needs permission to read the repository contents.
