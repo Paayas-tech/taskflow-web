@@ -116,7 +116,7 @@ ipcMain.handle("desktop:open-external", async (_event, url) => {
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
   if (app.isPackaged) app.setAsDefaultProtocolClient("taskflow");
   if (!isDevelopment) {
-    await installAppProtocol(path.join(__dirname, "..", "dist"));
+    await installAppProtocol(path.join(process.resourcesPath, "renderer"));
   }
 
   installApplicationMenu({ isDevelopment });

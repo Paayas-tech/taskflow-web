@@ -1,0 +1,20 @@
+{
+  "name": "@taskflow/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "electron:dev": "concurrently --kill-others-on-fail \"pnpm --dir ../web dev --host 127.0.0.1 --strictPort\" \"wait-on http-get://127.0.0.1:5173 && cross-env ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .\"",
+    "electron:pack": "pnpm --dir ../web build && electron-builder --config electron-builder.yml --dir",
+    "electron:dist": "pnpm --dir ../web build && electron-builder --config electron-builder.yml --publish never",
+    "test": "node --test electron/*.test.cjs"
+  },
+  "devDependencies": {
+    "concurrently": "10.0.5",
+    "cross-env": "10.1.0",
+    "electron": "44.2.0",
+    "electron-builder": "26.15.3",
+    "wait-on": "9.1.0"
+  }
+}

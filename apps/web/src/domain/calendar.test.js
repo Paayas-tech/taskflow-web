@@ -3,7 +3,7 @@ import {
   collectGooglePages,
   isUsableOAuthState,
   normalizeGoogleEvent,
-} from "../../supabase/functions/_shared/googleCalendarCore";
+} from "../../../../supabase/functions/_shared/googleCalendarCore";
 import {
   assignMultiDayLanes,
   buildCalendarMonthGrid,

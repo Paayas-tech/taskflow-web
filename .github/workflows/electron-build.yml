@@ -41,21 +41,27 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # Node.js 24 is the current LTS release used for reproducible npm installs.
+      # Install the pnpm version pinned by the monorepo.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+
+      # Configure Node.js and cache pnpm's dependency store.
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
-      # Install exactly the dependency versions recorded in package-lock.json.
+      # Install exactly the versions recorded in pnpm-lock.yaml.
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      # Build the Vite renderer and package it for the native runner platform.
+      # Build the web renderer and package Electron for the native runner.
       - name: Build Electron installer
-        # Prevent electron-builder from treating CI detection as a release publish request.
-        run: npm run electron:dist -- --publish never
+        run: pnpm build:desktop
 
       # Keep the native installers available from the completed workflow run.
       - name: Upload installer artifacts

@@ -1,47 +1,16 @@
 {
-  "name": "taskflow-web",
-  "private": true,
+  "name": "taskflow",
   "version": "0.0.0",
-  "type": "module",
-  "main": "electron/main.cjs",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
   "scripts": {
-    "dev": "vite",
-    "electron:dev": "concurrently --kill-others-on-fail \"vite --host 127.0.0.1 --strictPort\" \"wait-on http-get://127.0.0.1:5173 && cross-env ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron .\"",
-    "build": "vite build",
-    "electron:pack": "npm run build && electron-builder --dir",
-    "electron:dist": "npm run build && electron-builder",
-    "lint": "oxlint",
-    "test": "vitest run src",
-    "test:electron": "node --test electron/*.test.cjs",
-    "test:db": "npx supabase test db",
-    "test:collaboration:local": "node scripts/phase5-local-smoke.mjs",
-    "test:all": "npm test && npm run test:db && npm run lint && npm run build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
-    "@supabase/supabase-js": "^2.112.3",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
-  },
-  "devDependencies": {
-    "@testing-library/jest-dom": "^7.0.1",
-    "@testing-library/react": "^16.3.3",
-    "@testing-library/user-event": "^14.6.7",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.4",
-    "concurrently": "^10.0.5",
-    "cross-env": "^10.1.0",
-    "electron": "^44.2.0",
-    "electron-builder": "^26.15.3",
-    "jsdom": "^29.1.1",
-    "oxlint": "^1.75.0",
-    "supabase": "^2.116.0",
-    "vite": "^8.2.0",
-    "vitest": "^4.1.10",
-    "wait-on": "^9.1.0"
+    "dev:web": "pnpm --filter @taskflow/web dev",
+    "dev:desktop": "pnpm --filter @taskflow/desktop electron:dev",
+    "build:web": "pnpm --filter @taskflow/web build",
+    "build:desktop": "pnpm --filter @taskflow/desktop electron:dist",
+    "test": "pnpm --recursive --if-present test",
+    "test:db": "pnpm --filter @taskflow/web test:db",
+    "test:collaboration:local": "pnpm --filter @taskflow/web test:collaboration:local",
+    "lint": "pnpm --recursive --if-present lint"
   }
 }
