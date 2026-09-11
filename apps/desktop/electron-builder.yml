@@ -1,11 +1,11 @@
 appId: com.paayas.taskflow
 productName: TaskFlow
+executableName: TaskFlow
 
 directories:
-  output: release
+  output: ../../release
 
 files:
-  - dist/**/*
   - electron/**/*
   - "!electron/**/*.test.cjs"
   - package.json
@@ -15,7 +15,15 @@ files:
   - "!**/*backup*"
   - "!node_modules/**/*"
 
+extraResources:
+  - from: ../web/dist
+    to: renderer
+    filter:
+      - "**/*"
+      - "!**/*.map"
+
 asar: true
+npmRebuild: false
 
 protocols:
   - name: TaskFlow

@@ -1,0 +1,74 @@
+name: Build Electron installers
+
+on:
+  push:
+    branches:
+      - main
+      - feature/electron-alpha
+      - feature/mobile-monorepo
+  workflow_dispatch:
+
+# The workflow only needs permission to read the repository contents.
+permissions:
+  contents: read
+
+jobs:
+  build-desktop:
+    name: Build ${{ matrix.platform }} installer
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Linux
+            os: ubuntu-latest
+            artifact_name: taskflow-linux
+            artifact_paths: |
+              release/*.AppImage
+          - platform: macOS
+            os: macos-latest
+            artifact_name: taskflow-macos
+            artifact_paths: |
+              release/*.dmg
+              release/*.zip
+
+    runs-on: ${{ matrix.os }}
+
+    # Internal alpha builds are intentionally unsigned for now.
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+    steps:
+      # Download the exact revision that triggered this workflow.
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      # Install the pnpm version pinned by the monorepo.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+
+      # Configure Node.js and cache pnpm's dependency store.
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Install exactly the versions recorded in pnpm-lock.yaml.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Build the web renderer and package Electron for the native runner.
+      - name: Build Electron installer
+        run: pnpm build:desktop
+
+      # Keep the native installers available from the completed workflow run.
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_paths }}
+          if-no-files-found: error
+          retention-days: 14

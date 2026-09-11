@@ -1,0 +1,148 @@
+import { createClient, type SupabaseClient, type SupabaseClientOptions } from "@supabase/supabase-js";
+import {
+  validateCreateTask,
+  type CreateTaskInput,
+  type LoginResult,
+  type Task,
+  type TaskStatus,
+  type User,
+} from "@taskflow/domain";
+
+type Storage = NonNullable<SupabaseClientOptions<"public">["auth"]>["storage"];
+
+export interface CreateTaskFlowApiOptions {
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  storage?: Storage;
+}
+
+const rowStatus = (status: string | null): TaskStatus => {
+  if (status === "done") return "completed";
+  if (status === "in_progress") return "in-progress";
+  return "todo";
+};
+
+const databaseStatus = (status: TaskStatus): "todo" | "in_progress" | "done" =>
+  status === "completed" ? "done" : status === "in-progress" ? "in_progress" : "todo";
+
+const authUser = (user: { id: string; email?: string; user_metadata?: Record<string, unknown> }): User => ({
+  id: user.id,
+  email: user.email ?? "",
+  displayName: typeof user.user_metadata?.display_name === "string" ? user.user_metadata.display_name : "",
+});
+
+const taskFromRow = (row: Record<string, unknown>): Task => {
+  const assignments = row.task_assignments;
+  const assignment = Array.isArray(assignments) ? assignments[0] : assignments;
+  return {
+    id: String(row.id),
+    projectId: typeof row.project_id === "string" ? row.project_id : null,
+    createdBy: String(row.created_by),
+    title: typeof row.title === "string" ? row.title : "",
+    description: typeof row.description === "string" ? row.description : "",
+    notes: typeof row.notes === "string" ? row.notes : "",
+    priority: row.priority === "low" || row.priority === "high" ? row.priority : "medium",
+    status: rowStatus(typeof row.status === "string" ? row.status : null),
+    workType: row.work_type === "story" ? "story" : "task",
+    storyId: typeof row.story_id === "string" ? row.story_id : null,
+    parentTaskId: typeof row.parent_task_id === "string" ? row.parent_task_id : null,
+    columnId: typeof row.column_id === "string" ? row.column_id : null,
+    position: typeof row.position === "number" ? row.position : null,
+    assigneeId:
+      assignment && typeof assignment === "object" && "user_id" in assignment && typeof assignment.user_id === "string"
+        ? assignment.user_id
+        : null,
+    dueDate: typeof row.due_date === "string" ? row.due_date : null,
+    startDate: typeof row.start_date === "string" ? row.start_date : null,
+    endDate: typeof row.end_date === "string" ? row.end_date : null,
+    startTime: typeof row.start_time === "string" ? row.start_time.slice(0, 5) : null,
+    endTime: typeof row.end_time === "string" ? row.end_time.slice(0, 5) : null,
+    reminderEnabled: row.reminder_enabled === true,
+    reminderAt: typeof row.reminder_at === "string" ? row.reminder_at : null,
+    completedAt: typeof row.completed_at === "string" ? row.completed_at : null,
+    archivedAt: typeof row.archived_at === "string" ? row.archived_at : null,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+};
+
+const TASK_SELECT = `id, project_id, created_by, title, description, notes, priority, status,
+  work_type, story_id, parent_task_id, column_id, position, due_date, start_date,
+  end_date, start_time, end_time, reminder_enabled, reminder_at, completed_at,
+  archived_at, created_at, updated_at, task_assignments(user_id)`;
+
+export const createTaskFlowApi = (options: CreateTaskFlowApiOptions) => {
+  if (!options.supabaseUrl || !options.supabaseAnonKey) {
+    throw new Error("TaskFlow Supabase configuration is missing.");
+  }
+
+  const supabase: SupabaseClient = createClient(options.supabaseUrl, options.supabaseAnonKey, {
+    auth: {
+      ...(options.storage ? { storage: options.storage } : {}),
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+    },
+  });
+
+  return {
+    supabase,
+
+    async login(email: string, password: string): Promise<LoginResult> {
+      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) throw error;
+      if (!data.user) throw new Error("Login did not return a user.");
+      return { user: authUser(data.user) };
+    },
+
+    async logout(): Promise<void> {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    },
+
+    async getTasks(): Promise<Task[]> {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select(TASK_SELECT)
+        .is("archived_at", null)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map((row) => taskFromRow(row as unknown as Record<string, unknown>));
+    },
+
+    async createTask(input: CreateTaskInput): Promise<Task> {
+      const values = validateCreateTask(input);
+      const { data: userData, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!userData.user) throw new Error("You must be signed in to create a task.");
+
+      const row = {
+        created_by: userData.user.id,
+        project_id: values.projectId ?? null,
+        title: values.title,
+        description: values.description ?? null,
+        notes: values.notes ?? null,
+        priority: values.priority ?? "medium",
+        status: databaseStatus(values.status ?? "todo"),
+        work_type: values.workType ?? "task",
+        story_id: values.storyId ?? null,
+        parent_task_id: values.parentTaskId ?? null,
+        column_id: values.projectId ? values.columnId ?? null : null,
+        position: values.projectId ? values.position ?? null : null,
+        due_date: values.dueDate ?? null,
+        start_date: values.dueDate ?? null,
+        end_date: values.endDate ?? null,
+        start_time: values.startTime ?? null,
+        end_time: values.endTime ?? null,
+        reminder_enabled: Boolean(values.reminderAt),
+        reminder_at: values.reminderAt ?? null,
+      };
+
+      const { data, error } = await supabase.from("tasks").insert(row).select(TASK_SELECT).single();
+      if (error) throw error;
+      return taskFromRow(data as unknown as Record<string, unknown>);
+    },
+  };
+};
+
+export type TaskFlowApi = ReturnType<typeof createTaskFlowApi>;
