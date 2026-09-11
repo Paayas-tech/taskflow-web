@@ -1,17 +1,19 @@
 import { useState } from "react";
-import { router } from "expo-router";
+import { Redirect, type Href } from "expo-router";
 import {
   ActivityIndicator,
   Pressable,
-  SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
-import { getApi } from "../src/lib/api";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuth } from "../src/auth/AuthProvider";
+import { colors, elevation, radii, spacing, typography } from "../src/ui/theme";
 
 export default function LoginScreen() {
+  const { authenticated, loading: authLoading, login: signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -21,8 +23,7 @@ export default function LoginScreen() {
     setLoading(true);
     setError("");
     try {
-      await getApi().login(email, password);
-      router.replace("/tasks");
+      await signIn(email, password);
     } catch (value) {
       setError(value instanceof Error ? value.message : "Unable to sign in.");
     } finally {
@@ -30,15 +31,24 @@ export default function LoginScreen() {
     }
   };
 
+  if (authLoading) {
+    return <SafeAreaView style={styles.page}><ActivityIndicator size="large" /></SafeAreaView>;
+  }
+
+  if (authenticated) {
+    return <Redirect href={"/(tabs)" as Href} />;
+  }
+
   return (
     <SafeAreaView style={styles.page}>
       <View style={styles.card}>
+        <View style={styles.mark}><Text style={styles.markText}>✓</Text></View>
         <Text style={styles.title}>TaskFlow</Text>
-        <Text style={styles.subtitle}>Sign in to see your tasks</Text>
-        <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder="Email" autoCapitalize="none" keyboardType="email-address" />
-        <TextInput style={styles.input} value={password} onChangeText={setPassword} placeholder="Password" secureTextEntry />
+        <Text style={styles.subtitle}>Sign in to focus on what matters.</Text>
+        <TextInput accessibilityLabel="Email" style={styles.input} value={email} onChangeText={setEmail} placeholder="Email" placeholderTextColor={colors.muted} autoCapitalize="none" keyboardType="email-address" />
+        <TextInput accessibilityLabel="Password" style={styles.input} value={password} onChangeText={setPassword} placeholder="Password" placeholderTextColor={colors.muted} secureTextEntry />
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        <Pressable style={[styles.button, loading && styles.disabled]} disabled={loading} onPress={login}>
+        <Pressable accessibilityRole="button" style={({ pressed }) => [styles.button, pressed && styles.pressed, loading && styles.disabled]} disabled={loading} onPress={login}>
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Sign in</Text>}
         </Pressable>
       </View>
@@ -47,13 +57,16 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, justifyContent: "center", padding: 24, backgroundColor: "#f4f6fb" },
-  card: { gap: 14, padding: 24, borderRadius: 18, backgroundColor: "white" },
-  title: { fontSize: 32, fontWeight: "700", color: "#172033" },
-  subtitle: { marginBottom: 8, fontSize: 16, color: "#667085" },
-  input: { borderWidth: 1, borderColor: "#d0d5dd", borderRadius: 10, padding: 14, fontSize: 16 },
-  button: { alignItems: "center", borderRadius: 10, padding: 15, backgroundColor: "#4f46e5" },
+  page: { flex: 1, justifyContent: "center", padding: spacing.lg, backgroundColor: colors.background },
+  card: { ...elevation.card, gap: spacing.md, padding: spacing.xl, borderRadius: radii.lg, backgroundColor: colors.surface },
+  mark: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: radii.md, backgroundColor: colors.primary },
+  markText: { fontSize: 21, fontWeight: "700", color: "white" },
+  title: { ...typography.screenTitle, color: colors.text },
+  subtitle: { ...typography.body, marginBottom: spacing.sm, color: colors.muted },
+  input: { ...typography.body, minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: radii.sm, paddingHorizontal: spacing.md, color: colors.text, backgroundColor: colors.background },
+  button: { minHeight: 48, alignItems: "center", justifyContent: "center", borderRadius: radii.sm, backgroundColor: colors.primary },
   disabled: { opacity: 0.65 },
-  buttonText: { color: "white", fontSize: 16, fontWeight: "600" },
-  error: { color: "#b42318" },
+  pressed: { opacity: 0.78 },
+  buttonText: { ...typography.button, color: "white" },
+  error: { ...typography.body, color: colors.danger },
 });

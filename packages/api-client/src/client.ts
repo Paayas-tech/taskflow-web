@@ -3,6 +3,7 @@ import {
   validateCreateTask,
   type CreateTaskInput,
   type LoginResult,
+  type Project,
   type Task,
   type TaskStatus,
   type User,
@@ -66,10 +67,26 @@ const taskFromRow = (row: Record<string, unknown>): Task => {
   };
 };
 
+const projectFromRow = (row: Record<string, unknown>): Project => ({
+  id: String(row.id),
+  ownerId: String(row.owner_id),
+  name: typeof row.name === "string" && row.name.trim() ? row.name : "Untitled project",
+  description: typeof row.description === "string" ? row.description : "",
+  color: typeof row.color === "string" ? row.color : null,
+  status: row.status === "archived" ? "archived" : "active",
+  dueDate: typeof row.due_date === "string" ? row.due_date : null,
+  archivedAt: typeof row.archived_at === "string" ? row.archived_at : null,
+  createdAt: String(row.created_at),
+  updatedAt: String(row.updated_at),
+});
+
 const TASK_SELECT = `id, project_id, created_by, title, description, notes, priority, status,
   work_type, story_id, parent_task_id, column_id, position, due_date, start_date,
   end_date, start_time, end_time, reminder_enabled, reminder_at, completed_at,
   archived_at, created_at, updated_at, task_assignments(user_id)`;
+
+const PROJECT_SELECT = `id, owner_id, name, description, color, status, due_date,
+  archived_at, created_at, updated_at`;
 
 export const createTaskFlowApi = (options: CreateTaskFlowApiOptions) => {
   if (!options.supabaseUrl || !options.supabaseAnonKey) {
@@ -105,9 +122,55 @@ export const createTaskFlowApi = (options: CreateTaskFlowApiOptions) => {
         .from("tasks")
         .select(TASK_SELECT)
         .is("archived_at", null)
+        .neq("status", "done")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []).map((row) => taskFromRow(row as unknown as Record<string, unknown>));
+    },
+
+    async getProjects(): Promise<Project[]> {
+      const { data, error } = await supabase
+        .from("projects")
+        .select(PROJECT_SELECT)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map((row) => projectFromRow(row as unknown as Record<string, unknown>));
+    },
+
+    async getProject(projectId: string): Promise<Project> {
+      const { data, error } = await supabase
+        .from("projects")
+        .select(PROJECT_SELECT)
+        .eq("id", projectId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error("The selected project is unavailable.");
+      return projectFromRow(data as unknown as Record<string, unknown>);
+    },
+
+    async getProjectTasks(projectId: string): Promise<Task[]> {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select(TASK_SELECT)
+        .eq("project_id", projectId)
+        .is("archived_at", null)
+        .neq("status", "done")
+        .order("position", { ascending: true, nullsFirst: false })
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map((row) => taskFromRow(row as unknown as Record<string, unknown>));
+    },
+
+    async completeTask(taskId: string): Promise<Task> {
+      const { data, error } = await supabase
+        .from("tasks")
+        .update({ status: "done", completed_at: new Date().toISOString() })
+        .eq("id", taskId)
+        .select(TASK_SELECT)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error("This task cannot be completed or is no longer available.");
+      return taskFromRow(data as unknown as Record<string, unknown>);
     },
 
     async createTask(input: CreateTaskInput): Promise<Task> {

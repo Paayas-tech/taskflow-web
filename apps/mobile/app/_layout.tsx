@@ -1,10 +1,15 @@
 import { Stack } from "expo-router";
+import { AuthProvider } from "../src/auth/AuthProvider";
 
 export default function RootLayout() {
   return (
-    <Stack>
-      <Stack.Screen name="index" options={{ title: "Sign in", headerShown: false }} />
-      <Stack.Screen name="tasks" options={{ title: "My tasks", headerBackVisible: false }} />
-    </Stack>
+    <AuthProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="tasks" />
+        <Stack.Screen name="project/[projectId]" />
+      </Stack>
+    </AuthProvider>
   );
 }
