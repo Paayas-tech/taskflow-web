@@ -1,51 +1,82 @@
-import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useState } from "react";
+import { type Href, useFocusEffect, useRouter } from "expo-router";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import type { Task } from "@taskflow/domain";
 import { getApi } from "../../src/lib/api";
+import { colors, elevation, radii, spacing, typography } from "../../src/ui/theme";
 
 export default function HomeScreen() {
-  const [taskCount, setTaskCount] = useState<number | null>(null);
+  const router = useRouter();
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const loadCount = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true);
-    try {
-      setTaskCount((await getApi().getTasks()).length);
-    } catch {
-      setTaskCount(null);
-    } finally {
-      setLoading(false);
-    }
+    setError("");
+    try { setTasks(await getApi().getTasks()); }
+    catch (value) { setError(value instanceof Error ? value.message : "Unable to load your summary."); }
+    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => {
-    void loadCount();
-  }, [loadCount]);
+  useFocusEffect(useCallback(() => { void load(); }, [load]));
 
   return (
     <SafeAreaView style={styles.page}>
-      <View style={styles.content}>
+      <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>TaskFlow</Text>
-        <Text style={styles.welcome}>Welcome back. Keep your work moving.</Text>
-        <View style={styles.card}>
-          <Text style={styles.label}>Active tasks</Text>
-          {loading ? <ActivityIndicator style={styles.activity} /> : <Text style={styles.count}>{taskCount ?? "Unavailable"}</Text>}
-          {!loading && taskCount === null ? (
-            <Pressable onPress={loadCount}><Text style={styles.retry}>Try again</Text></Pressable>
-          ) : null}
+        <Text style={styles.welcome}>Today</Text>
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryIcon}><Text style={styles.summarySymbol}>✓</Text></View>
+          <View style={styles.summaryCopy}><Text style={styles.summaryLabel}>Active tasks</Text><Text style={styles.summaryDetail}>{tasks.length === 0 && !loading ? "You’re all caught up" : "Ready when you are"}</Text></View>
+          {loading ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.count}>{tasks.length}</Text>}
         </View>
-      </View>
+        {error ? <View style={styles.errorCard}><Text style={styles.error}>{error}</Text><Pressable onPress={() => void load()}><Text style={styles.retry}>Try again</Text></Pressable></View> : null}
+        {!loading && !error && tasks.length > 0 ? <View style={styles.preview}><Text style={styles.sectionTitle}>Up next</Text><View style={styles.previewList}>{tasks.slice(0, 3).map((task, index) => <View key={task.id} style={[styles.previewRow, index < Math.min(tasks.length, 3) - 1 && styles.divider]}><View style={styles.taskDot} /><Text numberOfLines={1} style={styles.previewTitle}>{task.title}</Text></View>)}</View></View> : null}
+        <Text style={styles.sectionTitle}>Browse</Text>
+        <View style={styles.actions}>
+          <Action title="All tasks" detail="Review and complete work" symbol="✓" onPress={() => router.push("/(tabs)/tasks" as Href)} />
+          <Action title="Projects" detail="Browse project work" symbol="▦" onPress={() => router.push("/(tabs)/projects" as Href)} />
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
+function Action({ title, detail, symbol, onPress }: { title: string; detail: string; symbol: string; onPress: () => void }) {
+  return <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.action, pressed && styles.pressed]}><View style={styles.actionIcon}><Text style={styles.actionSymbol}>{symbol}</Text></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>{title}</Text><Text style={styles.actionDetail}>{detail}</Text></View><Text style={styles.chevron}>›</Text></Pressable>;
+}
+
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: "#f4f6fb" },
-  content: { padding: 24, gap: 12 },
-  title: { marginTop: 20, fontSize: 34, fontWeight: "700", color: "#172033" },
-  welcome: { fontSize: 17, lineHeight: 24, color: "#667085" },
-  card: { marginTop: 20, padding: 22, borderRadius: 16, backgroundColor: "white" },
-  label: { fontSize: 15, color: "#667085" },
-  count: { marginTop: 8, fontSize: 30, fontWeight: "700", color: "#172033" },
-  activity: { marginTop: 16, alignSelf: "flex-start" },
-  retry: { marginTop: 12, color: "#4f46e5", fontWeight: "600" },
+  page: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.md, paddingTop: spacing.lg, paddingBottom: 40 },
+  title: { ...typography.screenTitle, color: colors.text },
+  welcome: { ...typography.body, marginTop: spacing.xxs, color: colors.muted },
+  summaryCard: { ...elevation.card, minHeight: 68, flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.lg, padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.surface },
+  summaryIcon: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: radii.pill, backgroundColor: colors.primary },
+  summarySymbol: { fontSize: 17, fontWeight: "700", color: "white" },
+  summaryCopy: { flex: 1 },
+  summaryLabel: { ...typography.cardTitle, color: colors.text },
+  summaryDetail: { ...typography.metadata, color: colors.muted },
+  count: { fontSize: 25, lineHeight: 30, fontWeight: "700", color: colors.primary },
+  errorCard: { marginTop: spacing.sm, padding: spacing.md, borderRadius: radii.md, backgroundColor: "#FFF1F0" },
+  error: { ...typography.body, color: colors.danger },
+  retry: { ...typography.button, marginTop: spacing.xs, color: colors.primary },
+  preview: { marginTop: spacing.sm },
+  sectionTitle: { ...typography.caption, marginTop: spacing.lg, marginBottom: spacing.sm, paddingHorizontal: spacing.xs, letterSpacing: 0.4, color: colors.muted, textTransform: "uppercase" },
+  previewList: { overflow: "hidden", borderRadius: radii.md, backgroundColor: colors.surface },
+  previewRow: { minHeight: 46, flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.md },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  taskDot: { width: 12, height: 12, borderRadius: radii.pill, borderWidth: 2, borderColor: colors.primary },
+  previewTitle: { ...typography.body, flex: 1, color: colors.text },
+  actions: { overflow: "hidden", borderRadius: radii.md, backgroundColor: colors.surface },
+  action: { minHeight: 58, flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  pressed: { opacity: 0.65 },
+  actionIcon: { width: 32, height: 32, alignItems: "center", justifyContent: "center", borderRadius: radii.sm, backgroundColor: colors.primarySoft },
+  actionSymbol: { fontSize: 16, fontWeight: "700", color: colors.primary },
+  actionCopy: { flex: 1 },
+  actionTitle: { ...typography.cardTitle, color: colors.text },
+  actionDetail: { ...typography.metadata, color: colors.muted },
+  chevron: { fontSize: 21, color: colors.muted },
 });
