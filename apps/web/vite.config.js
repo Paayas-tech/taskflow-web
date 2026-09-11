@@ -5,6 +5,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   // Preserve the repository-level .env/.env.local location after moving Vite.
   envDir: '../..',
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
   plugins: [react()],
   test: {
     environment: 'jsdom',

@@ -33,3 +33,7 @@ firebase-debug.log
 
 .vercel
 .env*
+!.env.example
+!apps/mobile/
+!apps/mobile/.env.example
+apps/mobile/.expo/

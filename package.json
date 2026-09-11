@@ -6,11 +6,18 @@
   "scripts": {
     "dev:web": "pnpm --filter @taskflow/web dev",
     "dev:desktop": "pnpm --filter @taskflow/desktop electron:dev",
+    "dev:mobile": "pnpm --filter @taskflow/mobile start",
     "build:web": "pnpm --filter @taskflow/web build",
     "build:desktop": "pnpm --filter @taskflow/desktop electron:dist",
     "test": "pnpm --recursive --if-present test",
     "test:db": "pnpm --filter @taskflow/web test:db",
     "test:collaboration:local": "pnpm --filter @taskflow/web test:collaboration:local",
-    "lint": "pnpm --recursive --if-present lint"
+    "lint": "pnpm --recursive --if-present lint",
+    "typecheck": "pnpm --recursive --if-present typecheck"
+  },
+  "devDependencies": {
+    "lru-cache": "5.1.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
   }
 }
