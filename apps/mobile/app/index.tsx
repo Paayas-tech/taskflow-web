@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { router } from "expo-router";
+import { Redirect, type Href } from "expo-router";
 import {
   ActivityIndicator,
   Pressable,
@@ -9,9 +9,10 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { getApi } from "../src/lib/api";
+import { useAuth } from "../src/auth/AuthProvider";
 
 export default function LoginScreen() {
+  const { authenticated, loading: authLoading, login: signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -21,14 +22,21 @@ export default function LoginScreen() {
     setLoading(true);
     setError("");
     try {
-      await getApi().login(email, password);
-      router.replace("/tasks");
+      await signIn(email, password);
     } catch (value) {
       setError(value instanceof Error ? value.message : "Unable to sign in.");
     } finally {
       setLoading(false);
     }
   };
+
+  if (authLoading) {
+    return <SafeAreaView style={styles.page}><ActivityIndicator size="large" /></SafeAreaView>;
+  }
+
+  if (authenticated) {
+    return <Redirect href={"/(tabs)" as Href} />;
+  }
 
   return (
     <SafeAreaView style={styles.page}>
