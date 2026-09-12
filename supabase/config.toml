@@ -418,3 +418,6 @@ verify_jwt = true
 
 [functions.google-calendar-disconnect]
 verify_jwt = true
+
+[functions.agent-chat]
+verify_jwt = true

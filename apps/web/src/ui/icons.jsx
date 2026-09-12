@@ -1,6 +1,12 @@
 import { cx } from "./primitives";
 
 const shapes = {
+  sparkles: (
+    <>
+      <path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2z" />
+      <path d="m18.5 13 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8zM5 14l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" />
+    </>
+  ),
   home: <path d="M3 10.5 12 3l9 7.5M5 9.5V20h14V9.5M9.5 20v-6h5v6" />,
   "check-square": (
     <>

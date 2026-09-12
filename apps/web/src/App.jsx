@@ -22,6 +22,7 @@ import {
   routeViewFromPath,
 } from "./router";
 import { AppShell } from "./shell/AppShell";
+import { AgentDrawer } from "./shell/AgentDrawer";
 import { ProfileCompletionPrompt } from "./shell/ProfileCompletionPrompt";
 import { SearchDialog } from "./shell/SearchDialog";
 import { Sidebar } from "./shell/Sidebar";
@@ -69,6 +70,7 @@ export function App() {
   const ui = useStore(selectUi);
 
   const [authEntryMode, setAuthEntryMode] = useState("signin");
+  const [agentOpen, setAgentOpen] = useState(false);
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const defaultRouteApplied = useRef(false);
 
@@ -245,6 +247,11 @@ export function App() {
       <TaskDetailPanel taskId={ui.selectedTaskId} />
       <TaskComposerDialog />
       <SearchDialog />
+
+      <IconButton className="agent-fab" label="Open TaskFlow Agent" onClick={() => setAgentOpen(true)}>
+        <Icon name="sparkles" size={18} />
+      </IconButton>
+      <AgentDrawer open={agentOpen} onClose={() => setAgentOpen(false)} project={selectedProject} />
 
       <Toasts />
     </>

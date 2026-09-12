@@ -2,6 +2,9 @@ import { createClient, type SupabaseClient, type SupabaseClientOptions } from "@
 import {
   validateCreateTask,
   type CreateTaskInput,
+  type AgentContext,
+  type AgentMessage,
+  type AgentResponse,
   type LoginResult,
   type Project,
   type Task,
@@ -115,6 +118,23 @@ export const createTaskFlowApi = (options: CreateTaskFlowApiOptions) => {
     async logout(): Promise<void> {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+    },
+
+    async askAgent(
+      message: string,
+      conversationHistory: AgentMessage[] = [],
+      context: AgentContext = {},
+    ): Promise<AgentResponse> {
+      const prompt = message.trim();
+      if (!prompt) throw new Error("Ask TaskFlow a question first.");
+      const { data, error } = await supabase.functions.invoke<AgentResponse>("agent-chat", {
+        body: { message: prompt, conversationHistory, context },
+      });
+      if (error) throw error;
+      if (!data || typeof data.message !== "string" || !Array.isArray(data.actions)) {
+        throw new Error("TaskFlow Agent returned an invalid response.");
+      }
+      return data;
     },
 
     async getTasks(): Promise<Task[]> {

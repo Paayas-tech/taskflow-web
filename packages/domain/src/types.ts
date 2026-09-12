@@ -80,3 +80,36 @@ export interface CreateTaskInput {
 export interface LoginResult {
   user: User;
 }
+
+export type AgentMessageRole = "user" | "assistant";
+
+export interface AgentMessage {
+  role: AgentMessageRole;
+  content: string;
+}
+
+export interface AgentContext {
+  timezone?: string;
+  currentProjectId?: UUID | null;
+  currentProjectName?: string | null;
+}
+
+export type AgentToolName =
+  | "list_projects"
+  | "query_tasks"
+  | "create_task"
+  | "update_task";
+
+export interface AgentToolExecution {
+  id: string;
+  name: AgentToolName;
+  arguments: Record<string, unknown>;
+  status: "completed" | "failed";
+  result?: unknown;
+  error?: string;
+}
+
+export interface AgentResponse {
+  message: string;
+  actions: AgentToolExecution[];
+}

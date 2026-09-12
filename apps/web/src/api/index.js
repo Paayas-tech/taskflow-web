@@ -6,3 +6,4 @@ export * from "./collaboration";
 export * from "./attachments";
 export * from "./settings";
 export * from "./calendar";
+export * from "./agent";

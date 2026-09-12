@@ -209,6 +209,10 @@ export const ensureWorkspace = (projectId) => {
   return promise;
 };
 
+/** Revalidates a loaded project after an external action such as the agent. */
+export const refreshWorkspace = (projectId) =>
+  projectId ? loadWorkspace(projectId, true) : Promise.resolve(null);
+
 /* -------------------------------------------------------------------------
  * Project CRUD
  * ---------------------------------------------------------------------- */
