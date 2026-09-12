@@ -25,6 +25,13 @@
 .agent-bubble li { margin: 4px 0; padding-left: 2px; }
 .agent-bubble li::marker { content: "•  "; color: var(--color-text-2); }
 .agent-bubble small, .agent-bubble .meta { color: var(--color-text-2); }
+.agent-confirmation { display: flex; gap: 8px; margin-top: 8px; }
+.agent-confirmation button { min-height: 34px; padding: 6px 13px; border-radius: 9px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease; }
+.agent-confirmation button:disabled { cursor: default; opacity: 0.5; }
+.agent-confirm { border: 1px solid var(--color-danger); background: var(--color-danger); color: var(--color-text-inverse); }
+.agent-confirm:hover:not(:disabled) { background: #991b1b; }
+.agent-cancel { border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text); }
+.agent-cancel:hover:not(:disabled) { background: var(--color-surface-2); }
 
 .agent-thinking, .agent-error { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-2); font-size: var(--text-sm); }
 .agent-thinking { margin-left: 37px; }

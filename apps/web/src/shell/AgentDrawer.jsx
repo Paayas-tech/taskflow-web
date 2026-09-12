@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { askAgent } from "../api/agent";
-import { loadTasks } from "../store/session";
+import { loadProjects, loadTasks } from "../store/session";
 import { refreshWorkspace } from "../store/projects";
 import { Button } from "../ui/Button";
 import { SidePanel } from "../ui/Dialog";
@@ -61,9 +61,9 @@ export function AgentDrawer({ open, onClose, project }) {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages, loading]);
 
-  const run = async ({ content, history, appendUser }) => {
+  const run = async ({ content, history, appendUser, confirmedDeleteTask }) => {
     if (!content || loading) return;
-    retryRef.current = { content, history, appendUser: false };
+    retryRef.current = { content, history, appendUser: false, confirmedDeleteTask };
     if (appendUser) setMessages((current) => [...current, { role: "user", content, actions: [] }]);
     setError("");
     setLoading(true);
@@ -72,13 +72,23 @@ export function AgentDrawer({ open, onClose, project }) {
         timezone: timezone(),
         currentProjectId: project?.id || null,
         currentProjectName: project?.name || null,
+        ...(confirmedDeleteTask ? { confirmedDeleteTask } : {}),
       });
-      setMessages((current) => [...current, { role: "assistant", content: result.message, actions: result.actions }]);
+      setMessages((current) => [...current, {
+        role: "assistant",
+        content: result.message,
+        actions: result.actions,
+        confirmation: result.confirmation || null,
+      }]);
       retryRef.current = null;
-      const mutations = result.actions.filter((action) => action.status === "completed" && (action.name === "create_task" || action.name === "update_task"));
+      const mutationNames = new Set(["create_task", "update_task", "delete_task", "bulk_update_tasks"]);
+      const mutations = result.actions.filter((action) => action.status === "completed" && mutationNames.has(action.name));
       if (mutations.length) {
-        void loadTasks({ silent: true });
-        const projectIds = [...new Set(mutations.map((action) => action.result?.task?.project_id).filter(Boolean))];
+        void Promise.allSettled([loadProjects({ silent: true }), loadTasks({ silent: true })]);
+        const projectIds = [...new Set(mutations.flatMap((action) => {
+          const tasks = [action.result?.task, ...(Array.isArray(action.result?.tasks) ? action.result.tasks : [])];
+          return tasks.map((task) => task?.project_id).filter(Boolean);
+        }))];
         projectIds.forEach((projectId) => void refreshWorkspace(projectId));
       }
     } catch (value) {
@@ -92,12 +102,29 @@ export function AgentDrawer({ open, onClose, project }) {
     const content = draft.trim();
     if (!content || loading) return;
     const history = messages.map(({ role, content: text }) => ({ role, content: text }));
+    const pendingDelete = [...messages].reverse().find((message) => message.confirmation?.type === "delete_task")?.confirmation;
     setDraft("");
-    void run({ content, history, appendUser: true });
+    void run({ content, history, appendUser: true, confirmedDeleteTask: pendingDelete });
   };
 
   const retry = () => {
     if (retryRef.current) void run(retryRef.current);
+  };
+
+  const confirmDelete = (messageIndex, confirmation) => {
+    const history = messages.map(({ role, content }) => ({ role, content }));
+    setMessages((current) => current.map((message, index) => index === messageIndex
+      ? { ...message, confirmation: null }
+      : message));
+    void run({ content: "Yes, delete it.", history, appendUser: true, confirmedDeleteTask: confirmation });
+  };
+
+  const cancelDelete = (messageIndex) => {
+    setMessages((current) => [
+      ...current.map((message, index) => index === messageIndex ? { ...message, confirmation: null } : message),
+      { role: "user", content: "Cancel deletion.", actions: [] },
+      { role: "assistant", content: "Okay, I won’t delete it.", actions: [] },
+    ]);
   };
 
   const header = (
@@ -140,7 +167,15 @@ export function AgentDrawer({ open, onClose, project }) {
           <div key={`${message.role}-${index}`} className={`agent-message is-${message.role}`}>
             <div className="agent-message-row">
               {message.role === "assistant" ? <span className="agent-avatar" aria-hidden="true">✦</span> : null}
-              <div className="agent-bubble"><MessageContent content={message.content} /></div>
+              <div>
+                <div className="agent-bubble"><MessageContent content={message.content} /></div>
+                {message.confirmation?.type === "delete_task" ? (
+                  <div className="agent-confirmation" aria-label="Confirm task deletion">
+                    <button type="button" className="agent-confirm" disabled={loading} onClick={() => confirmDelete(index, message.confirmation)}>Confirm</button>
+                    <button type="button" className="agent-cancel" disabled={loading} onClick={() => cancelDelete(index)}>Cancel</button>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         ))}
