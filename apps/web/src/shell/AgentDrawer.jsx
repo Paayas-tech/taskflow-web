@@ -2,10 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { askAgent } from "../api/agent";
 import { loadTasks } from "../store/session";
 import { refreshWorkspace } from "../store/projects";
-import { openTask, openTaskInProject } from "../store/ui";
-import { Button, IconButton } from "../ui/Button";
+import { Button } from "../ui/Button";
 import { SidePanel } from "../ui/Dialog";
-import { Icon } from "../ui/icons";
 
 const INITIAL_MESSAGE = {
   role: "assistant",
@@ -13,17 +11,38 @@ const INITIAL_MESSAGE = {
   actions: [],
 };
 
-const toolLabels = {
-  list_projects: "Found projects",
-  query_tasks: "Checked tasks",
-  create_task: "Created task",
-  update_task: "Updated task",
-};
-
 const timezone = () => {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; }
   catch { return "UTC"; }
 };
+
+const renderInline = (text) => text.split(/(\*\*[^*]+\*\*)/u).map((part, index) =>
+  part.startsWith("**") && part.endsWith("**")
+    ? <strong key={index}>{part.slice(2, -2)}</strong>
+    : part
+);
+
+function MessageContent({ content }) {
+  const blocks = [];
+  let bullets = [];
+  const flushBullets = () => {
+    if (!bullets.length) return;
+    blocks.push(<ul key={`list-${blocks.length}`}>{bullets.map((item, index) => <li key={index}>{renderInline(item)}</li>)}</ul>);
+    bullets = [];
+  };
+
+  String(content).split("\n").forEach((line) => {
+    const bullet = line.match(/^\s*(?:[-*]|•)\s+(.+)$/u);
+    if (bullet) {
+      bullets.push(bullet[1]);
+      return;
+    }
+    flushBullets();
+    if (line.trim()) blocks.push(<p key={`line-${blocks.length}`}>{renderInline(line)}</p>);
+  });
+  flushBullets();
+  return blocks;
+}
 
 export function AgentDrawer({ open, onClose, project }) {
   const [messages, setMessages] = useState([INITIAL_MESSAGE]);
@@ -81,27 +100,50 @@ export function AgentDrawer({ open, onClose, project }) {
     if (retryRef.current) void run(retryRef.current);
   };
 
-  const openActionTask = async (action) => {
-    const task = action.result?.task;
-    if (!task?.id) return;
-    const mapped = { id: task.id, projectId: task.project_id || null };
-    if (mapped.projectId) {
-      await refreshWorkspace(mapped.projectId);
-      openTaskInProject(mapped);
-    } else {
-      await loadTasks({ silent: true });
-      openTask(mapped.id);
-    }
-    onClose();
-  };
-
-  const header = <><div className="agent-heading"><span className="agent-mark"><Icon name="sparkles" size={15} /></span><div><strong>TaskFlow Agent</strong><span>Actions grounded in your workspace</span></div></div><IconButton label="Close agent" size="sm" onClick={onClose}><Icon name="x" /></IconButton></>;
-  const footer = <form className="agent-compose" onSubmit={(event) => { event.preventDefault(); send(); }}><textarea ref={inputRef} className="agent-input" rows={2} value={draft} disabled={loading} placeholder="Ask about tasks or create an action…" aria-label="Message TaskFlow Agent" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }} /><Button variant="primary" type="submit" disabled={!draft.trim()} loading={loading}>Send</Button></form>;
+  const header = (
+    <>
+      <div className="agent-heading" aria-label="AI Assistant">
+        <span className="agent-heading-spark" aria-hidden="true">✦</span>
+        <strong>AI Assistant</strong>
+      </div>
+      <button className="agent-close" type="button" aria-label="Close AI Assistant" onClick={onClose}>×</button>
+    </>
+  );
+  const footer = (
+    <form className="agent-compose" onSubmit={(event) => { event.preventDefault(); send(); }}>
+      <textarea
+        ref={inputRef}
+        className="agent-input"
+        rows={1}
+        value={draft}
+        disabled={loading}
+        placeholder="Ask a question or create a task..."
+        aria-label="Message AI Assistant"
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            send();
+          }
+        }}
+      />
+      <button className="agent-submit" type="submit" aria-label="Send message" disabled={!draft.trim() || loading}>
+        {loading ? <span className="spinner spinner-sm" /> : <span aria-hidden="true">↑</span>}
+      </button>
+    </form>
+  );
 
   return (
     <SidePanel open={open} onClose={onClose} ariaLabel="TaskFlow Agent" className="agent-panel" header={header} footer={footer}>
       <div className="agent-thread" aria-live="polite">
-        {messages.map((message, index) => <div key={`${message.role}-${index}`} className={`agent-message is-${message.role}`}><div className="agent-bubble">{message.content}</div>{message.actions?.map((action) => <button key={action.id} type="button" className={`agent-action is-${action.status}`} disabled={!action.result?.task?.id} onClick={() => openActionTask(action)}><span><strong>{toolLabels[action.name] || action.name}</strong><small>{action.status === "failed" ? action.error : action.result?.task?.title || `${action.result?.tasks?.length ?? action.result?.projects?.length ?? 0} results`}</small></span>{action.result?.task?.id ? <Icon name="chevron-right" /> : null}</button>)}</div>)}
+        {messages.map((message, index) => (
+          <div key={`${message.role}-${index}`} className={`agent-message is-${message.role}`}>
+            <div className="agent-message-row">
+              {message.role === "assistant" ? <span className="agent-avatar" aria-hidden="true">✦</span> : null}
+              <div className="agent-bubble"><MessageContent content={message.content} /></div>
+            </div>
+          </div>
+        ))}
         {loading ? <div className="agent-thinking"><span className="spinner spinner-sm" /> Thinking and checking TaskFlow…</div> : null}
         {error ? <div className="agent-error" role="alert"><span>{error}</span><Button size="sm" variant="ghost" onClick={retry}>Retry</Button></div> : null}
         <div ref={endRef} />
