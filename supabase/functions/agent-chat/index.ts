@@ -136,17 +136,20 @@ const tools = [
     type: "function",
     function: {
       name: "update_task",
-      description: "Update one task after resolving its unique task_id with query_tasks.",
+      description: "Update one task by UUID or by a unique title match, scoped to the active project when available.",
       parameters: {
         type: "object",
         properties: {
           task_id: { type: "string" },
+          taskId: { type: "string" },
+          taskTitle: { type: "string", description: "Current task title to resolve when no UUID is available." },
+          query: { type: "string", description: "Current task-title search when no UUID is available." },
+          projectId: { type: "string", description: "Active project UUID used to scope a title search." },
           title: { type: "string" },
-          status: { type: "string", enum: ["todo", "in_progress", "done"] },
+          status: { type: "string", enum: ["todo", "in_progress", "in progress", "In Progress", "done", "Done"] },
           priority: { type: "string", enum: ["low", "medium", "high"] },
           due_date: { anyOf: [{ type: "string", description: "Date in YYYY-MM-DD format." }, { type: "null" }] },
         },
-        required: ["task_id"],
         additionalProperties: false,
       },
     },
@@ -245,7 +248,7 @@ const callModel = async (messages: unknown[]) => {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: String(Deno.env.get("OPENAI_MODEL") || "openai/gpt-oss-20b").trim(),
+        model: String(Deno.env.get("OPENAI_MODEL") || "llama-3.3-70b-versatile").trim(),
         messages,
         tools,
         tool_choice: "auto",
@@ -326,15 +329,27 @@ const handler = withSupabase({ auth: "user" }, async (request, context) => {
         actions: [{ id: crypto.randomUUID(), name: "delete_task", arguments: {}, status: "completed", result }],
       });
     }
-    const history = Array.isArray(input?.conversationHistory)
-      ? input.conversationHistory.flatMap((item: unknown) => {
-          if (!item || typeof item !== "object") return [];
-          const value = item as Record<string, unknown>;
-          if ((value.role !== "user" && value.role !== "assistant") || typeof value.content !== "string") return [];
-          return [{ role: value.role, content: value.content.slice(0, 4000) }];
-        })
-      : [];
-    const messages: any[] = [{ role: "system", content: systemPrompt(timezone, rawContext) }, ...history, { role: "user", content: prompt }];
+    const incomingHistory = Array.isArray(input?.conversationHistory)
+      ? input.conversationHistory
+      : Array.isArray(input?.messages)
+        ? input.messages
+        : [];
+    const cleanHistory = incomingHistory
+      .filter((item: unknown) => {
+        if (!item || typeof item !== "object") return false;
+        const value = item as Record<string, unknown>;
+        return (value.role === "user" || value.role === "assistant")
+          && typeof value.content === "string"
+          && value.content.trim() !== "";
+      })
+      .map((item: unknown) => {
+        const value = item as Record<string, unknown>;
+        return {
+          role: value.role as "user" | "assistant",
+          content: (value.content as string).trim().slice(0, 4000),
+        };
+      });
+    const messages: any[] = [{ role: "system", content: systemPrompt(timezone, rawContext) }, ...cleanHistory, { role: "user", content: prompt }];
     const actions: Record<string, unknown>[] = [];
 
     for (let step = 0; step < 8; step += 1) {
@@ -375,7 +390,12 @@ const handler = withSupabase({ auth: "user" }, async (request, context) => {
               },
             });
           }
-          const result = await executeAgentTool(name, args, { supabase: context.supabase, userId, now: () => new Date().toISOString() });
+          const result = await executeAgentTool(name, args, {
+            supabase: context.supabase,
+            userId,
+            now: () => new Date().toISOString(),
+            projectId: typeof rawContext.currentProjectId === "string" ? rawContext.currentProjectId : undefined,
+          });
           const toolError = result && typeof result === "object" && "error" in result
             ? String((result as Record<string, unknown>).error || "Tool execution failed.")
             : "";

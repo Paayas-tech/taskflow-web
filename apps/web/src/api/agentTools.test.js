@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { executeAgentTool } from "../../../../supabase/functions/agent-chat/agentTools";
 
 const context = {
@@ -12,6 +12,37 @@ describe("agent tool execution guards", () => {
     await expect(executeAgentTool("create_task", { title: "   " }, context)).rejects.toThrow("title is required");
   });
 
+  it("resolves a create-task project name and applies safe defaults", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000010";
+    const task = {
+      id: "00000000-0000-4000-8000-000000000011",
+      title: "Prepare launch notes",
+      project_id: projectId,
+      status: "todo",
+      priority: null,
+    };
+    const projectLimit = vi.fn().mockResolvedValue({ data: [{ id: projectId, name: "web dev 01" }], error: null });
+    const projectIlike = vi.fn(() => ({ limit: projectLimit }));
+    const projectSelect = vi.fn(() => ({ ilike: projectIlike }));
+    const single = vi.fn().mockResolvedValue({ data: task, error: null });
+    const taskSelect = vi.fn(() => ({ single }));
+    const insert = vi.fn(() => ({ select: taskSelect }));
+    const from = vi.fn((table) => table === "projects" ? { select: projectSelect } : { insert });
+
+    await expect(executeAgentTool("create_task", {
+      title: task.title,
+      projectName: "web dev 01",
+    }, { ...context, supabase: { from } })).resolves.toMatchObject({
+      task: { title: task.title, project_id: projectId, status: "todo", priority: null },
+    });
+    expect(projectIlike).toHaveBeenCalledWith("name", "web dev 01");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({
+      project_id: projectId,
+      priority: null,
+      status: "todo",
+    }));
+  });
+
   it("rejects an invalid update status before querying Supabase", async () => {
     await expect(executeAgentTool("update_task", {
       task_id: "00000000-0000-4000-8000-000000000002",
@@ -19,7 +50,98 @@ describe("agent tool execution guards", () => {
     }, context)).rejects.toThrow("status must be");
   });
 
+  it("resolves an update target by title in the active project and normalizes its status", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000020";
+    const taskId = "00000000-0000-4000-8000-000000000021";
+    const updated = { id: taskId, title: "Write release notes", project_id: projectId, status: "in_progress", priority: "medium" };
+    const limit = vi.fn().mockResolvedValue({ data: [{ id: taskId, title: updated.title }], error: null });
+    const projectEq = vi.fn(() => ({ limit }));
+    const ilike = vi.fn(() => ({ eq: projectEq, limit }));
+    const is = vi.fn(() => ({ ilike }));
+    const select = vi.fn(() => ({ is }));
+    const maybeSingle = vi.fn().mockResolvedValue({ data: updated, error: null });
+    const updateSelect = vi.fn(() => ({ maybeSingle }));
+    const updateEq = vi.fn(() => ({ select: updateSelect }));
+    const update = vi.fn(() => ({ eq: updateEq }));
+    const from = vi.fn(() => ({ select, update }));
+
+    await expect(executeAgentTool("update_task", {
+      taskTitle: updated.title,
+      status: "In Progress",
+    }, { ...context, projectId, supabase: { from } })).resolves.toMatchObject({
+      task: { id: taskId, status: "in_progress" },
+    });
+    expect(ilike).toHaveBeenCalledWith("title", `%${updated.title}%`);
+    expect(projectEq).toHaveBeenCalledWith("project_id", projectId);
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ status: "in_progress" }));
+    expect(updateEq).toHaveBeenCalledWith("id", taskId);
+  });
+
   it("rejects unsupported tools", async () => {
     await expect(executeAgentTool("delete_everything", {}, context)).rejects.toThrow("Unsupported tool");
+  });
+
+  it("returns a descriptive delete error instead of throwing", async () => {
+    await expect(executeAgentTool("delete_task", { taskId: "not-an-id" }, context))
+      .resolves.toEqual({ success: false, error: "Provide a valid task ID or task title." });
+  });
+
+  it("deletes through the authenticated Supabase client", async () => {
+    const row = {
+      id: "00000000-0000-4000-8000-000000000002",
+      title: "Old task",
+      project_id: null,
+      status: "todo",
+      priority: "medium",
+    };
+    const maybeSingle = vi.fn().mockResolvedValue({ data: row, error: null });
+    const selectEq = vi.fn(() => ({ maybeSingle }));
+    const select = vi.fn(() => ({ eq: selectEq }));
+    const deleteSelect = vi.fn().mockResolvedValue({ data: [row], error: null });
+    const match = vi.fn(() => ({ select: deleteSelect }));
+    const deleteQuery = vi.fn(() => ({ match }));
+    const from = vi.fn(() => ({ select, delete: deleteQuery }));
+
+    await expect(executeAgentTool("delete_task", { taskId: row.id }, { ...context, supabase: { from } }))
+      .resolves.toMatchObject({ task: { id: row.id, title: "Old task" } });
+    expect(from).toHaveBeenCalledWith("tasks");
+    expect(deleteQuery).toHaveBeenCalledOnce();
+    expect(match).toHaveBeenCalledWith({ id: row.id });
+  });
+
+  it("resolves a unique task title before deleting", async () => {
+    const row = {
+      id: "00000000-0000-4000-8000-000000000003",
+      title: "Fix login bug",
+      project_id: null,
+      status: "todo",
+      priority: "high",
+    };
+    const limit = vi.fn().mockResolvedValue({ data: [row], error: null });
+    const ilike = vi.fn(() => ({ limit }));
+    const is = vi.fn(() => ({ ilike }));
+    const select = vi.fn(() => ({ is }));
+    const deleteSelect = vi.fn().mockResolvedValue({ data: [row], error: null });
+    const match = vi.fn(() => ({ select: deleteSelect }));
+    const deleteQuery = vi.fn(() => ({ match }));
+    const from = vi.fn(() => ({ select, delete: deleteQuery }));
+
+    await expect(executeAgentTool("delete_task", { taskTitle: "Fix login bug" }, { ...context, supabase: { from } }))
+      .resolves.toMatchObject({ task: { id: row.id, title: row.title } });
+    expect(ilike).toHaveBeenCalledWith("title", "%Fix login bug%");
+    expect(match).toHaveBeenCalledWith({ id: row.id });
+  });
+
+  it("requires a bounded selection for bulk updates", async () => {
+    await expect(executeAgentTool("bulk_update_tasks", {
+      updates: { status: "done" },
+    }, context)).rejects.toThrow("taskIds or at least one filter");
+  });
+
+  it("rejects invalid bulk updates before querying Supabase", async () => {
+    await expect(executeAgentTool("bulk_update_tasks", {
+      filters: { status: "todo" },
+      updates: { status: "blocked" },
+    }, context)).rejects.toThrow("Update status must be");
   });
 });

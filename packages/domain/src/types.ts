@@ -92,13 +92,24 @@ export interface AgentContext {
   timezone?: string;
   currentProjectId?: UUID | null;
   currentProjectName?: string | null;
+  confirmedDeleteTask?: AgentDeleteConfirmation;
 }
 
 export type AgentToolName =
   | "list_projects"
   | "query_tasks"
   | "create_task"
-  | "update_task";
+  | "update_task"
+  | "delete_task"
+  | "bulk_update_tasks";
+
+export interface AgentDeleteConfirmation {
+  type: "delete_task";
+  taskId?: string;
+  taskTitle?: string;
+  query?: string;
+  reason?: string;
+}
 
 export interface AgentToolExecution {
   id: string;
@@ -112,4 +123,5 @@ export interface AgentToolExecution {
 export interface AgentResponse {
   message: string;
   actions: AgentToolExecution[];
+  confirmation?: AgentDeleteConfirmation | null;
 }
