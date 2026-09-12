@@ -128,6 +128,18 @@ export const createTaskFlowApi = (options: CreateTaskFlowApiOptions) => {
       return (data ?? []).map((row) => taskFromRow(row as unknown as Record<string, unknown>));
     },
 
+    async getCompletedTasks(limit = 20): Promise<Task[]> {
+      const { data, error } = await supabase
+        .from("tasks")
+        .select(TASK_SELECT)
+        .is("archived_at", null)
+        .eq("status", "done")
+        .order("completed_at", { ascending: false, nullsFirst: false })
+        .limit(limit);
+      if (error) throw error;
+      return (data ?? []).map((row) => taskFromRow(row as unknown as Record<string, unknown>));
+    },
+
     async getProjects(): Promise<Project[]> {
       const { data, error } = await supabase
         .from("projects")

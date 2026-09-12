@@ -1,40 +1,32 @@
-import { useCallback, useEffect, useState } from "react";
-import { type Href, useRouter } from "expo-router";
+import { useCallback } from "react";
+import { type Href, useFocusEffect, useRouter } from "expo-router";
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Project } from "@taskflow/domain";
+import { useAsyncResource } from "../../src/hooks/useAsyncResource";
 import { getApi } from "../../src/lib/api";
 import { colors, elevation, radii, spacing, typography } from "../../src/ui/theme";
 
 export default function ProjectsScreen() {
   const router = useRouter();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
+  const loader = useCallback(() => getApi().getProjects(), []);
+  const { data: projects, error, loading, refreshing, reload } = useAsyncResource<Project[]>(loader, [], "Unable to load projects.");
 
-  const load = useCallback(async (refresh = false) => {
-    refresh ? setRefreshing(true) : setLoading(true);
-    setError("");
-    try { setProjects(await getApi().getProjects()); }
-    catch (value) { setError(value instanceof Error ? value.message : "Unable to load projects."); }
-    finally { setLoading(false); setRefreshing(false); }
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
+  useFocusEffect(useCallback(() => { void reload(); }, [reload]));
 
   return (
     <SafeAreaView style={styles.page}>
       <View style={styles.header}><Text style={styles.title}>Projects</Text><Text style={styles.subtitle}>{projects.length} available</Text></View>
       {loading ? <View style={styles.center}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.muted}>Loading projects…</Text></View> : null}
-      {!loading && error ? <StateMessage detail={error} action={() => void load()} /> : null}
-      {!loading && !error ? (
+      {!loading && error && projects.length === 0 ? <StateMessage detail={error} action={() => void reload()} /> : null}
+      {(!loading || projects.length > 0) && !(error && projects.length === 0) ? (
         <FlatList
           data={projects}
           keyExtractor={(project) => project.id}
           refreshing={refreshing}
-          onRefresh={() => void load(true)}
+          onRefresh={() => void reload(true)}
           contentContainerStyle={projects.length ? styles.list : styles.center}
+          ListHeaderComponent={error ? <Text style={styles.inlineError}>{error}</Text> : null}
           ListEmptyComponent={<View style={styles.empty}><View style={styles.emptyIcon}><Text style={styles.emptySymbol}>▦</Text></View><Text style={styles.emptyTitle}>No projects yet</Text><Text style={styles.muted}>Projects you own or collaborate on will appear here.</Text></View>}
           renderItem={({ item }) => (
             <Pressable accessibilityHint="Opens project details and tasks" accessibilityRole="button" onPress={() => router.push(`/project/${item.id}` as Href)} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
@@ -74,6 +66,7 @@ const styles = StyleSheet.create({
   muted: { ...typography.body, color: colors.muted, textAlign: "center" },
   stateTitle: { ...typography.sectionTitle, color: colors.text },
   error: { ...typography.body, color: colors.danger, textAlign: "center" },
+  inlineError: { marginBottom: spacing.sm, padding: spacing.md, borderRadius: radii.sm, color: colors.danger, backgroundColor: "#FEF3F2" },
   button: { minHeight: 48, justifyContent: "center", marginTop: spacing.sm, paddingHorizontal: spacing.lg, borderRadius: radii.sm, backgroundColor: colors.primary },
   buttonText: { ...typography.button, color: "white" },
 });

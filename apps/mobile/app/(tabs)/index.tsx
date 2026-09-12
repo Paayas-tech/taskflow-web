@@ -1,30 +1,22 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { type Href, useFocusEffect, useRouter } from "expo-router";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Task } from "@taskflow/domain";
 import { getApi } from "../../src/lib/api";
+import { useAsyncResource } from "../../src/hooks/useAsyncResource";
 import { colors, elevation, radii, spacing, typography } from "../../src/ui/theme";
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const loader = useCallback(() => getApi().getTasks(), []);
+  const { data: tasks, error, loading, refreshing, reload } = useAsyncResource<Task[]>(loader, [], "Unable to load your summary.");
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try { setTasks(await getApi().getTasks()); }
-    catch (value) { setError(value instanceof Error ? value.message : "Unable to load your summary."); }
-    finally { setLoading(false); }
-  }, []);
-
-  useFocusEffect(useCallback(() => { void load(); }, [load]));
+  useFocusEffect(useCallback(() => { void reload(); }, [reload]));
 
   return (
     <SafeAreaView style={styles.page}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void reload(true)} tintColor={colors.primary} colors={[colors.primary]} />}>
         <Text style={styles.title}>TaskFlow</Text>
         <Text style={styles.welcome}>Today</Text>
         <View style={styles.summaryCard}>
@@ -32,7 +24,7 @@ export default function HomeScreen() {
           <View style={styles.summaryCopy}><Text style={styles.summaryLabel}>Active tasks</Text><Text style={styles.summaryDetail}>{tasks.length === 0 && !loading ? "You’re all caught up" : "Ready when you are"}</Text></View>
           {loading ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.count}>{tasks.length}</Text>}
         </View>
-        {error ? <View style={styles.errorCard}><Text style={styles.error}>{error}</Text><Pressable onPress={() => void load()}><Text style={styles.retry}>Try again</Text></Pressable></View> : null}
+        {error ? <View style={styles.errorCard}><Text style={styles.error}>{error}</Text><Pressable accessibilityRole="button" onPress={() => void reload()}><Text style={styles.retry}>Try again</Text></Pressable></View> : null}
         {!loading && !error && tasks.length > 0 ? <View style={styles.preview}><Text style={styles.sectionTitle}>Up next</Text><View style={styles.previewList}>{tasks.slice(0, 3).map((task, index) => <View key={task.id} style={[styles.previewRow, index < Math.min(tasks.length, 3) - 1 && styles.divider]}><View style={styles.taskDot} /><Text numberOfLines={1} style={styles.previewTitle}>{task.title}</Text></View>)}</View></View> : null}
         <Text style={styles.sectionTitle}>Browse</Text>
         <View style={styles.actions}>
