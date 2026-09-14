@@ -101,12 +101,19 @@ export type AgentToolName =
   | "create_task"
   | "update_task"
   | "delete_task"
-  | "bulk_update_tasks";
+  | "bulk_update_tasks"
+  | "get_story_progress"
+  | "get_urgent_todos"
+  | "get_team_overview"
+  | "invite_member"
+  | "generate_subtasks"
+  | "generate_daily_standup";
 
 export interface AgentDeleteConfirmation {
   type: "delete_task";
   taskId?: string;
   taskTitle?: string;
+  projectId?: string;
   query?: string;
   reason?: string;
 }

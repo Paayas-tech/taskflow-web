@@ -19,7 +19,7 @@ describe("agent tool execution guards", () => {
       title: "Prepare launch notes",
       project_id: projectId,
       status: "todo",
-      priority: null,
+      priority: "medium",
     };
     const projectLimit = vi.fn().mockResolvedValue({ data: [{ id: projectId, name: "web dev 01" }], error: null });
     const projectIlike = vi.fn(() => ({ limit: projectLimit }));
@@ -33,12 +33,12 @@ describe("agent tool execution guards", () => {
       title: task.title,
       projectName: "web dev 01",
     }, { ...context, supabase: { from } })).resolves.toMatchObject({
-      task: { title: task.title, project_id: projectId, status: "todo", priority: null },
+      task: { title: task.title, project_id: projectId, status: "todo", priority: "medium" },
     });
     expect(projectIlike).toHaveBeenCalledWith("name", "web dev 01");
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({
       project_id: projectId,
-      priority: null,
+      priority: "medium",
       status: "todo",
     }));
   });
@@ -54,9 +54,13 @@ describe("agent tool execution guards", () => {
     const projectId = "00000000-0000-4000-8000-000000000020";
     const taskId = "00000000-0000-4000-8000-000000000021";
     const updated = { id: taskId, title: "Write release notes", project_id: projectId, status: "in_progress", priority: "medium" };
-    const limit = vi.fn().mockResolvedValue({ data: [{ id: taskId, title: updated.title }], error: null });
-    const projectEq = vi.fn(() => ({ limit }));
-    const ilike = vi.fn(() => ({ eq: projectEq, limit }));
+    const limit = vi.fn().mockResolvedValue({ data: [
+      { id: "00000000-0000-4000-8000-000000000022", title: updated.title, status: "done", updated_at: "2026-09-13T12:00:00Z" },
+      { id: taskId, title: updated.title, status: "todo", updated_at: "2026-09-12T12:00:00Z" },
+    ], error: null });
+    const order = vi.fn(() => ({ limit }));
+    const projectEq = vi.fn(() => ({ order }));
+    const ilike = vi.fn(() => ({ eq: projectEq, order }));
     const is = vi.fn(() => ({ ilike }));
     const select = vi.fn(() => ({ is }));
     const maybeSingle = vi.fn().mockResolvedValue({ data: updated, error: null });
@@ -75,6 +79,94 @@ describe("agent tool execution guards", () => {
     expect(projectEq).toHaveBeenCalledWith("project_id", projectId);
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ status: "in_progress" }));
     expect(updateEq).toHaveBeenCalledWith("id", taskId);
+  });
+
+  it("maps critical priority to the highest schema-supported priority", async () => {
+    const task = {
+      id: "00000000-0000-4000-8000-000000000023",
+      title: "Restore production",
+      project_id: null,
+      status: "todo",
+      priority: "high",
+    };
+    const single = vi.fn().mockResolvedValue({ data: task, error: null });
+    const select = vi.fn(() => ({ single }));
+    const insert = vi.fn(() => ({ select }));
+    const from = vi.fn(() => ({ insert }));
+
+    await executeAgentTool("create_task", { title: task.title, priority: "critical" }, { ...context, supabase: { from } });
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ priority: "high" }));
+  });
+
+  it("creates a viewer invitation when member is requested", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000024";
+    const invoke = vi.fn().mockResolvedValue({ data: { success: true }, error: null });
+
+    await expect(executeAgentTool("invite_member", {
+      email: "Member@Example.com",
+      projectId,
+      role: "member",
+    }, { ...context, supabase: { from: vi.fn(), functions: { invoke } } })).resolves.toMatchObject({
+      success: true,
+      email: "member@example.com",
+      role: "viewer",
+    });
+    expect(invoke).toHaveBeenCalledWith("send-invitation-email", {
+      body: { projectId, inviteeEmail: "member@example.com", role: "viewer" },
+    });
+  });
+
+  it("creates normalized child tasks under a resolved parent task", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000030";
+    const parentId = "00000000-0000-4000-8000-000000000031";
+    const parent = { id: parentId, title: "Ship onboarding", project_id: projectId, status: "todo", priority: "high" };
+    const children = [
+      { id: "00000000-0000-4000-8000-000000000032", title: "Write copy", project_id: projectId, parent_task_id: parentId, status: "todo", priority: "high" },
+      { id: "00000000-0000-4000-8000-000000000033", title: "Review analytics", project_id: projectId, parent_task_id: parentId, status: "todo", priority: "high" },
+    ];
+    const limit = vi.fn().mockResolvedValue({ data: [parent], error: null });
+    const order = vi.fn(() => ({ limit }));
+    const projectEq = vi.fn(() => ({ order }));
+    const ilike = vi.fn(() => ({ eq: projectEq, order }));
+    const is = vi.fn(() => ({ ilike }));
+    const parentSelect = vi.fn(() => ({ is }));
+    const childSelect = vi.fn().mockResolvedValue({ data: children, error: null });
+    const insert = vi.fn(() => ({ select: childSelect }));
+    const from = vi.fn(() => ({ select: parentSelect, insert }));
+
+    await expect(executeAgentTool("generate_subtasks", {
+      taskTitle: parent.title,
+      projectId,
+      subtasks: ["Write copy", "Review analytics"],
+    }, { ...context, supabase: { from } })).resolves.toMatchObject({ count: 2, subtasks: children });
+    expect(insert).toHaveBeenCalledWith([
+      expect.objectContaining({ title: "Write copy", project_id: projectId, parent_task_id: parentId, status: "todo" }),
+      expect.objectContaining({ title: "Review analytics", project_id: projectId, parent_task_id: parentId, status: "todo" }),
+    ]);
+  });
+
+  it("builds a structured standup from tasks updated in the last 24 hours", async () => {
+    const rows = [
+      { id: "done", title: "Release API", status: "done", updated_at: "2026-09-11T22:00:00Z", completed_at: "2026-09-11T22:00:00Z" },
+      { id: "active", title: "Polish docs", status: "in_progress", updated_at: "2026-09-11T23:00:00Z", due_date: "2026-09-13" },
+      { id: "late", title: "Fix blocker", status: "todo", updated_at: "2026-09-11T21:00:00Z", due_date: "2026-09-10" },
+    ];
+    const limit = vi.fn().mockResolvedValue({ data: rows, error: null });
+    const order = vi.fn(() => ({ limit }));
+    const gte = vi.fn(() => ({ order }));
+    const is = vi.fn(() => ({ gte }));
+    const select = vi.fn(() => ({ is }));
+    const from = vi.fn(() => ({ select }));
+
+    const result = await executeAgentTool("generate_daily_standup", {}, { ...context, supabase: { from } });
+    expect(gte).toHaveBeenCalledWith("updated_at", "2026-09-11T00:00:00.000Z");
+    expect(result).toMatchObject({
+      completed_today: [{ title: "Release API" }],
+      working_on_today: [{ title: "Polish docs" }],
+      potential_blockers: [{ title: "Fix blocker" }],
+    });
+    expect(result.markdown).toContain("## Completed Today\n- Release API");
+    expect(result.markdown).toContain("## Potential Blockers\n- Fix blocker");
   });
 
   it("rejects unsupported tools", async () => {
@@ -118,7 +210,8 @@ describe("agent tool execution guards", () => {
       priority: "high",
     };
     const limit = vi.fn().mockResolvedValue({ data: [row], error: null });
-    const ilike = vi.fn(() => ({ limit }));
+    const order = vi.fn(() => ({ limit }));
+    const ilike = vi.fn(() => ({ order }));
     const is = vi.fn(() => ({ ilike }));
     const select = vi.fn(() => ({ is }));
     const deleteSelect = vi.fn().mockResolvedValue({ data: [row], error: null });

@@ -81,7 +81,7 @@ const authenticatedHandler = withSupabase(
   }
 
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { data: invitation, error: invitationError } = await context.supabase
+  const { data: insertedInvitation, error: invitationError } = await context.supabase
     .from("project_invitations")
     .insert({
       project_id: projectId,
@@ -95,10 +95,23 @@ const authenticatedHandler = withSupabase(
     .select("id")
     .single();
 
-  if (invitationError || !invitation) {
-    return response(request, invitationError?.code === "23505" ? 409 : 500, {
-      success: false,
-    });
+  let invitation = insertedInvitation;
+  let createdInvitation = Boolean(insertedInvitation);
+  if (invitationError?.code === "23505") {
+    const { data: pendingInvitation, error: pendingError } = await context.supabase
+      .from("project_invitations")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("email_normalized", inviteeEmail)
+      .eq("status", "pending")
+      .maybeSingle();
+    if (pendingError || !pendingInvitation) {
+      return response(request, 500, { success: false });
+    }
+    invitation = pendingInvitation;
+    createdInvitation = false;
+  } else if (invitationError || !invitation) {
+    return response(request, 500, { success: false });
   }
 
   const projectName = String(project.name || "your project").trim().slice(0, 120);
@@ -131,14 +144,14 @@ const authenticatedHandler = withSupabase(
     emailSent = false;
   }
 
-  if (!emailSent) {
+  if (!emailSent && createdInvitation) {
     await context.supabase
       .from("project_invitations")
       .delete()
       .eq("id", invitation.id)
       .eq("project_id", projectId);
-    return response(request, 502, { success: false });
   }
+  if (!emailSent) return response(request, 502, { success: false });
 
     return response(request, 200, { success: true });
   }
