@@ -456,42 +456,60 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
 
   if (name === "generate_daily_standup") {
     const projectId = activeProjectId(input, context);
-    const now = context.now();
-    const since = new Date(Date.parse(now) - 86_400_000).toISOString();
-    const today = now.slice(0, 10);
-    let query = context.supabase
+    const currentTime = Date.now();
+    const oneDayAgo = new Date(currentTime - 24 * 60 * 60 * 1000).toISOString();
+    const today = new Date(currentTime).toISOString().slice(0, 10);
+    const selection = "id, title, status, priority, due_date, updated_at";
+    let recentQuery = context.supabase
       .from("tasks")
-      .select("id, title, description, project_id, status, priority, due_date, completed_at, updated_at")
+      .select(selection)
       .is("archived_at", null)
-      .gte("updated_at", since);
-    if (projectId) query = query.eq("project_id", projectId);
-    const { data, error } = await query.order("updated_at", { ascending: false }).limit(100);
+      .gte("updated_at", oneDayAgo);
+    if (projectId) recentQuery = recentQuery.eq("project_id", projectId);
+    let { data, error } = await recentQuery.order("updated_at", { ascending: false }).limit(25);
     if (error) throw error;
-    const tasks = (data ?? []).map(safeTask);
-    const completedToday = tasks.filter((task: Record<string, unknown>) => task.status === "done");
-    const potentialBlockers = tasks.filter((task: Record<string, unknown>) =>
-      task.status !== "done" && typeof task.due_date === "string" && task.due_date < today
+
+    let source: "last_24_hours" | "active_fallback" = "last_24_hours";
+    if (!data?.length) {
+      source = "active_fallback";
+      let activeQuery = context.supabase
+        .from("tasks")
+        .select(selection)
+        .is("archived_at", null)
+        .in("status", ["todo", "in_progress"]);
+      if (projectId) activeQuery = activeQuery.eq("project_id", projectId);
+      const fallback = await activeQuery.order("updated_at", { ascending: false }).limit(25);
+      data = fallback.data;
+      error = fallback.error;
+      if (error) throw error;
+    }
+
+    const tasks = (data ?? []).map((row: Record<string, unknown>) => ({
+      title: optionalText(row.title, 200) || "Untitled task",
+      status: normalizeStatus(row.status, "todo"),
+      priority: normalizePriority(row.priority),
+      due_date: typeof row.due_date === "string" ? row.due_date : null,
+    }));
+    const completed = tasks.filter((task) => task.status === "done");
+    const inProgress = tasks.filter((task) => task.status === "in_progress");
+    const blockers = tasks.filter((task) =>
+      (task.status === "todo" && task.priority === "high")
+      || (task.status !== "done" && task.due_date !== null && task.due_date < today)
     );
-    const blockerIds = new Set(potentialBlockers.map((task: Record<string, unknown>) => task.id));
-    const workingOnToday = tasks.filter((task: Record<string, unknown>) =>
-      task.status !== "done" && !blockerIds.has(task.id)
-    );
-    const markdownTitle = (task: Record<string, unknown>) =>
-      String(task.title || "Untitled task").replace(/[\r\n]+/gu, " ").trim();
-    const section = (heading: string, items: Record<string, unknown>[]) =>
-      `## ${heading}\n${items.length ? items.map((task) => `- ${markdownTitle(task)}`).join("\n") : "- None"}`;
+    const section = (heading: string, items: typeof tasks) =>
+      `## ${heading}\n${items.length ? items.map((task) => `- ${task.title.replace(/[\r\n]+/gu, " ")}`).join("\n") : "- None"}`;
     const markdown = [
       "# Daily Standup",
-      section("Completed Today", completedToday),
-      section("Working On Today", workingOnToday),
-      section("Potential Blockers", potentialBlockers),
+      section("Completed Today", completed),
+      section("Working On Today", inProgress),
+      section("Potential Blockers", blockers),
     ].join("\n\n");
     return {
-      since,
-      project_id: projectId || null,
-      completed_today: completedToday,
-      working_on_today: workingOnToday,
-      potential_blockers: potentialBlockers,
+      source,
+      period_start: oneDayAgo,
+      completed,
+      in_progress: inProgress,
+      blockers,
       markdown,
     };
   }

@@ -474,7 +474,8 @@ const handler = withSupabase({ auth: "user" }, async (request, context) => {
           role: value.role as "user" | "assistant",
           content: (value.content as string).trim().slice(0, 4000),
         };
-      });
+      })
+      .slice(-6);
     const messages: any[] = [{ role: "system", content: systemPrompt(timezone, rawContext) }, ...cleanHistory, { role: "user", content: prompt }];
     const actions: Record<string, unknown>[] = [];
 
@@ -558,6 +559,7 @@ const handler = withSupabase({ auth: "user" }, async (request, context) => {
           messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
         } catch (error) {
           const detail = error instanceof Error ? error.message : "Tool execution failed.";
+          console.error("Agent tool execution failed", { name, message: detail });
           actions.push({ id: String(call?.id || crypto.randomUUID()), name, arguments: args, status: "failed", error: detail });
           messages.push({ role: "tool", tool_call_id: call?.id, content: JSON.stringify({ error: detail }) });
         }

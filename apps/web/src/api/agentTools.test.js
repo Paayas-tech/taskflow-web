@@ -146,10 +146,11 @@ describe("agent tool execution guards", () => {
   });
 
   it("builds a structured standup from tasks updated in the last 24 hours", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-12T00:00:00.000Z"));
     const rows = [
       { id: "done", title: "Release API", status: "done", updated_at: "2026-09-11T22:00:00Z", completed_at: "2026-09-11T22:00:00Z" },
       { id: "active", title: "Polish docs", status: "in_progress", updated_at: "2026-09-11T23:00:00Z", due_date: "2026-09-13" },
-      { id: "late", title: "Fix blocker", status: "todo", updated_at: "2026-09-11T21:00:00Z", due_date: "2026-09-10" },
+      { id: "late", title: "Fix blocker", status: "todo", priority: "high", updated_at: "2026-09-11T21:00:00Z", due_date: "2026-09-10" },
     ];
     const limit = vi.fn().mockResolvedValue({ data: rows, error: null });
     const order = vi.fn(() => ({ limit }));
@@ -158,15 +159,51 @@ describe("agent tool execution guards", () => {
     const select = vi.fn(() => ({ is }));
     const from = vi.fn(() => ({ select }));
 
-    const result = await executeAgentTool("generate_daily_standup", {}, { ...context, supabase: { from } });
-    expect(gte).toHaveBeenCalledWith("updated_at", "2026-09-11T00:00:00.000Z");
-    expect(result).toMatchObject({
-      completed_today: [{ title: "Release API" }],
-      working_on_today: [{ title: "Polish docs" }],
-      potential_blockers: [{ title: "Fix blocker" }],
-    });
-    expect(result.markdown).toContain("## Completed Today\n- Release API");
-    expect(result.markdown).toContain("## Potential Blockers\n- Fix blocker");
+    try {
+      const result = await executeAgentTool("generate_daily_standup", {}, { ...context, supabase: { from } });
+      expect(gte).toHaveBeenCalledWith("updated_at", "2026-09-11T00:00:00.000Z");
+      expect(limit).toHaveBeenCalledWith(25);
+      expect(result).toMatchObject({
+        source: "last_24_hours",
+        completed: [{ title: "Release API", status: "done", priority: "medium" }],
+        in_progress: [{ title: "Polish docs", status: "in_progress", priority: "medium" }],
+        blockers: [{ title: "Fix blocker", status: "todo", priority: "high" }],
+      });
+      expect(result.markdown).toContain("## Completed Today\n- Release API");
+      expect(result.markdown).toContain("## Potential Blockers\n- Fix blocker");
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("falls back to a bounded active-task summary when no tasks changed recently", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-12T00:00:00.000Z"));
+    const recentLimit = vi.fn().mockResolvedValue({ data: [], error: null });
+    const recentOrder = vi.fn(() => ({ limit: recentLimit }));
+    const gte = vi.fn(() => ({ order: recentOrder }));
+    const recentIs = vi.fn(() => ({ gte }));
+    const activeRows = [{ id: "active", title: "Continue rollout", status: "in_progress", priority: null, due_date: null }];
+    const activeLimit = vi.fn().mockResolvedValue({ data: activeRows, error: null });
+    const activeOrder = vi.fn(() => ({ limit: activeLimit }));
+    const statusIn = vi.fn(() => ({ order: activeOrder }));
+    const activeIs = vi.fn(() => ({ in: statusIn }));
+    const from = vi.fn()
+      .mockReturnValueOnce({ select: vi.fn(() => ({ is: recentIs })) })
+      .mockReturnValueOnce({ select: vi.fn(() => ({ is: activeIs })) });
+
+    try {
+      const result = await executeAgentTool("generate_daily_standup", {}, { ...context, supabase: { from } });
+      expect(statusIn).toHaveBeenCalledWith("status", ["todo", "in_progress"]);
+      expect(activeLimit).toHaveBeenCalledWith(25);
+      expect(result).toMatchObject({
+        source: "active_fallback",
+        completed: [],
+        in_progress: [{ title: "Continue rollout", status: "in_progress", priority: "medium", due_date: null }],
+        blockers: [],
+      });
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("rejects unsupported tools", async () => {
