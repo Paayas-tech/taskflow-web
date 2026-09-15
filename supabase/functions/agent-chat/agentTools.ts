@@ -63,9 +63,10 @@ const normalizePriority = (value: unknown) => {
 
 const normalizeStatus = (value: unknown, fallback?: string) => {
   const status = String(value ?? "").trim().toLowerCase().replaceAll("_", " ");
-  if (status === "to do" || status === "todo") return "todo";
-  if (status === "in progress" || status === "progress") return "in_progress";
-  if (status === "done" || status === "completed") return "done";
+  if (status === "to do" || status === "todo" || status === "backlog") return "todo";
+  if (status === "in progress" || status === "progress" || status === "working on it") return "in_progress";
+  if (status === "done" || status === "completed" || status === "finished") return "done";
+  if (status === "in review" || status === "review") return "in_review";
   return fallback;
 };
 
@@ -97,16 +98,35 @@ const safeProject = (row: Record<string, unknown>) => ({
 });
 
 const resolveProjectId = async (supabase: SupabaseLike, projectName: string) => {
-  const { data, error } = await supabase.from("projects").select("id, name").ilike("name", projectName).limit(2);
+  const normalizedName = lookupText(projectName);
+  if (!normalizedName) throw new Error("A project name is required.");
+  const escaped = normalizedName.replaceAll("%", "\\%").replaceAll("_", "\\_");
+  const { data, error } = await supabase.from("projects").select("id, name").ilike("name", `%${escaped}%`).limit(10);
   if (error) throw error;
-  if (!data?.length) throw new Error(`No accessible project named “${projectName}” was found.`);
-  if (data.length > 1) throw new Error(`More than one accessible project is named “${projectName}”. Use a project ID.`);
-  return String(data[0].id);
+  if (!data?.length) throw new Error(`No accessible project matching “${normalizedName}” was found.`);
+  const exactMatches = data.filter((project: Record<string, unknown>) =>
+    String(project.name || "").trim().toLocaleLowerCase() === normalizedName.toLocaleLowerCase()
+  );
+  const matches = exactMatches.length ? exactMatches : data;
+  if (matches.length > 1) throw new Error(`More than one accessible project matches “${normalizedName}”. Be more specific.`);
+  return String(matches[0].id);
 };
 
 const activeProjectId = (input: Record<string, unknown>, context: AgentToolContext) => {
   const value = optionalText(input.projectId, 36) || context.projectId;
   return value ? requiredUuid(value, "projectId") : undefined;
+};
+
+const resolveProjectScope = async (input: Record<string, unknown>, context: AgentToolContext) => {
+  const projectReference = optionalText(input.projectId, 120) || optionalText(input.project_id, 120);
+  if (projectReference) {
+    return UUID_PATTERN.test(projectReference)
+      ? projectReference
+      : resolveProjectId(context.supabase, projectReference);
+  }
+  const projectName = optionalText(input.projectName, 120) || optionalText(input.project, 120);
+  if (projectName) return resolveProjectId(context.supabase, projectName);
+  return context.projectId ? requiredUuid(context.projectId, "projectId") : undefined;
 };
 
 const resolveTaskByTitle = async (
@@ -115,18 +135,25 @@ const resolveTaskByTitle = async (
   projectId?: string,
 ) => {
   const normalizedTitle = lookupText(titleQuery);
-  if (!normalizedTitle) throw new Error("Provide a task title.");
+  if (!normalizedTitle) return { error: "Provide a task title." };
   const escaped = normalizedTitle.replaceAll("%", "\\%").replaceAll("_", "\\_");
   let query = context.supabase
     .from("tasks")
     .select("id, title, description, project_id, status, priority, due_date, completed_at, updated_at")
     .is("archived_at", null)
-    .ilike("title", `%${escaped}%`);
+    .ilike("title", escaped);
   if (projectId) query = query.eq("project_id", projectId);
-  const { data, error } = await query.order("updated_at", { ascending: false }).limit(25);
-  if (error) throw error;
-  if (!data?.length) throw new Error(`No accessible task matching “${normalizedTitle}” was found.`);
-  return data.find((task: Record<string, unknown>) => task.status !== "done") || data[0];
+  const { data, error } = await query.order("updated_at", { ascending: false }).limit(5);
+  if (error) return { error: error.message || "Task lookup failed." };
+  if (!data?.length) return { error: `No task found with title "${normalizedTitle}".` };
+  if (data.length > 1) {
+    const projectIds = new Set(data.map((task: Record<string, unknown>) => String(task.project_id || "personal")));
+    if (projectIds.size > 1) {
+      return { error: `Found multiple tasks named "${normalizedTitle}" across different projects. Please specify which project you mean.` };
+    }
+    return { error: `Multiple tasks found matching "${normalizedTitle}". Please specify the exact title or rename duplicates.` };
+  }
+  return { task: data[0] as Record<string, unknown> };
 };
 
 export async function executeAgentTool(name: string, rawInput: unknown, context: AgentToolContext): Promise<unknown> {
@@ -141,7 +168,8 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
     if (status) query = query.eq("status", status);
     const { data, error } = await query;
     if (error) throw error;
-    return { projects: (data ?? []).map(safeProject) };
+    const projects = (data ?? []).map((project: Record<string, unknown>) => ({ name: project.name, status: project.status }));
+    return { success: true, count: projects.length, projects };
   }
 
   if (name === "query_tasks") {
@@ -152,7 +180,10 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
         : undefined;
     const statusInput = optionalText(input.status, 20);
     const status = statusInput ? normalizeStatus(statusInput) : undefined;
-    if (statusInput && !status) throw new Error("Task status must be todo, in progress, or done.");
+    if (statusInput && !status) return { success: false, error: "Task status must be todo, in progress, or done." };
+    if (status === "in_review") {
+      return { success: false, error: "TaskFlow does not currently support an in-review task status. Use in progress, todo, or done." };
+    }
     const priorityInput = optionalText(input.priority, 20);
     const priority = priorityInput ? normalizePriority(priorityInput) : undefined;
     const titleQuery = optionalText(input.query, 200);
@@ -176,21 +207,51 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
     if (assigneeId) query = query.eq("task_assignments.user_id", assigneeId);
     const { data, error } = await query;
     if (error) throw error;
-    return { project_id: projectId || null, tasks: (data ?? []).map(safeTask) };
+    const tasks = (data ?? []).map((task: Record<string, unknown>) => ({
+      title: task.title,
+      status: task.status,
+      priority: task.priority || "medium",
+      due_date: task.due_date || null,
+    }));
+    return { success: true, count: tasks.length, tasks };
   }
 
   if (name === "create_task") {
     const title = optionalText(input.title, 200);
     if (!title) throw new Error("A task title is required.");
-    const projectValue = optionalText(input.project_id, 120) || optionalText(input.projectId, 120) || optionalText(input.project, 120);
-    const projectName = optionalText(input.projectName, 120);
-    const projectId = projectValue
-      ? UUID_PATTERN.test(projectValue)
-        ? projectValue
-        : await resolveProjectId(context.supabase, projectValue)
-      : projectName
-        ? await resolveProjectId(context.supabase, projectName)
-        : null;
+    const projectName = optionalText(input.projectName, 120) || optionalText(input.project, 120);
+    const projectReference = projectName || optionalText(input.projectId, 120) || optionalText(input.project_id, 120);
+    let projectId: string | undefined;
+    try {
+      projectId = await resolveProjectScope(input, context);
+    } catch {
+      return {
+        success: false,
+        error: `Could not identify the project "${projectReference || "unknown"}". Please specify a valid project name.`,
+      };
+    }
+    if (!projectId) {
+      return {
+        success: false,
+        error: `Could not identify the project "${projectReference || "unknown"}". Please specify a valid project name.`,
+      };
+    }
+    const escapedTitle = title.replaceAll("%", "\\%").replaceAll("_", "\\_");
+    const duplicateQuery = context.supabase
+      .from("tasks")
+      .select("id, title")
+      .is("archived_at", null)
+      .eq("project_id", projectId);
+    const { data: existingTasks, error: duplicateError } = await duplicateQuery
+      .ilike("title", escapedTitle)
+      .limit(1);
+    if (duplicateError) throw duplicateError;
+    if (existingTasks?.length) {
+      return {
+        success: false,
+        error: `A task named "${title}" already exists in this project. Please choose a unique name.`,
+      };
+    }
     const priority = normalizePriority(input.priority);
     const statusInput = input.status === undefined ? "todo" : input.status;
     const status = normalizeStatus(statusInput);
@@ -210,7 +271,7 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
     };
     const { data, error } = await context.supabase.from("tasks").insert(row).select("id, title, description, project_id, status, priority, due_date, completed_at").single();
     if (error) throw error;
-    return { task: safeTask(data) };
+    return { success: true, id: data.id, title: data.title, status: data.status };
   }
 
   if (name === "update_task") {
@@ -219,15 +280,19 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
     if (!taskId) {
       const titleQuery = optionalText(input.taskTitle, 200) || optionalText(input.query, 200);
       if (!titleQuery) throw new Error("Provide a valid task ID or task title.");
-      const target = await resolveTaskByTitle(context, titleQuery, activeProjectId(input, context));
-      taskId = String(target.id);
+      const resolution = await resolveTaskByTitle(context, titleQuery, await resolveProjectScope(input, context));
+      if (!resolution.task) return { success: false, error: resolution.error };
+      taskId = String(resolution.task.id);
     }
     const patch: Record<string, unknown> = {};
     const title = optionalText(input.title, 200);
     const priority = input.priority === undefined ? undefined : normalizePriority(input.priority);
     const statusInput = optionalText(input.status, 20);
     const status = statusInput ? normalizeStatus(statusInput) : undefined;
-    if (statusInput && !status) throw new Error("Task status must be todo, in progress, or done.");
+    if (statusInput && !status) return { success: false, error: "Task status must be todo, in progress, or done." };
+    if (status === "in_review") {
+      return { success: false, error: "TaskFlow does not currently support an in-review task status. Use in progress, todo, or done." };
+    }
     if (input.title !== undefined) {
       if (!title) throw new Error("Task title cannot be empty.");
       patch.title = title;
@@ -236,7 +301,7 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
       patch.priority = priority;
     }
     if (status) {
-      if (!TASK_STATUSES.has(status)) throw new Error("Task status must be todo, in progress, or done.");
+      if (!TASK_STATUSES.has(status)) return { success: false, error: "Task status must be todo, in progress, or done." };
       patch.status = status;
       patch.completed_at = status === "done" ? context.now() : null;
     }
@@ -245,7 +310,7 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
     const { data, error } = await context.supabase.from("tasks").update(patch).eq("id", taskId).select("id, title, description, project_id, status, priority, due_date, completed_at").maybeSingle();
     if (error) throw error;
     if (!data) throw new Error("The task was not found or cannot be updated.");
-    return { task: safeTask(data) };
+    return { success: true, id: data.id, title: data.title, status: data.status };
   }
 
   if (name === "delete_task") {
@@ -258,7 +323,9 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
 
       if (!taskId) {
         if (!titleQuery) throw new Error("Provide a valid task ID or task title.");
-        task = await resolveTaskByTitle(context, titleQuery, activeProjectId(input, context));
+        const resolution = await resolveTaskByTitle(context, titleQuery, await resolveProjectScope(input, context));
+        if (!resolution.task) return { success: false, error: resolution.error };
+        task = resolution.task;
         taskId = String(task.id);
       }
 
@@ -279,8 +346,8 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
         .match({ id: taskId })
         .select("id, title, description, project_id, status, priority, due_date, completed_at");
       if (error) throw error;
-      const deleted = (data ?? []).map(safeTask);
-      return { success: true, deleted, task: deleted[0] || safeTask(task) };
+      const deleted = data?.[0] || task;
+      return { success: true, id: deleted.id, title: deleted.title, status: deleted.status };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
@@ -313,12 +380,12 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
     const completed = tasks.filter((task: Record<string, unknown>) => task.status === "done").length;
     const inProgress = tasks.filter((task: Record<string, unknown>) => task.status === "in_progress").length;
     return {
-      story: { id: story.id, title: story.title, project_id: story.project_id },
+      story: story.title,
       total: tasks.length,
       completed,
       in_progress: inProgress,
       percentage: tasks.length ? Math.round((completed / tasks.length) * 100) : 0,
-      remaining: tasks.filter((task: Record<string, unknown>) => task.status !== "done"),
+      remaining: tasks.filter((task: Record<string, unknown>) => task.status !== "done").map((task: Record<string, unknown>) => String(task.title)),
     };
   }
 
@@ -345,8 +412,8 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
       return priorityDifference || firstDue.localeCompare(secondDue);
     }).slice(0, limit);
     return {
-      tasks,
-      actionable: tasks.map((task: Record<string, unknown>) => ({
+      success: true,
+      tasks: tasks.map((task: Record<string, unknown>) => ({
         title: task.title,
         priority: task.priority || "medium",
         due_date: task.due_date,
@@ -388,7 +455,10 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
         groups.set(assigneeId, group);
       }
     }
-    return { days, since, people: [...groups.values()] };
+    return { success: true, days, people: [...groups.values()].map((person) => ({
+      ...person,
+      achievements: person.achievements.slice(0, 15),
+    })) };
   }
 
   if (name === "invite_member") {
@@ -415,14 +485,23 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
   }
 
   if (name === "generate_subtasks") {
+    try {
     const taskTitle = optionalText(input.taskTitle, 200);
     if (!taskTitle) throw new Error("A parent task title is required.");
-    if (!Array.isArray(input.subtasks) || !input.subtasks.length) {
+    let rawSubtasks = input.subtasks;
+    if (typeof rawSubtasks === "string") {
+      try {
+        rawSubtasks = JSON.parse(rawSubtasks);
+      } catch {
+        return { success: false, error: "Subtasks must be a valid list of task titles." };
+      }
+    }
+    if (!Array.isArray(rawSubtasks) || !rawSubtasks.length) {
       throw new Error("Provide at least one subtask title.");
     }
-    if (input.subtasks.length > 20) throw new Error("A breakdown cannot contain more than 20 subtasks.");
+    if (rawSubtasks.length > 6) throw new Error("A breakdown cannot contain more than 6 subtasks.");
     const seen = new Set<string>();
-    const subtaskTitles = input.subtasks.map((value) => {
+    const subtaskTitles = rawSubtasks.map((value) => {
       const title = optionalText(value, 200);
       if (!title) throw new Error("Every subtask must have a title.");
       const key = title.toLocaleLowerCase();
@@ -430,7 +509,9 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
       seen.add(key);
       return title;
     });
-    const parent = await resolveTaskByTitle(context, taskTitle, activeProjectId(input, context));
+    const resolution = await resolveTaskByTitle(context, taskTitle, await resolveProjectScope(input, context));
+    if (!resolution.task) return { success: false, error: resolution.error };
+    const parent = resolution.task;
     const rows = subtaskTitles.map((title) => ({
       created_by: context.userId,
       project_id: parent.project_id || null,
@@ -446,28 +527,33 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
       .from("tasks")
       .insert(rows)
       .select("id, title, description, project_id, parent_task_id, status, priority, due_date, completed_at");
-    if (error) throw error;
+    if (error) return { success: false, error: error.message || "The subtasks could not be created." };
     return {
-      parent: safeTask(parent),
-      subtasks: (data ?? []).map(safeTask),
+      success: true,
+      parent: parent.title,
+      titles: (data ?? []).map((task: Record<string, unknown>) => String(task.title)),
       count: data?.length ?? 0,
     };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   if (name === "generate_daily_standup") {
-    const projectId = activeProjectId(input, context);
+    try {
+    const projectId = await resolveProjectScope(input, context);
     const currentTime = Date.now();
     const oneDayAgo = new Date(currentTime - 24 * 60 * 60 * 1000).toISOString();
     const today = new Date(currentTime).toISOString().slice(0, 10);
-    const selection = "id, title, status, priority, due_date, updated_at";
+    const selection = "title, status, priority, due_date, updated_at";
     let recentQuery = context.supabase
       .from("tasks")
       .select(selection)
       .is("archived_at", null)
       .gte("updated_at", oneDayAgo);
     if (projectId) recentQuery = recentQuery.eq("project_id", projectId);
-    let { data, error } = await recentQuery.order("updated_at", { ascending: false }).limit(25);
-    if (error) throw error;
+    let { data, error } = await recentQuery.order("updated_at", { ascending: false }).limit(15);
+    if (error) return { success: false, error: error.message || "The recent tasks could not be loaded." };
 
     let source: "last_24_hours" | "active_fallback" = "last_24_hours";
     if (!data?.length) {
@@ -478,10 +564,10 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
         .is("archived_at", null)
         .in("status", ["todo", "in_progress"]);
       if (projectId) activeQuery = activeQuery.eq("project_id", projectId);
-      const fallback = await activeQuery.order("updated_at", { ascending: false }).limit(25);
+      const fallback = await activeQuery.order("updated_at", { ascending: false }).limit(15);
       data = fallback.data;
       error = fallback.error;
-      if (error) throw error;
+      if (error) return { success: false, error: error.message || "The active tasks could not be loaded." };
     }
 
     const tasks = (data ?? []).map((row: Record<string, unknown>) => ({
@@ -505,13 +591,16 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
       section("Potential Blockers", blockers),
     ].join("\n\n");
     return {
+      success: true,
       source,
-      period_start: oneDayAgo,
-      completed,
-      in_progress: inProgress,
-      blockers,
+      completed: completed.map((task) => task.title),
+      in_progress: inProgress.map((task) => task.title),
+      blockers: blockers.map((task) => task.title),
       markdown,
     };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   if (name === "bulk_update_tasks") {
@@ -553,7 +642,7 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
     const { data: candidateRows, error: candidateError } = await candidates;
     if (candidateError) throw candidateError;
     const ids = (candidateRows ?? []).map((row: Record<string, unknown>) => String(row.id));
-    if (!ids.length) return { tasks: [], count: 0 };
+    if (!ids.length) return { success: true, updated: [], count: 0 };
 
     const { data, error } = await context.supabase
       .from("tasks")
@@ -561,8 +650,12 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
       .in("id", ids)
       .select("id, title, description, project_id, status, priority, due_date, completed_at");
     if (error) throw error;
-    const tasks = (data ?? []).map(safeTask);
-    return { tasks, count: tasks.length };
+    const tasks = (data ?? []).map((task: Record<string, unknown>) => ({
+      title: task.title,
+      status: task.status,
+      due_date: task.due_date || null,
+    }));
+    return { success: true, updated: tasks.slice(0, 25), count: tasks.length, truncated: tasks.length > 25 };
   }
 
   throw new Error(`Unsupported tool: ${name}`);

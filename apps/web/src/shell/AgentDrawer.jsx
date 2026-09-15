@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { askAgent } from "../api/agent";
+import { compactConversationHistory } from "../api/agentHistory";
 import { loadProjects, loadTasks } from "../store/session";
 import { refreshWorkspace } from "../store/projects";
 import { Button } from "../ui/Button";
@@ -81,14 +82,14 @@ export function AgentDrawer({ open, onClose, project }) {
         confirmation: result.confirmation || null,
       }]);
       retryRef.current = null;
-      const mutationNames = new Set(["create_task", "update_task", "delete_task", "bulk_update_tasks"]);
+      const mutationNames = new Set(["create_task", "update_task", "delete_task", "bulk_update_tasks", "generate_subtasks"]);
       const mutations = result.actions.filter((action) => action.status === "completed" && mutationNames.has(action.name));
       if (mutations.length) {
         void Promise.allSettled([loadProjects({ silent: true }), loadTasks({ silent: true })]);
-        const projectIds = [...new Set(mutations.flatMap((action) => {
+        const projectIds = [...new Set([project?.id, ...mutations.flatMap((action) => {
           const tasks = [action.result?.task, ...(Array.isArray(action.result?.tasks) ? action.result.tasks : [])];
           return tasks.map((task) => task?.project_id).filter(Boolean);
-        }))];
+        })].filter(Boolean))];
         projectIds.forEach((projectId) => void refreshWorkspace(projectId));
       }
     } catch (value) {
@@ -101,7 +102,7 @@ export function AgentDrawer({ open, onClose, project }) {
   const send = () => {
     const content = draft.trim();
     if (!content || loading) return;
-    const history = messages.map(({ role, content: text }) => ({ role, content: text }));
+    const history = compactConversationHistory(messages);
     const pendingDelete = [...messages].reverse().find((message) => message.confirmation?.type === "delete_task")?.confirmation;
     setDraft("");
     void run({ content, history, appendUser: true, confirmedDeleteTask: pendingDelete });
@@ -112,7 +113,7 @@ export function AgentDrawer({ open, onClose, project }) {
   };
 
   const confirmDelete = (messageIndex, confirmation) => {
-    const history = messages.map(({ role, content }) => ({ role, content }));
+    const history = compactConversationHistory(messages);
     setMessages((current) => current.map((message, index) => index === messageIndex
       ? { ...message, confirmation: null }
       : message));
