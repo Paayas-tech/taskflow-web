@@ -12,11 +12,6 @@ const INITIAL_MESSAGE = {
   actions: [],
 };
 
-const timezone = () => {
-  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; }
-  catch { return "UTC"; }
-};
-
 const renderInline = (text) => text.split(/(\*\*[^*]+\*\*)/u).map((part, index) =>
   part.startsWith("**") && part.endsWith("**")
     ? <strong key={index}>{part.slice(2, -2)}</strong>
@@ -70,10 +65,8 @@ export function AgentDrawer({ open, onClose, project }) {
     setLoading(true);
     try {
       const result = await askAgent(content, history, {
-        timezone: timezone(),
-        currentProjectId: project?.id || null,
-        currentProjectName: project?.name || null,
-        ...(confirmedDeleteTask ? { confirmedDeleteTask } : {}),
+        projectId: project?.id || null,
+        workspaceId: null,
       });
       setMessages((current) => [...current, {
         role: "assistant",
@@ -82,7 +75,7 @@ export function AgentDrawer({ open, onClose, project }) {
         confirmation: result.confirmation || null,
       }]);
       retryRef.current = null;
-      const mutationNames = new Set(["create_task", "update_task", "delete_task", "bulk_update_tasks", "generate_subtasks"]);
+      const mutationNames = new Set(["create_task", "add_task_dependency", "update_task", "delete_task", "bulk_update_tasks", "generate_subtasks"]);
       const mutations = result.actions.filter((action) => action.status === "completed" && mutationNames.has(action.name));
       if (mutations.length) {
         void Promise.allSettled([loadProjects({ silent: true }), loadTasks({ silent: true })]);

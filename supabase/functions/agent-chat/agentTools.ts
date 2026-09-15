@@ -156,6 +156,34 @@ const resolveTaskByTitle = async (
   return { task: data[0] as Record<string, unknown> };
 };
 
+const unresolvedDependencies = async (context: AgentToolContext, taskId: string) => {
+  const { data: dependencies, error: dependencyError } = await context.supabase
+    .from("task_dependencies")
+    .select("depends_on_task_id")
+    .eq("task_id", taskId)
+    .limit(100);
+  if (dependencyError) {
+    console.error("Error querying task_dependencies:", dependencyError);
+    throw new Error(`Failed querying task_dependencies: ${dependencyError.message || "Unknown error"} (${dependencyError.code || "unknown"})`);
+  }
+  const dependencyRows = Array.isArray(dependencies) ? dependencies : [];
+  if (!dependencyRows.length) return [];
+  const prerequisiteIds = [...new Set(dependencyRows
+    .map((dependency: Record<string, unknown>) => String(dependency.depends_on_task_id || ""))
+    .filter(Boolean))];
+  if (!prerequisiteIds.length) return [];
+  const { data: prerequisites, error: prerequisiteError } = await context.supabase
+    .from("tasks")
+    .select("id, title, status")
+    .in("id", prerequisiteIds);
+  if (prerequisiteError) {
+    console.error("Error fetching prerequisite tasks:", prerequisiteError);
+    throw new Error(`Failed querying prerequisite tasks: ${prerequisiteError.message || "Unknown error"} (${prerequisiteError.code || "unknown"})`);
+  }
+  const prerequisiteTasks = Array.isArray(prerequisites) ? prerequisites : [];
+  return prerequisiteTasks.filter((task: Record<string, unknown>) => task.status !== "done");
+};
+
 export async function executeAgentTool(name: string, rawInput: unknown, context: AgentToolContext): Promise<unknown> {
   const input = objectInput(rawInput);
 
@@ -274,16 +302,54 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
     return { success: true, id: data.id, title: data.title, status: data.status };
   }
 
+  if (name === "add_task_dependency") {
+    try {
+      const taskTitle = optionalText(input.taskTitle, 200);
+      const dependsOnTitle = optionalText(input.dependsOnTitle, 200);
+      if (!taskTitle || !dependsOnTitle) {
+        return { success: false, error: "Both the blocked task and prerequisite task titles are required." };
+      }
+      const projectId = await resolveProjectScope(input, context);
+      const taskResolution = await resolveTaskByTitle(context, taskTitle, projectId);
+      if (!taskResolution.task) return { success: false, error: taskResolution.error };
+      const prerequisiteResolution = await resolveTaskByTitle(context, dependsOnTitle, projectId);
+      if (!prerequisiteResolution.task) return { success: false, error: prerequisiteResolution.error };
+      if (String(taskResolution.task.id) === String(prerequisiteResolution.task.id)) {
+        return { success: false, error: "A task cannot depend on itself." };
+      }
+      const { error } = await context.supabase.from("task_dependencies").insert({
+        task_id: taskResolution.task.id,
+        depends_on_task_id: prerequisiteResolution.task.id,
+      });
+      if (error) {
+        const message = error.code === "23505"
+          ? `"${taskResolution.task.title}" already depends on "${prerequisiteResolution.task.title}".`
+          : error.message || "The task dependency could not be created.";
+        return { success: false, error: message };
+      }
+      return {
+        success: true,
+        task: taskResolution.task.title,
+        blockedBy: prerequisiteResolution.task.title,
+      };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
   if (name === "update_task") {
     const suppliedId = optionalText(input.task_id, 36) || optionalText(input.taskId, 36);
     let taskId = suppliedId && UUID_PATTERN.test(suppliedId) ? suppliedId : undefined;
+    let targetTask: Record<string, unknown> | undefined;
     if (!taskId) {
       const titleQuery = optionalText(input.taskTitle, 200) || optionalText(input.query, 200);
       if (!titleQuery) throw new Error("Provide a valid task ID or task title.");
       const resolution = await resolveTaskByTitle(context, titleQuery, await resolveProjectScope(input, context));
       if (!resolution.task) return { success: false, error: resolution.error };
+      targetTask = resolution.task;
       taskId = String(resolution.task.id);
     }
+    if (!taskId) return { success: false, error: "Provide a valid task ID or task title." };
     const patch: Record<string, unknown> = {};
     const title = optionalText(input.title, 200);
     const priority = input.priority === undefined ? undefined : normalizePriority(input.priority);
@@ -302,13 +368,39 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
     }
     if (status) {
       if (!TASK_STATUSES.has(status)) return { success: false, error: "Task status must be todo, in progress, or done." };
+      if (status === "in_progress" || status === "done") {
+        if (!targetTask) {
+          const { data, error } = await context.supabase
+            .from("tasks")
+            .select("id, title, status, project_id")
+            .eq("id", taskId)
+            .maybeSingle();
+          if (error) return { success: false, error: error.message || "The task could not be loaded." };
+          if (!data) return { success: false, error: "The task was not found or cannot be updated." };
+          targetTask = data;
+        }
+        const blockers = await unresolvedDependencies(context, taskId);
+        if (blockers.length) {
+          const blockerTitles = blockers.map((task: Record<string, unknown>) => String(task.title));
+          const message = `Cannot mark "${targetTask.title}" as ${status} because it is blocked by: ${blockerTitles.map((value) => `"${value}"`).join(", ")}. Complete those first.`;
+          return {
+            success: false,
+            blocked: true,
+            blockers: blockerTitles,
+            message,
+            error: message,
+          };
+        }
+      }
       patch.status = status;
       patch.completed_at = status === "done" ? context.now() : null;
     }
     if (input.due_date !== undefined) patch.due_date = input.due_date === null ? null : isoDate(input.due_date, "due_date");
     if (!Object.keys(patch).length) throw new Error("Provide at least one task field to update.");
-    const { data, error } = await context.supabase.from("tasks").update(patch).eq("id", taskId).select("id, title, description, project_id, status, priority, due_date, completed_at").maybeSingle();
-    if (error) throw error;
+    const { data, error: updateError } = await context.supabase.from("tasks").update(patch).eq("id", taskId).select("id, title, description, project_id, status, priority, due_date, completed_at").maybeSingle();
+    if (updateError) {
+      throw new Error(`Failed updating task status: ${updateError.message || "Unknown error"} (${updateError.code || "unknown"})`);
+    }
     if (!data) throw new Error("The task was not found or cannot be updated.");
     return { success: true, id: data.id, title: data.title, status: data.status };
   }
@@ -545,7 +637,7 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
     const currentTime = Date.now();
     const oneDayAgo = new Date(currentTime - 24 * 60 * 60 * 1000).toISOString();
     const today = new Date(currentTime).toISOString().slice(0, 10);
-    const selection = "title, status, priority, due_date, updated_at";
+    const selection = "id, title, status, priority, due_date, updated_at";
     let recentQuery = context.supabase
       .from("tasks")
       .select(selection)
@@ -571,6 +663,7 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
     }
 
     const tasks = (data ?? []).map((row: Record<string, unknown>) => ({
+      id: String(row.id),
       title: optionalText(row.title, 200) || "Untitled task",
       status: normalizeStatus(row.status, "todo"),
       priority: normalizePriority(row.priority),
@@ -578,24 +671,60 @@ export async function executeAgentTool(name: string, rawInput: unknown, context:
     }));
     const completed = tasks.filter((task) => task.status === "done");
     const inProgress = tasks.filter((task) => task.status === "in_progress");
-    const blockers = tasks.filter((task) =>
+    const riskBlockers = tasks.filter((task) =>
       (task.status === "todo" && task.priority === "high")
       || (task.status !== "done" && task.due_date !== null && task.due_date < today)
     );
-    const section = (heading: string, items: typeof tasks) =>
-      `## ${heading}\n${items.length ? items.map((task) => `- ${task.title.replace(/[\r\n]+/gu, " ")}`).join("\n") : "- None"}`;
+    const blockerLabels = new Set(riskBlockers.map((task) => task.title));
+    const activeTasks = tasks.filter((task) => task.status === "todo" || task.status === "in_progress");
+    if (activeTasks.length) {
+      const activeIds = activeTasks.map((task) => task.id);
+      const { data: dependencies, error: dependencyError } = await context.supabase
+        .from("task_dependencies")
+        .select("task_id, depends_on_task_id")
+        .in("task_id", activeIds)
+        .limit(100);
+      if (dependencyError) return { success: false, error: dependencyError.message || "Task blockers could not be loaded." };
+      const prerequisiteIds = [...new Set((dependencies ?? []).map((dependency: Record<string, unknown>) => String(dependency.depends_on_task_id)))];
+      if (prerequisiteIds.length) {
+        const { data: prerequisites, error: prerequisiteError } = await context.supabase
+          .from("tasks")
+          .select("id, title, status")
+          .in("id", prerequisiteIds);
+        if (prerequisiteError) return { success: false, error: prerequisiteError.message || "Prerequisite tasks could not be loaded." };
+        const unresolved = new Map((prerequisites ?? [])
+          .filter((task: Record<string, unknown>) => task.status !== "done")
+          .map((task: Record<string, unknown>) => [String(task.id), String(task.title)]));
+        const activeTitles = new Map(activeTasks.map((task) => [task.id, task.title]));
+        const grouped = new Map<string, string[]>();
+        for (const dependency of dependencies ?? []) {
+          const prerequisite = unresolved.get(String(dependency.depends_on_task_id));
+          if (!prerequisite) continue;
+          const taskId = String(dependency.task_id);
+          grouped.set(taskId, [...(grouped.get(taskId) ?? []), prerequisite]);
+        }
+        for (const [taskId, prerequisiteTitles] of grouped) {
+          blockerLabels.add(`${activeTitles.get(taskId) || "Task"} — blocked by ${prerequisiteTitles.join(", ")}`);
+        }
+      }
+    }
+    const section = (heading: string, items: string[]) =>
+      `## ${heading}\n${items.length ? items.map((title) => `- ${title.replace(/[\r\n]+/gu, " ")}`).join("\n") : "- None"}`;
+    const completedTitles = completed.map((task) => task.title);
+    const inProgressTitles = inProgress.map((task) => task.title);
+    const blockers = [...blockerLabels];
     const markdown = [
       "# Daily Standup",
-      section("Completed Today", completed),
-      section("Working On Today", inProgress),
-      section("Potential Blockers", blockers),
+      section("Completed Today", completedTitles),
+      section("Working On Today", inProgressTitles),
+      section("Blockers", blockers),
     ].join("\n\n");
     return {
       success: true,
       source,
-      completed: completed.map((task) => task.title),
-      in_progress: inProgress.map((task) => task.title),
-      blockers: blockers.map((task) => task.title),
+      completed: completedTitles,
+      in_progress: inProgressTitles,
+      blockers,
       markdown,
     };
     } catch (error) {

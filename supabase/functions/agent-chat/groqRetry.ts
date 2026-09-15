@@ -5,7 +5,7 @@ export const retryDelayMs = (response: Response, now = Date.now()) => {
   if (!value) return 1500;
   const seconds = Number(value);
   const parsed = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - now;
-  return Math.min(3000, Math.max(0, Number.isFinite(parsed) ? parsed : 1500));
+  return Math.min(60000, Math.max(0, Number.isFinite(parsed) ? parsed : 1500));
 };
 
 export const callGroqWithRetry = async (
@@ -19,7 +19,9 @@ export const callGroqWithRetry = async (
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     const response = await fetcher(url, init);
     if (response.status !== 429 || attempt >= maxRetries) return response;
-    const waitMs = retryDelayMs(response);
+    // Groq commonly returns fractional Retry-After values. Add a small buffer so
+    // the retry does not race the provider's sliding token-window reset.
+    const waitMs = Math.min(60000, retryDelayMs(response) + 250);
     console.warn(`Groq 429 hit. Retrying after ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})...`);
     await response.body?.cancel();
     await wait(waitMs);

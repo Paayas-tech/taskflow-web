@@ -11,10 +11,12 @@ describe("askAgent", () => {
   it("passes the prompt, history and context to the authenticated Edge Function", async () => {
     invoke.mockResolvedValue({ data: { message: "Two tasks.", actions: [] }, error: null });
     const history = [{ role: "user", content: "Earlier" }];
-    const context = { timezone: "Asia/Kolkata" };
+    const context = { projectId: "project-1", workspaceId: null };
 
     await expect(askAgent("  What is due?  ", history, context)).resolves.toEqual({ message: "Two tasks.", actions: [] });
-    expect(invoke).toHaveBeenCalledWith("agent-chat", { body: { message: "What is due?", conversationHistory: history, context } });
+    expect(invoke).toHaveBeenCalledWith("agent-chat", {
+      body: { message: "What is due?", messages: history, projectId: "project-1", workspaceId: null },
+    });
   });
 
   it("rejects blank prompts without invoking the function", async () => {

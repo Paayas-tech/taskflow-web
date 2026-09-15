@@ -5,7 +5,7 @@ import { pruneModelMessages } from "./messagePruning.ts";
 
 const jsonHeaders = { "Content-Type": "application/json" };
 const TOOL_NAMES = new Set([
-  "list_projects", "query_tasks", "create_task", "update_task", "delete_task", "bulk_update_tasks",
+  "list_projects", "query_tasks", "create_task", "add_task_dependency", "update_task", "delete_task", "bulk_update_tasks",
   "get_story_progress", "get_urgent_todos", "get_team_overview", "invite_member",
   "generate_subtasks", "generate_daily_standup",
 ]);
@@ -35,9 +35,6 @@ class AgentServiceError extends Error {
     this.responseBody = options.responseBody;
   }
 }
-
-const diagnosticResponsesEnabled = () =>
-  String(Deno.env.get("AGENT_ENV") || "development").trim().toLowerCase() !== "production";
 
 const logAgentError = (label: string, error: unknown) => {
   if (error instanceof AgentServiceError) {
@@ -134,6 +131,24 @@ const tools = [
           status: { type: "string", enum: ["to do", "todo", "in progress", "progress", "in_progress", "done", "completed"] },
         },
         required: ["title"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_task_dependency",
+      description: "Make one task wait for another prerequisite task. Both tasks must be distinct and accessible to the signed-in user.",
+      parameters: {
+        type: "object",
+        properties: {
+          taskTitle: { type: "string", description: "Title of the blocked task." },
+          dependsOnTitle: { type: "string", description: "Title of the prerequisite task." },
+          projectName: { type: "string", description: "Optional project name used to scope both task matches." },
+          projectId: { type: "string", description: "Optional project UUID used to scope both task matches." },
+        },
+        required: ["taskTitle", "dependsOnTitle"],
         additionalProperties: false,
       },
     },
@@ -353,6 +368,16 @@ const validTimezone = (value: unknown) => {
   }
 };
 
+const runtimeErrorText = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+};
+
 const systemPrompt = (timezone: string, context: Record<string, unknown>) => {
   const now = new Date();
   const day = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: timezone }).format(now);
@@ -366,6 +391,7 @@ Never invent task or project IDs. Resolve names before writes. If a name is ambi
 When a tool returns success false with an error, explain that specific error conversationally and ask only for the information needed to recover. Do not describe a tool validation or duplicate-name error as an AI service outage.
 The database supports low, medium, and high task priorities. Treat urgent or critical as high, normal as medium, and minor as low. Treat the invitation role member as viewer because project invitation roles are editor or viewer.
 When breaking down work, generate between 4 and 6 concise, concrete subtasks, pass them as a strict JSON array of strings, and call generate_subtasks once. Use generate_daily_standup for requests about today's standup or a summary of the last 24 hours.
+Use add_task_dependency when the user says one task is blocked by, depends on, or must wait for another task. Never move a task to in progress or done when update_task reports unresolved blockers; explain which prerequisites must be completed first.
 For deleting a task, first resolve the task and ask exactly once: "Please confirm that you want me to delete [task title]." If the previous assistant message asked for deletion confirmation and the user replies affirmatively with a phrase such as "yes", "yes, delete it", "delete it", "confirm", "confirm delete", "proceed", or "go ahead", you MUST immediately invoke delete_task using the resolved task ID or title. Never ask for confirmation a second time or create a confirmation loop.
 Keep natural language confirmation responses brief, polite, and without database UUIDs. Do NOT output markdown tables, raw UUIDs, or internal database keys. When listing projects or tasks, format them as a concise, readable bulleted list with just their title and user role or status, for example: • **web dev 01** (Owner).`;
 };
@@ -449,7 +475,12 @@ const handler = withSupabase({ auth: "user" }, async (request, context) => {
     const input = await request.json();
     const prompt = typeof input?.message === "string" ? input.message.trim().slice(0, 4000) : "";
     if (!prompt) return respond(request, 400, { message: "Ask TaskFlow a question first.", actions: [] });
-    const rawContext = input?.context && typeof input.context === "object" ? input.context : {};
+    const legacyContext = input?.context && typeof input.context === "object" ? input.context : {};
+    const rawContext = {
+      ...legacyContext,
+      currentProjectId: typeof input?.projectId === "string" ? input.projectId : legacyContext.currentProjectId,
+      workspaceId: typeof input?.workspaceId === "string" ? input.workspaceId : null,
+    };
     const timezone = validTimezone(rawContext.timezone);
     const incomingHistory = Array.isArray(input?.conversationHistory)
       ? input.conversationHistory
@@ -602,32 +633,16 @@ const handler = withSupabase({ auth: "user" }, async (request, context) => {
 
     return respond(request, 200, { message: "I reached the action limit. Please narrow the request and try again.", actions });
   } catch (error) {
-    console.error(
-      "agent-chat error detail:",
-      error instanceof Error ? error.message : error,
-      error instanceof Error ? error.stack : undefined,
-    );
-    console.error("agent-chat unhandled error:", error);
+    console.error("EDGE FUNCTION RUNTIME ERROR:", error);
     logAgentError("TaskFlow agent failed", error);
-    const detail = error instanceof Error ? error.message : "TaskFlow Agent is unavailable.";
-    const contextRejected = error instanceof AgentServiceError
-      && error.status === 400
-      && /context|token|message|tool_call/iu.test(detail);
-    const message = error instanceof AgentServiceError && error.kind === "quota"
-      ? "The assistant reached the inference rate limit. Please try your request once more in a moment."
-      : contextRejected
-        ? "The assistant context was too large or inconsistent. I trimmed it; please try your request once more."
-        : "I ran into an issue processing that request. Please try again.";
-    const diagnostic = error instanceof AgentServiceError
-      ? { kind: error.kind, status: error.status ?? null, detail }
-      : { kind: "unknown", status: null, detail };
+    const errorText = runtimeErrorText(error);
+    const message = `Backend Error: ${errorText}`;
     return respond(request, 200, {
       role: "assistant",
       content: message,
       reply: message,
       message,
       actions: [],
-      ...(diagnosticResponsesEnabled() ? { error: diagnostic } : {}),
     });
   }
 });
@@ -638,14 +653,9 @@ export default {
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) });
       return await handler(request);
     } catch (error) {
-      console.error(
-        "agent-chat error detail:",
-        error instanceof Error ? error.message : error,
-        error instanceof Error ? error.stack : undefined,
-      );
-      console.error("agent-chat unhandled error:", error);
-      const message = "I ran into an issue processing that request. Please try again.";
-      return respond(request, 200, { role: "assistant", content: message, message, actions: [] });
+      console.error("EDGE FUNCTION RUNTIME ERROR:", error);
+      const message = `Backend Error: ${runtimeErrorText(error)}`;
+      return respond(request, 200, { role: "assistant", content: message, reply: message, message, actions: [] });
     }
   },
 };

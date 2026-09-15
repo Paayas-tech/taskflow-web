@@ -67,6 +67,32 @@ describe("agent tool execution guards", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
+  it("adds a dependency between two distinct tasks", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000013";
+    const blocked = { id: "00000000-0000-4000-8000-000000000014", title: "Deploy production", project_id: projectId, status: "todo" };
+    const prerequisite = { id: "00000000-0000-4000-8000-000000000015", title: "Pass security review", project_id: projectId, status: "in_progress" };
+    const limit = vi.fn()
+      .mockResolvedValueOnce({ data: [blocked], error: null })
+      .mockResolvedValueOnce({ data: [prerequisite], error: null });
+    const order = vi.fn(() => ({ limit }));
+    const projectEq = vi.fn(() => ({ order }));
+    const ilike = vi.fn(() => ({ eq: projectEq, order }));
+    const taskSelect = vi.fn(() => ({ is: vi.fn(() => ({ ilike })) }));
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn((table) => table === "task_dependencies" ? { insert } : { select: taskSelect });
+
+    await expect(executeAgentTool("add_task_dependency", {
+      taskTitle: blocked.title,
+      dependsOnTitle: prerequisite.title,
+      projectId,
+    }, { ...context, supabase: { from } })).resolves.toEqual({
+      success: true,
+      task: blocked.title,
+      blockedBy: prerequisite.title,
+    });
+    expect(insert).toHaveBeenCalledWith({ task_id: blocked.id, depends_on_task_id: prerequisite.id });
+  });
+
   it("stops before querying tasks when the requested project cannot be resolved", async () => {
     const projectLimit = vi.fn().mockResolvedValue({ data: [], error: null });
     const projectIlike = vi.fn(() => ({ limit: projectLimit }));
@@ -91,10 +117,10 @@ describe("agent tool execution guards", () => {
     }, context)).resolves.toEqual({ success: false, error: "Task status must be todo, in progress, or done." });
   });
 
-  it("resolves an update target by title in the active project and normalizes its status", async () => {
+  it("completes an independent task by title when its dependency query is empty", async () => {
     const projectId = "00000000-0000-4000-8000-000000000020";
     const taskId = "00000000-0000-4000-8000-000000000021";
-    const updated = { id: taskId, title: "Write release notes", project_id: projectId, status: "in_progress", priority: "medium" };
+    const updated = { id: taskId, title: "Pass security review", project_id: projectId, status: "done", priority: "medium" };
     const limit = vi.fn().mockResolvedValue({ data: [
       { id: taskId, title: updated.title, status: "todo", updated_at: "2026-09-12T12:00:00Z" },
     ], error: null });
@@ -107,17 +133,23 @@ describe("agent tool execution guards", () => {
     const updateSelect = vi.fn(() => ({ maybeSingle }));
     const updateEq = vi.fn(() => ({ select: updateSelect }));
     const update = vi.fn(() => ({ eq: updateEq }));
-    const from = vi.fn(() => ({ select, update }));
+    const dependencyLimit = vi.fn().mockResolvedValue({ data: [], error: null });
+    const dependencyEq = vi.fn(() => ({ limit: dependencyLimit }));
+    const dependencySelect = vi.fn(() => ({ eq: dependencyEq }));
+    const from = vi.fn((table) => table === "task_dependencies"
+      ? { select: dependencySelect }
+      : { select, update });
 
     await expect(executeAgentTool("update_task", {
       taskTitle: updated.title,
-      status: "In Progress",
+      status: "Done",
     }, { ...context, projectId, supabase: { from } })).resolves.toMatchObject({
-      success: true, id: taskId, status: "in_progress",
+      success: true, id: taskId, status: "done",
     });
     expect(ilike).toHaveBeenCalledWith("title", updated.title);
     expect(projectEq).toHaveBeenCalledWith("project_id", projectId);
-    expect(update).toHaveBeenCalledWith(expect.objectContaining({ status: "in_progress" }));
+    expect(dependencyLimit).toHaveBeenCalledWith(100);
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ status: "done" }));
     expect(updateEq).toHaveBeenCalledWith("id", taskId);
   });
 
@@ -161,7 +193,12 @@ describe("agent tool execution guards", () => {
     const updateSelect = vi.fn(() => ({ maybeSingle }));
     const updateEq = vi.fn(() => ({ select: updateSelect }));
     const update = vi.fn(() => ({ eq: updateEq }));
-    const from = vi.fn(() => ({ select, update }));
+    const dependencyLimit = vi.fn().mockResolvedValue({ data: [], error: null });
+    const dependencyEq = vi.fn(() => ({ limit: dependencyLimit }));
+    const dependencySelect = vi.fn(() => ({ eq: dependencyEq }));
+    const from = vi.fn((table) => table === "task_dependencies"
+      ? { select: dependencySelect }
+      : { select, update });
 
     await expect(executeAgentTool("update_task", {
       taskTitle: matched.title,
@@ -195,6 +232,79 @@ describe("agent tool execution guards", () => {
       error: 'Found multiple tasks named "Configure SSL termination" across different projects. Please specify which project you mean.',
     });
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("prevents completing a task while a prerequisite remains unfinished", async () => {
+    const taskId = "00000000-0000-4000-8000-000000000027";
+    const prerequisiteId = "00000000-0000-4000-8000-000000000028";
+    const target = { id: taskId, title: "Deploy production", status: "todo", project_id: "project" };
+    const targetMaybeSingle = vi.fn().mockResolvedValue({ data: target, error: null });
+    const targetEq = vi.fn(() => ({ maybeSingle: targetMaybeSingle }));
+    const prerequisiteIn = vi.fn().mockResolvedValue({
+      data: [{ id: prerequisiteId, title: "Pass security review", status: "in_progress" }],
+      error: null,
+    });
+    const taskSelect = vi.fn()
+      .mockReturnValueOnce({ eq: targetEq })
+      .mockReturnValueOnce({ in: prerequisiteIn });
+    const dependencyLimit = vi.fn().mockResolvedValue({ data: [{ depends_on_task_id: prerequisiteId }], error: null });
+    const dependencyEq = vi.fn(() => ({ limit: dependencyLimit }));
+    const dependencySelect = vi.fn(() => ({ eq: dependencyEq }));
+    const update = vi.fn();
+    const from = vi.fn((table) => table === "task_dependencies"
+      ? { select: dependencySelect }
+      : { select: taskSelect, update });
+
+    await expect(executeAgentTool("update_task", {
+      taskId,
+      status: "done",
+    }, { ...context, supabase: { from } })).resolves.toEqual({
+      success: false,
+      blocked: true,
+      blockers: ["Pass security review"],
+      message: 'Cannot mark "Deploy production" as done because it is blocked by: "Pass security review". Complete those first.',
+      error: 'Cannot mark "Deploy production" as done because it is blocked by: "Pass security review". Complete those first.',
+    });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("surfaces task-dependency PostgREST error details", async () => {
+    const taskId = "00000000-0000-4000-8000-000000000029";
+    const targetMaybeSingle = vi.fn().mockResolvedValue({
+      data: { id: taskId, title: "Pass security review", status: "todo" },
+      error: null,
+    });
+    const taskSelect = vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle: targetMaybeSingle })) }));
+    const dependencyLimit = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: "relation unavailable", code: "42P01" },
+    });
+    const dependencySelect = vi.fn(() => ({ eq: vi.fn(() => ({ limit: dependencyLimit })) }));
+    const from = vi.fn((table) => table === "task_dependencies"
+      ? { select: dependencySelect }
+      : { select: taskSelect });
+
+    await expect(executeAgentTool("update_task", { taskId, status: "done" }, {
+      ...context,
+      supabase: { from },
+    })).rejects.toThrow("Failed querying task_dependencies: relation unavailable (42P01)");
+  });
+
+  it("surfaces task-update PostgREST error details", async () => {
+    const taskId = "00000000-0000-4000-8000-000000000030";
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: "update denied", code: "42501" },
+    });
+    const select = vi.fn(() => ({ maybeSingle }));
+    const eq = vi.fn(() => ({ select }));
+    const update = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ update }));
+
+    await expect(executeAgentTool("update_task", { taskId, status: "todo" }, {
+      ...context,
+      supabase: { from },
+    })).rejects.toThrow("Failed updating task status: update denied (42501)");
   });
 
   it("maps critical priority to the highest schema-supported priority", async () => {
@@ -294,7 +404,10 @@ describe("agent tool execution guards", () => {
     const gte = vi.fn(() => ({ order }));
     const is = vi.fn(() => ({ gte }));
     const select = vi.fn(() => ({ is }));
-    const from = vi.fn(() => ({ select }));
+    const dependencyLimit = vi.fn().mockResolvedValue({ data: [], error: null });
+    const dependencyIn = vi.fn(() => ({ limit: dependencyLimit }));
+    const dependencySelect = vi.fn(() => ({ in: dependencyIn }));
+    const from = vi.fn((table) => table === "task_dependencies" ? { select: dependencySelect } : { select });
 
     try {
       const result = await executeAgentTool("generate_daily_standup", {}, { ...context, supabase: { from } });
@@ -307,10 +420,45 @@ describe("agent tool execution guards", () => {
         blockers: ["Fix blocker"],
       });
       expect(result.markdown).toContain("## Completed Today\n- Release API");
-      expect(result.markdown).toContain("## Potential Blockers\n- Fix blocker");
+      expect(result.markdown).toContain("## Blockers\n- Fix blocker");
     } finally {
       now.mockRestore();
     }
+  });
+
+  it("includes unresolved task dependencies in the standup blockers section", async () => {
+    const taskId = "00000000-0000-4000-8000-000000000041";
+    const prerequisiteId = "00000000-0000-4000-8000-000000000042";
+    const recentLimit = vi.fn().mockResolvedValue({
+      data: [{ id: taskId, title: "Deploy production", status: "todo", priority: "medium", updated_at: "2026-09-11T23:00:00Z" }],
+      error: null,
+    });
+    const recentOrder = vi.fn(() => ({ limit: recentLimit }));
+    const gte = vi.fn(() => ({ order: recentOrder }));
+    const recentIs = vi.fn(() => ({ gte }));
+    const prerequisiteIn = vi.fn().mockResolvedValue({
+      data: [{ id: prerequisiteId, title: "Pass security review", status: "in_progress" }],
+      error: null,
+    });
+    const taskSelect = vi.fn()
+      .mockReturnValueOnce({ is: recentIs })
+      .mockReturnValueOnce({ in: prerequisiteIn });
+    const dependencyLimit = vi.fn().mockResolvedValue({
+      data: [{ task_id: taskId, depends_on_task_id: prerequisiteId }],
+      error: null,
+    });
+    const dependencyIn = vi.fn(() => ({ limit: dependencyLimit }));
+    const dependencySelect = vi.fn(() => ({ in: dependencyIn }));
+    const from = vi.fn((table) => table === "task_dependencies"
+      ? { select: dependencySelect }
+      : { select: taskSelect });
+
+    const result = await executeAgentTool("generate_daily_standup", {}, { ...context, supabase: { from } });
+    expect(result).toMatchObject({
+      success: true,
+      blockers: ["Deploy production — blocked by Pass security review"],
+    });
+    expect(result.markdown).toContain("## Blockers\n- Deploy production — blocked by Pass security review");
   });
 
   it("falls back to a bounded active-task summary when no tasks changed recently", async () => {
@@ -324,9 +472,13 @@ describe("agent tool execution guards", () => {
     const activeOrder = vi.fn(() => ({ limit: activeLimit }));
     const statusIn = vi.fn(() => ({ order: activeOrder }));
     const activeIs = vi.fn(() => ({ in: statusIn }));
-    const from = vi.fn()
+    const dependencyLimit = vi.fn().mockResolvedValue({ data: [], error: null });
+    const dependencyIn = vi.fn(() => ({ limit: dependencyLimit }));
+    const dependencySelect = vi.fn(() => ({ in: dependencyIn }));
+    const taskFrom = vi.fn()
       .mockReturnValueOnce({ select: vi.fn(() => ({ is: recentIs })) })
       .mockReturnValueOnce({ select: vi.fn(() => ({ is: activeIs })) });
+    const from = vi.fn((table) => table === "task_dependencies" ? { select: dependencySelect } : taskFrom());
 
     try {
       const result = await executeAgentTool("generate_daily_standup", {}, { ...context, supabase: { from } });
@@ -371,7 +523,14 @@ describe("agent tool execution guards", () => {
     const gte = vi.fn(() => ({ eq: projectEq, order }));
     const taskIs = vi.fn(() => ({ gte }));
     const taskSelect = vi.fn(() => ({ is: taskIs }));
-    const from = vi.fn((table) => table === "projects" ? { select: projectSelect } : { select: taskSelect });
+    const dependencyLimit = vi.fn().mockResolvedValue({ data: [], error: null });
+    const dependencyIn = vi.fn(() => ({ limit: dependencyLimit }));
+    const dependencySelect = vi.fn(() => ({ in: dependencyIn }));
+    const from = vi.fn((table) => table === "projects"
+      ? { select: projectSelect }
+      : table === "task_dependencies"
+        ? { select: dependencySelect }
+        : { select: taskSelect });
 
     try {
       const result = await executeAgentTool("generate_daily_standup", {

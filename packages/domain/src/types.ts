@@ -99,6 +99,7 @@ export type AgentToolName =
   | "list_projects"
   | "query_tasks"
   | "create_task"
+  | "add_task_dependency"
   | "update_task"
   | "delete_task"
   | "bulk_update_tasks"
