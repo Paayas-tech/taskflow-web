@@ -1,152 +1,16 @@
-import { requireSupabase, throwIfError } from "./client";
-
-/** Supabase auth user → the app's user shape. */
-export const normalizeAuthUser = (user) => {
-  if (!user) return null;
-  const id = user.id || user.uid;
-
-  return {
-    id,
-    uid: id,
-    email: user.email || "",
-    displayName: user.user_metadata?.display_name || user.displayName || "",
-    onboardingRequired: user.user_metadata?.onboarding_completed === false,
-  };
-};
-
-/** Awaits one auth call, raising its error and handing back its payload. */
-const authCall = async (request) => {
-  const { data, error } = await request;
-  throwIfError(error);
-  return data;
-};
-
-/** An auth payload carrying the app's user shape instead of the raw one. */
-const withUser = (data) => ({ ...data, user: normalizeAuthUser(data.user) });
-
-export const signUp = async (email, password, displayName = "", options = {}) => {
-  const emailRedirectTo = options.emailRedirectTo || "";
-  const data = await authCall(
-    requireSupabase().auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          display_name: String(displayName || "").trim(),
-          onboarding_completed: false,
-        },
-        ...(emailRedirectTo ? { emailRedirectTo } : {}),
-      },
-    })
-  );
-
-  if (!data?.user?.id) {
-    const unexpectedError = new Error("Unexpected signup response.");
-    unexpectedError.code = "unexpected_signup_response";
-    throw unexpectedError;
-  }
-
-  if (Array.isArray(data.user.identities) && !data.user.identities.length) {
-    const duplicateError = new Error(
-      "An account already exists for this email address."
-    );
-    duplicateError.code = "user_already_exists";
-    throw duplicateError;
-  }
-
-  // public.handle_new_auth_user creates public.users atomically and copies
-  // display_name from the signup metadata, including confirmation-required
-  // projects where the browser does not receive a session yet.
-  return withUser(data);
-};
-
-export const resendConfirmation = async (email, options = {}) => {
-  const emailRedirectTo = options.emailRedirectTo || "";
-  return authCall(
-    requireSupabase().auth.resend({
-      type: "signup",
-      email,
-      options: emailRedirectTo ? { emailRedirectTo } : {},
-    })
-  );
-};
-
-export const verifySignupOtp = async (email, token) =>
-  withUser(
-    await authCall(
-      requireSupabase().auth.verifyOtp({ email, token, type: "email" })
-    )
-  );
-
-export const signIn = async (email, password) =>
-  withUser(
-    await authCall(requireSupabase().auth.signInWithPassword({ email, password }))
-  );
-
-export const requestPasswordReset = async (email, redirectTo) =>
-  authCall(requireSupabase().auth.resetPasswordForEmail(email, { redirectTo }));
-
-export const updatePassword = async (password) =>
-  authCall(requireSupabase().auth.updateUser({ password }));
-
-export const exchangeDesktopAuthCode = async (code) => {
-  const normalizedCode = String(code || "").trim();
-  if (!/^[A-Za-z0-9._~-]{20,2048}$/u.test(normalizedCode)) {
-    throw new Error("Invalid desktop authentication callback.");
-  }
-  return withUser(
-    await authCall(requireSupabase().auth.exchangeCodeForSession(normalizedCode))
-  );
-};
-
-export const signOut = async () => {
-  await authCall(requireSupabase().auth.signOut());
-};
-
-export const getUser = async () => {
-  const data = await authCall(requireSupabase().auth.getUser());
-  return normalizeAuthUser(data.user || null);
-};
-
-export const onAuthStateChange = (callback) => {
-  const { data } = requireSupabase().auth.onAuthStateChange((event, session) => {
-    callback(event, normalizeAuthUser(session?.user || null));
-  });
-  return () => data.subscription.unsubscribe();
-};
-
-export const updateDisplayName = async (displayName) => {
-  const database = requireSupabase();
-  const normalizedName = String(displayName || "").trim();
-  const data = await authCall(
-    database.auth.updateUser({ data: { display_name: normalizedName || null } })
-  );
-
-  if (data.user) {
-    const profile = await database
-      .from("users")
-      .update({ display_name: normalizedName || null })
-      .eq("id", data.user.id);
-    throwIfError(profile.error);
-  }
-
-  return normalizeAuthUser(data.user || null);
-};
-
-export const completeOnboarding = async () => {
-  const data = await authCall(
-    requireSupabase().auth.updateUser({ data: { onboarding_completed: true } })
-  );
-  return normalizeAuthUser(data.user || null);
-};
-
-export const deleteAccount = async () => {
-  const database = requireSupabase();
-  const data = await authCall(
-    database.functions.invoke("delete-account", { body: {} })
-  );
-  if (!data?.success) throw new Error("Account deletion was not completed.");
-
-  await authCall(database.auth.signOut({ scope: "local" }));
-  return true;
-};
+import{apiRequest,clearSession,getCachedUser,setSession}from"./client";
+export const normalizeAuthUser=(user)=>user?{id:user.id||user.uid,uid:user.id||user.uid,email:user.email||"",displayName:user.displayName||user.user_metadata?.display_name||"",onboardingRequired:user.onboardingRequired===true||user.user_metadata?.onboarding_completed===false}:null;
+const accept=(data)=>{const user=normalizeAuthUser(data.user);setSession(data.accessToken,user);globalThis.dispatchEvent?.(new Event("taskflow-auth"));return{...data,user};};
+export const signUp=async(email,password,displayName="")=>accept(await apiRequest("/auth/register",{method:"POST",body:JSON.stringify({email,password,display_name:String(displayName).trim()})}));
+export const signIn=async(email,password)=>accept(await apiRequest("/auth/login",{method:"POST",body:JSON.stringify({email,password})}));
+export const signOut=async()=>{try{await apiRequest("/auth/logout",{method:"POST"});}finally{clearSession();globalThis.dispatchEvent?.(new Event("taskflow-auth"));}};
+export const getUser=async()=>{if(!getCachedUser())return null;try{const data=await apiRequest("/auth/me"),user=normalizeAuthUser(data.user);setSession(null,user);return user;}catch{clearSession();return null;}};
+export const onAuthStateChange=(callback)=>{let active=true;queueMicrotask(async()=>{if(active)callback("INITIAL_SESSION",await getUser());});const listener=()=>void getUser().then(user=>callback(user?"SIGNED_IN":"SIGNED_OUT",user));globalThis.addEventListener?.("taskflow-auth",listener);return()=>{active=false;globalThis.removeEventListener?.("taskflow-auth",listener);};};
+export const updateDisplayName=async(displayName)=>normalizeAuthUser((await apiRequest("/auth/me",{method:"PATCH",body:JSON.stringify({displayName})})).user);
+export const completeOnboarding=async()=>normalizeAuthUser((await apiRequest("/auth/me",{method:"PATCH",body:JSON.stringify({onboardingCompleted:true})})).user);
+export const updatePassword=(password)=>apiRequest("/auth/me",{method:"PATCH",body:JSON.stringify({password})});
+export const deleteAccount=async()=>{await apiRequest("/auth/me",{method:"DELETE"});clearSession();return true;};
+export const resendConfirmation=async()=>({});
+export const verifySignupOtp=async()=>{throw new Error("Email OTP is not required on this server.");};
+export const requestPasswordReset=async()=>{throw new Error("Password reset email is not configured yet. Contact an administrator.");};
+export const exchangeDesktopAuthCode=async(code)=>{const value=String(code||"").trim();if(!/^[A-Za-z0-9._~-]{20,2048}$/u.test(value))throw new Error("Invalid desktop authentication callback.");return accept(await apiRequest("/auth/exchange",{method:"POST",body:JSON.stringify({code:value})}));};

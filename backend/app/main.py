@@ -5,9 +5,16 @@ from typing import Literal
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
+from .auth import current_user_id, router as auth_router
+from .attachments import router as attachments_router
+from .calendar import router as calendar_router
+from .collaboration import router as collaboration_router
+from .projects import router as projects_router
+from .settings import router as settings_router
+from .tasks import router as tasks_router
 
 load_dotenv()
 
@@ -20,10 +27,7 @@ ALLOWED_ORIGINS = csv_setting(
     "ALLOWED_ORIGINS",
     "http://localhost:5173,https://taskflow.bohaus.in",
 )
-CHAT_PROVIDER = os.getenv("CHAT_PROVIDER", "supabase").strip().lower()
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
-SUPABASE_AGENT_FUNCTION = os.getenv("SUPABASE_AGENT_FUNCTION", "agent-chat").strip()
+CHAT_PROVIDER = os.getenv("CHAT_PROVIDER", "openai").strip().lower()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1").strip().rstrip("/")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "openai/gpt-oss-20b").strip()
@@ -68,9 +72,16 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+app.include_router(auth_router)
+app.include_router(projects_router)
+app.include_router(tasks_router)
+app.include_router(collaboration_router)
+app.include_router(settings_router)
+app.include_router(attachments_router)
+app.include_router(calendar_router)
 
 
 @app.get("/health")
@@ -78,60 +89,12 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def bearer_token(authorization: str | None) -> str:
-    scheme, _, token = (authorization or "").partition(" ")
-    if scheme.lower() != "bearer" or not token.strip():
-        raise HTTPException(status_code=401, detail="A valid bearer token is required.")
-    return token.strip()
-
-
-async def call_supabase_agent(request: Request, body: ChatRequest, authorization: str | None) -> ChatResponse:
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-        raise HTTPException(status_code=503, detail="The Supabase agent gateway is not configured.")
-    token = bearer_token(authorization)
-    response = await request.app.state.http.post(
-        f"{SUPABASE_URL}/functions/v1/{SUPABASE_AGENT_FUNCTION}",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "apikey": SUPABASE_ANON_KEY,
-            "Content-Type": "application/json",
-        },
-        json=body.model_dump(by_alias=True),
-    )
-    try:
-        payload = response.json()
-    except json.JSONDecodeError as error:
-        raise HTTPException(status_code=502, detail="The agent returned an invalid response.") from error
-    if response.is_error:
-        detail = payload.get("message") or payload.get("error") or "The agent request failed."
-        raise HTTPException(status_code=response.status_code, detail=str(detail))
-    message = payload.get("message") or payload.get("reply") or payload.get("content")
-    if not isinstance(message, str):
-        raise HTTPException(status_code=502, detail="The agent response did not contain a message.")
-    actions = payload.get("actions")
-    return ChatResponse(message=message, actions=actions if isinstance(actions, list) else [])
-
-
-async def validate_supabase_user(request: Request, authorization: str | None) -> None:
-    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-        raise HTTPException(status_code=503, detail="Supabase authentication is not configured.")
-    token = bearer_token(authorization)
-    response = await request.app.state.http.get(
-        f"{SUPABASE_URL}/auth/v1/user",
-        headers={"Authorization": f"Bearer {token}", "apikey": SUPABASE_ANON_KEY},
-    )
-    if response.status_code != 200:
-        raise HTTPException(status_code=401, detail="Your session is invalid or expired.")
-
-
 async def call_openai_compatible(
     request: Request,
     body: ChatRequest,
-    authorization: str | None,
 ) -> ChatResponse:
     if not OPENAI_API_KEY:
         raise HTTPException(status_code=503, detail="The model provider is not configured.")
-    await validate_supabase_user(request, authorization)
     messages = [message.model_dump() for message in body.messages[-8:]]
     if not messages or messages[-1].get("content") != body.message.strip():
         messages.append({"role": "user", "content": body.message.strip()})
@@ -159,14 +122,12 @@ async def call_openai_compatible(
 async def chat(
     request: Request,
     body: ChatRequest,
-    authorization: str | None = Header(default=None),
+    _user_id=Depends(current_user_id),
 ) -> ChatResponse:
     try:
-        if CHAT_PROVIDER == "supabase":
-            return await call_supabase_agent(request, body, authorization)
         if CHAT_PROVIDER == "openai":
-            return await call_openai_compatible(request, body, authorization)
-        raise HTTPException(status_code=503, detail="CHAT_PROVIDER must be 'supabase' or 'openai'.")
+            return await call_openai_compatible(request, body)
+        raise HTTPException(status_code=503, detail="CHAT_PROVIDER must be 'openai'.")
     except httpx.TimeoutException as error:
         raise HTTPException(status_code=504, detail="The upstream agent timed out.") from error
     except httpx.RequestError as error:

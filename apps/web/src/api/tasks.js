@@ -1,4 +1,4 @@
-import { requireSupabase, throwIfError } from "./client";
+import { apiRequest } from "./client";
 
 /** The only task projection. Every task read in the app uses it. */
 export const TASK_SELECT = `
@@ -18,8 +18,6 @@ const ASSIGNED_TASK_SELECT = TASK_SELECT.replace(
 );
 
 const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
-
-const taskRows = () => requireSupabase().from("tasks");
 
 const ROW_TO_STATUS = { done: "completed", in_progress: "in-progress" };
 
@@ -116,31 +114,15 @@ export const taskToRow = (values = {}) => {
 };
 
 export const listPersonalTasks = async () => {
-  const { data, error } = await taskRows()
-    .select(TASK_SELECT)
-    .is("project_id", null)
-    .order("created_at", { ascending: false });
-  throwIfError(error);
-  return (data || []).map(rowToTask);
+  return (await apiRequest("/tasks?personal=true")).map(rowToTask);
 };
 
 export const listAssignedTasks = async (userId) => {
-  const { data, error } = await taskRows()
-    .select(ASSIGNED_TASK_SELECT)
-    .eq("task_assignments.user_id", userId)
-    .order("due_date", { ascending: true, nullsFirst: false });
-  throwIfError(error);
-  return (data || []).map(rowToTask);
+  return (await apiRequest(`/tasks?assignedTo=${encodeURIComponent(userId)}`)).map(rowToTask);
 };
 
 export const listProjectTasks = async (projectId) => {
-  const { data, error } = await taskRows()
-    .select(TASK_SELECT)
-    .eq("project_id", projectId)
-    .order("position", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: false });
-  throwIfError(error);
-  return (data || []).map(rowToTask);
+  return (await apiRequest(`/tasks?projectId=${encodeURIComponent(projectId)}`)).map(rowToTask);
 };
 
 /**
@@ -159,56 +141,18 @@ export const createTask = async (values = {}) => {
     position: projectId ? values.position ?? null : null,
   };
 
-  const { data, error } = await taskRows()
-    .insert(row)
-    .select(TASK_SELECT)
-    .single();
-  throwIfError(error);
-  return rowToTask(data);
+  return rowToTask(await apiRequest("/tasks", { method: "POST", body: JSON.stringify({ ...values, status: statusToRow(values.status) }) }));
 };
 
 export const updateTask = async (id, patch = {}) => {
-  const { data, error } = await taskRows()
-    .update(taskToRow(patch))
-    .eq("id", id)
-    .select(TASK_SELECT)
-    .maybeSingle();
-  throwIfError(error);
-  if (!data) throw new Error("The selected task is unavailable.");
-  return rowToTask(data);
+  return rowToTask(await apiRequest(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ ...patch, ...(hasOwn(patch, "status") ? { status: statusToRow(patch.status) } : {}) }) }));
 };
 
-export const deleteTask = async (id) => {
-  const { data, error } = await taskRows()
-    .delete()
-    .eq("id", id)
-    .select("id")
-    .maybeSingle();
-  throwIfError(error);
-  if (!data) throw new Error("The selected task is unavailable.");
-};
+export const deleteTask = (id) => apiRequest(`/tasks/${id}`, { method: "DELETE" });
 
 /** Board drag and drop: [{ taskId, columnId, position, status, completedAt }]. */
 export const reorderTasks = async (placements = []) => {
-  await Promise.all(
-    placements.map(async ({ taskId, columnId, position, status, completedAt }) => {
-      const { error } = await taskRows()
-        .update({
-          column_id: columnId,
-          position: Math.max(0, Number(position) || 0),
-          status: statusToRow(status),
-          completed_at: completedAt || null,
-        })
-        .eq("id", taskId);
-      throwIfError(error);
-    })
-  );
+  await apiRequest("/tasks/reorder", { method: "POST", body: JSON.stringify(placements.map(item => ({...item, status: statusToRow(item.status)}))) });
 };
 
-export const setAssignee = async (taskId, userId) => {
-  const { error } = await requireSupabase().rpc("set_task_assignee", {
-    target_task_id: taskId,
-    target_user_id: userId || null,
-  });
-  throwIfError(error);
-};
+export const setAssignee = (taskId, userId) => apiRequest(`/tasks/${taskId}/assignee`, { method: "PUT", body: JSON.stringify({ userId: userId || null }) });

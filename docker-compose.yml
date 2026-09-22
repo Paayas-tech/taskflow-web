@@ -1,4 +1,23 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    env_file:
+      - ./backend/.env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations/000_auth_compat.sql:/docker-entrypoint-initdb.d/000_auth_compat.sql:ro
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1.0
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   api:
     build:
       context: ./backend
@@ -9,11 +28,16 @@ services:
       - "8000"
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      - uploads_data:/data/uploads
     restart: unless-stopped
     mem_limit: 512m
     cpus: 1.0
     security_opt:
       - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 30s
@@ -26,14 +50,12 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       args:
-        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?Set VITE_SUPABASE_URL in the root .env file}
-        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:?Set VITE_SUPABASE_ANON_KEY in the root .env file}
         VITE_API_BASE_URL: /api
     depends_on:
       api:
         condition: service_healthy
     ports:
-      - "127.0.0.1:3000:80"
+      - "127.0.0.1:9500:80"
     restart: unless-stopped
     mem_limit: 256m
     cpus: 0.5
@@ -45,3 +67,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+
+volumes:
+  postgres_data:
+  uploads_data:

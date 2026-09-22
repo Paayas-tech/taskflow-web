@@ -3,7 +3,7 @@ import {
   normalizeSettings,
 } from "../domain/settings";
 import { updateDisplayName } from "./auth";
-import { requireSupabase, throwIfError } from "./client";
+import { apiRequest } from "./client";
 
 const SETTINGS_SELECT = "user_id, settings_data";
 
@@ -28,13 +28,7 @@ export const settingsToRow = (settings) => ({
 
 export const getSettings = async (user) => {
   if (!user?.uid) throw new Error("A signed-in user is required for settings.");
-  const { data, error } = await requireSupabase()
-    .from("user_settings")
-    .select(SETTINGS_SELECT)
-    .eq("user_id", user.uid)
-    .maybeSingle();
-  throwIfError(error);
-  return normalizeSettings(data?.settings_data || {}, user);
+  return normalizeSettings(await apiRequest("/settings"), user);
 };
 
 export const saveSettings = async (user, settings) => {
@@ -43,13 +37,7 @@ export const saveSettings = async (user, settings) => {
   if (validationError) throw new Error(validationError);
 
   const normalized = normalizeSettings(settings, user);
-  const { error } = await requireSupabase()
-    .from("user_settings")
-    .upsert(
-      { ...settingsToRow(normalized), user_id: user.uid },
-      { onConflict: "user_id" }
-    );
-  throwIfError(error);
+  await apiRequest("/settings", { method: "PUT", body: JSON.stringify(normalized) });
 
   const currentDisplayName = String(user.displayName || "").trim();
   let profileUpdated = true;

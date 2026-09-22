@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-const { requireSupabaseMock } = vi.hoisted(() => ({
-  requireSupabaseMock: vi.fn(),
+const { apiRequestMock } = vi.hoisted(() => ({
+  apiRequestMock: vi.fn(),
 }));
 
 vi.mock("./client", () => ({
   currentUserId: vi.fn().mockResolvedValue("user-1"),
-  requireSupabase: requireSupabaseMock,
+  apiRequest: apiRequestMock,
   throwIfError: (error) => {
     if (error) throw error;
   },
@@ -97,44 +97,20 @@ describe("viewerRoleForRow", () => {
 });
 
 describe("listProjects", () => {
-  it("retries without health_status and remembers the legacy schema", async () => {
-    const selections = [];
+  it("maps REST project rows", async () => {
     const legacyRow = { ...withMembers };
     delete legacyRow.health_status;
-    requireSupabaseMock.mockReturnValue({
-      from: vi.fn(() => ({
-        select: (selection) => {
-          selections.push(selection);
-          return {
-            order: async () =>
-              selection.includes("health_status")
-                ? {
-                    data: null,
-                    error: {
-                      code: "42703",
-                      message: "column projects.health_status does not exist",
-                    },
-                  }
-                : { data: [legacyRow], error: null },
-          };
-        },
-      })),
-    });
+    legacyRow.viewer_role = "owner";
+    apiRequestMock.mockResolvedValue([legacyRow]);
 
     const first = await listProjects("user-1");
-    const second = await listProjects("user-1");
-
     expect(first[0]).toMatchObject({
       id: "project-1",
       viewerRole: "owner",
       healthStatus: "on_track",
       healthSupported: false,
     });
-    expect(second[0].healthSupported).toBe(false);
-    expect(selections).toHaveLength(3);
-    expect(selections[0]).toContain("health_status");
-    expect(selections[1]).not.toContain("health_status");
-    expect(selections[2]).not.toContain("health_status");
+    expect(apiRequestMock).toHaveBeenCalledWith("/projects");
   });
 });
 

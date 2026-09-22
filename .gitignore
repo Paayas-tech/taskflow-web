@@ -30,6 +30,8 @@ firebase-debug.log
 *.njsproj
 *.sln
 *.sw?
+__pycache__/
+*.py[cod]
 
 .vercel
 .env*

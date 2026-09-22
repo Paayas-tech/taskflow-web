@@ -16,6 +16,8 @@ RUN groupadd --system taskflow && useradd --system --gid taskflow --home-dir /ap
 WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 COPY --chown=taskflow:taskflow app ./app
+COPY --chown=taskflow:taskflow scripts ./scripts
+COPY --chown=taskflow:taskflow migrations ./migrations
 USER taskflow
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

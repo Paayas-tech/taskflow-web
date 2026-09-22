@@ -16,7 +16,7 @@ configureStore({ api });
 
 // Supabase drives the session: the first event (with or without a user) takes
 // the store out of its booting state.
-if (api.isSupabaseConfigured) {
+if (api.isApiConfigured) {
   api.onAuthStateChange((event, user) => {
     void handleAuthEvent(event, user);
   });

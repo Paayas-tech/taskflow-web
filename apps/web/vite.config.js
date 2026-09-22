@@ -25,8 +25,7 @@ export default defineConfig({
     // same values on every machine and in CI, and never a real project — so a
     // developer's local `.env` can neither change a result nor be reached.
     env: {
-      VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
-      VITE_SUPABASE_ANON_KEY: 'test-anon-key',
+      VITE_API_BASE_URL: '/api',
     },
   },
   build: {
