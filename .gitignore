@@ -33,6 +33,20 @@ firebase-debug.log
 __pycache__/
 *.py[cod]
 
+# Database exports and local migration artifacts
+*.dump
+*.csv
+*.sql
+!backend/migrations/**/*.sql
+!supabase/**/*.sql
+supabase-export/
+migration/supabase-export/
+
+# Temporary smoke-test artifacts
+tmp/
+taskflow-login-test.py
+*.tmp
+
 .vercel
 .env*
 !.env.example

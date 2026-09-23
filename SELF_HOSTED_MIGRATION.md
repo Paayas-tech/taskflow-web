@@ -58,12 +58,20 @@ printing addresses or hashes:
 docker compose run --rm api python scripts/audit_password_hashes.py
 ```
 
-For a disposable fixture account only, set a known password with the same
-hashing helper used by registration and password changes:
+Set a password with the administration CLI. Omitting the password keeps it out
+of shell history and prompts for it twice. The command uses the same bcrypt
+helper as registration and prints the updated user ID and email:
 
 ```bash
-docker compose run --rm api python scripts/reset_user_password.py \
-  --email owner@taskflow.local
+docker compose exec api python -m app.cli reset-password owner@taskflow.local
+```
+
+For non-interactive automation, a password can be supplied as the final
+argument, but this may expose it in shell history and process listings:
+
+```bash
+docker compose exec api python -m app.cli reset-password \
+  owner@taskflow.local 'temporary-password'
 ```
 
 Then verify both login and authenticated `/api/auth/me` access:
