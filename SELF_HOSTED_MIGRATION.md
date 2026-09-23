@@ -47,3 +47,37 @@ docker compose exec -T postgres psql -U taskflow -d taskflow -c \
 ```
 
 Do not run `docker compose down -v`; it deletes the PostgreSQL volume.
+
+## Audit and smoke-test imported authentication
+
+The login endpoint reads `auth.users.encrypted_password` and verifies Supabase
+`$2a$`/`$2b$` bcrypt hashes directly. Check the imported hash inventory without
+printing addresses or hashes:
+
+```bash
+docker compose run --rm api python scripts/audit_password_hashes.py
+```
+
+For a disposable fixture account only, set a known password with the same
+hashing helper used by registration and password changes:
+
+```bash
+docker compose run --rm api python scripts/reset_user_password.py \
+  --email owner@taskflow.local
+```
+
+Then verify both login and authenticated `/api/auth/me` access:
+
+```bash
+docker compose run --rm --network host api python scripts/smoke_auth.py \
+  --email owner@taskflow.local
+```
+
+On Docker installations where host networking is unavailable, run the helper
+inside the active API container instead:
+
+```bash
+docker compose exec api python scripts/smoke_auth.py \
+  --base-url http://127.0.0.1:8000 \
+  --email owner@taskflow.local
+```
