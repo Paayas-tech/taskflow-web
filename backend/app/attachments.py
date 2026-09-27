@@ -16,7 +16,11 @@ async def list_files(projectId:UUID,entityType:str|None=None,entityId:UUID|None=
  await require_project(db,projectId,user); clauses=["a.project_id=:p"]; params={"p":projectId}
  if entityType: clauses.append("a.entity_type=:t");params["t"]=entityType
  if entityId: clauses.append("a.entity_id=:e");params["e"]=entityId
- rows=(await db.execute(text("select a.*,u.display_name,u.avatar_url from attachments a join users u on u.id=a.uploaded_by where "+" and ".join(clauses)+" order by a.created_at desc"),params)).mappings().all(); return [record(r) for r in rows]
+ # Some restored installations predate the attachments migration. Treat that
+ # exactly like an empty attachment list rather than breaking every task drawer.
+ if not (await db.execute(text("select to_regclass('public.attachments')"))).scalar_one_or_none():
+  return []
+ rows=(await db.execute(text("select a.*,u.display_name,u.avatar_url from attachments a left join users u on u.id=a.uploaded_by where "+" and ".join(clauses)+" order by a.created_at desc"),params)).mappings().all(); return [record(r) for r in rows]
 @router.post("",status_code=201)
 async def upload(projectId:UUID=Form(),entityType:str=Form(),entityId:UUID=Form(),file:UploadFile=File(),user:UUID=Depends(current_user_id),db:AsyncSession=Depends(session)):
  await require_project(db,projectId,user,True); payload=await file.read(MAX+1)

@@ -295,6 +295,7 @@ export const createFakeApi = (seed = {}) => {
   define("deleteTask", (taskId) => {
     tasks.require(taskId);
     tasks.remove(taskId);
+    attachments.drop((attachment) => attachment.entityId === taskId);
   });
   define("reorderTasks", (placements = []) => {
     placements.forEach(({ taskId, columnId, position, status, completedAt }) => {

@@ -686,7 +686,7 @@ export const restoreTask = (taskId) => {
   return task ? setArchivedAt(task, null, "restore") : Promise.resolve(false);
 };
 
-/** Deletes a task; a project task's attachments are removed first. */
+/** Deletes a task optimistically; the API owns all dependent-row cleanup. */
 export const deleteTask = async (taskId) => {
   const session = sessionStamp();
   const task = requireTask(taskId);
@@ -695,13 +695,6 @@ export const deleteTask = async (taskId) => {
   removeTask(taskId);
   try {
     await enqueue(taskId, async () => {
-      if (task.projectId) {
-        await api().removeAllAttachments({
-          projectId: task.projectId,
-          entityType: labelFor(task),
-          entityId: taskId,
-        });
-      }
       await api().deleteTask(taskId);
     });
     return isCurrentSession(session);

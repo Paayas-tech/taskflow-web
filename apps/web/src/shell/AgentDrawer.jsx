@@ -12,6 +12,10 @@ const INITIAL_MESSAGE = {
   actions: [],
 };
 
+const canRetryAgentError = (error) =>
+  ![401, 403, 503].includes(error?.status) &&
+  !/not configured|credentials are invalid|api key/i.test(error?.message || "");
+
 const renderInline = (text) => text.split(/(\*\*[^*]+\*\*)/u).map((part, index) =>
   part.startsWith("**") && part.endsWith("**")
     ? <strong key={index}>{part.slice(2, -2)}</strong>
@@ -86,7 +90,8 @@ export function AgentDrawer({ open, onClose, project }) {
         projectIds.forEach((projectId) => void refreshWorkspace(projectId));
       }
     } catch (value) {
-      setError(value instanceof Error ? value.message : "TaskFlow Agent is unavailable.");
+      const message = value instanceof Error ? value.message : "TaskFlow Agent is unavailable.";
+      setError({ message, retryable: canRetryAgentError(value) });
     } finally {
       setLoading(false);
     }
@@ -174,7 +179,7 @@ export function AgentDrawer({ open, onClose, project }) {
           </div>
         ))}
         {loading ? <div className="agent-thinking"><span className="spinner spinner-sm" /> Thinking and checking TaskFlow…</div> : null}
-        {error ? <div className="agent-error" role="alert"><span>{error}</span><Button size="sm" variant="ghost" onClick={retry}>Retry</Button></div> : null}
+        {error ? <div className="agent-error" role="alert"><span>{error.message}</span>{error.retryable ? <Button size="sm" variant="ghost" onClick={retry}>Retry</Button> : null}</div> : null}
         <div ref={endRef} />
       </div>
     </SidePanel>

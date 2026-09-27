@@ -46,6 +46,8 @@ migration/supabase-export/
 tmp/
 taskflow-login-test.py
 *.tmp
+recordings/
+demo_video/
 
 .vercel
 .env*

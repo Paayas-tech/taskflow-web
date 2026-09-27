@@ -520,7 +520,7 @@ describe("archiveTask and restoreTask", () => {
 });
 
 describe("deleteTask", () => {
-  it("removes a project task's attachments before the task itself", async () => {
+  it("lets the task endpoint atomically remove the task and its attachments", async () => {
     const api = await boot({
       tasks: [makeTask({ id: "task-1", projectId: "project-1", assigneeId: user.id })],
       attachments: [
@@ -536,11 +536,8 @@ describe("deleteTask", () => {
     expect(await deleteTask("task-1")).toBe(true);
     expect(tasksOf()["task-1"]).toBeUndefined();
     expect(api.data.attachments).toEqual([]);
-    expect(
-      api.calls
-        .map(([name]) => name)
-        .filter((name) => name === "removeAllAttachments" || name === "deleteTask")
-    ).toEqual(["removeAllAttachments", "deleteTask"]);
+    expect(api.callCount("removeAllAttachments")).toBe(0);
+    expect(api.callCount("deleteTask")).toBe(1);
   });
 
   it("puts the task back when the delete fails", async () => {

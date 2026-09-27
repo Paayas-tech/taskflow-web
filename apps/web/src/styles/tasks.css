@@ -233,6 +233,8 @@ button.task-badge {
 
 .quick-add {
   display: flex;
+  width: 100%;
+  min-width: 0;
   align-items: flex-start;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
@@ -251,12 +253,16 @@ button.task-badge {
 }
 
 .quick-add-field {
-  flex: 1;
+  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
 }
 
 .quick-add-field .input {
+  display: block;
+  flex: 1 1 auto;
   width: 100%;
+  min-width: 0;
   border-color: transparent;
   background: transparent;
 }
@@ -273,11 +279,21 @@ button.task-badge {
   align-items: center;
   gap: var(--space-1);
   margin-top: var(--space-1);
+  white-space: nowrap;
 }
 
 .quick-add-card {
   flex-wrap: wrap;
   background: var(--color-surface);
+}
+
+.quick-add-card .quick-add-field {
+  flex-basis: calc(100% - 28px);
+}
+
+.quick-add-card .quick-add-actions {
+  width: calc(100% - 28px);
+  margin-left: 28px;
 }
 
 .quick-add-trigger {

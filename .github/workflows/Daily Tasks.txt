@@ -1,4 +1,4 @@
-sql project (done)
-daa lecture 
-dip 
+python (done)
 taskflow
+dip
+linkedin

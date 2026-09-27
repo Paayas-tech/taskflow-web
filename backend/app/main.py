@@ -28,7 +28,10 @@ ALLOWED_ORIGINS = csv_setting(
     "http://localhost:5173,https://taskflow.bohaus.in",
 )
 CHAT_PROVIDER = os.getenv("CHAT_PROVIDER", "openai").strip().lower()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_API_KEY = (
+    os.getenv("GROQ_API_KEY", "").strip()
+    or os.getenv("OPENAI_API_KEY", "").strip()
+)
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1").strip().rstrip("/")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "openai/gpt-oss-20b").strip()
 
@@ -94,7 +97,13 @@ async def call_openai_compatible(
     body: ChatRequest,
 ) -> ChatResponse:
     if not OPENAI_API_KEY:
-        raise HTTPException(status_code=503, detail="The model provider is not configured.")
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "AI Assistant is not configured on this server. "
+                "Ask an administrator to add GROQ_API_KEY or OPENAI_API_KEY."
+            ),
+        )
     messages = [message.model_dump() for message in body.messages[-8:]]
     if not messages or messages[-1].get("content") != body.message.strip():
         messages.append({"role": "user", "content": body.message.strip()})
@@ -108,9 +117,23 @@ async def call_openai_compatible(
     except json.JSONDecodeError as error:
         raise HTTPException(status_code=502, detail="The model provider returned invalid JSON.") from error
     if response.is_error:
-        provider_error = payload.get("error", {})
-        detail = provider_error.get("message") if isinstance(provider_error, dict) else provider_error
-        raise HTTPException(status_code=502, detail=str(detail or "The model provider rejected the request."))
+        if response.status_code in (401, 403):
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "AI Assistant credentials are invalid or expired. "
+                    "Ask an administrator to update the server API key."
+                ),
+            )
+        if response.status_code == 429:
+            raise HTTPException(
+                status_code=429,
+                detail="AI Assistant is temporarily busy. Please wait a moment and try again.",
+            )
+        raise HTTPException(
+            status_code=502,
+            detail="AI Assistant could not complete that request. Please try again later.",
+        )
     try:
         message = payload["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as error:
