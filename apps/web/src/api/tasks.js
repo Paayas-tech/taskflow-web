@@ -31,6 +31,23 @@ const STATUS_TO_ROW = {
 
 const statusToRow = (status) => STATUS_TO_ROW[status] || "todo";
 
+/**
+ * App-shaped task patch -> REST mutation payload. Completion is deliberately
+ * sent with the database field name so the drawer and board use the same
+ * canonical status/timestamp contract. UI-only `completed` never reaches the
+ * API.
+ */
+export const taskPatchToApi = (patch = {}) => {
+  const payload = { ...patch };
+  delete payload.completed;
+  if (hasOwn(patch, "status")) payload.status = statusToRow(patch.status);
+  if (hasOwn(patch, "completedAt")) {
+    payload.completed_at = patch.completedAt || null;
+    delete payload.completedAt;
+  }
+  return payload;
+};
+
 // PostgREST exposes task_assignments as a to-one object because task_id is
 // unique; older fixtures represent it as an array. Accept both shapes.
 const assignmentOf = (row) =>
@@ -145,7 +162,10 @@ export const createTask = async (values = {}) => {
 };
 
 export const updateTask = async (id, patch = {}) => {
-  return rowToTask(await apiRequest(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ ...patch, ...(hasOwn(patch, "status") ? { status: statusToRow(patch.status) } : {}) }) }));
+  return rowToTask(await apiRequest(`/tasks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(taskPatchToApi(patch)),
+  }));
 };
 
 export const deleteTask = (id) => apiRequest(`/tasks/${id}`, { method: "DELETE" });

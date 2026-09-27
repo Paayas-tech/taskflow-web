@@ -623,9 +623,14 @@ export const toggleComplete = (taskId) => {
   if (!task) return Promise.resolve(false);
 
   const completing = !isTaskComplete(task);
+  const completedAt = completing ? nowIso() : null;
   return updateTask(
     taskId,
-    { completed: completing, status: completing ? "completed" : "todo" },
+    {
+      completed: completing,
+      status: completing ? "done" : "todo",
+      completedAt,
+    },
     {
       errorText: `We couldn't ${completing ? "complete" : "reopen"} “${task.title}”.`,
     }

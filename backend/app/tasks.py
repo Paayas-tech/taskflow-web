@@ -163,6 +163,10 @@ async def update(task_id: UUID, body: dict, user: UUID = Depends(current_user_id
                  db: AsyncSession = Depends(session)):
     task = await require_task(db, task_id, user, True)
     sets, params = [], {"id": task_id}
+    # Accept the canonical database spelling emitted by the REST client while
+    # preserving compatibility with older camel-case clients.
+    if "completed_at" in body:
+        body["completedAt"] = body.pop("completed_at")
     if "status" in body:
         body["status"] = normalize_status(body["status"])
         body["completedAt"] = (

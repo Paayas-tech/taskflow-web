@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rowToTask, taskToRow, TASK_SELECT } from "./tasks";
+import { rowToTask, taskPatchToApi, taskToRow, TASK_SELECT } from "./tasks";
 
 const row = {
   id: "task-1",
@@ -198,5 +198,28 @@ describe("taskToRow", () => {
       assigneeId: "user-2",
     });
     expect(patch).toEqual({ title: "Kept" });
+  });
+});
+
+describe("taskPatchToApi", () => {
+  it("sends the completion mutation using the canonical API schema", () => {
+    expect(taskPatchToApi({
+      status: "done",
+      completed: true,
+      completedAt: "2026-09-27T10:00:00.000Z",
+      columnId: "column-done",
+    })).toEqual({
+      status: "done",
+      completed_at: "2026-09-27T10:00:00.000Z",
+      columnId: "column-done",
+    });
+  });
+
+  it("clears the completion timestamp when reopening", () => {
+    expect(taskPatchToApi({
+      status: "in-progress",
+      completed: false,
+      completedAt: null,
+    })).toEqual({ status: "in_progress", completed_at: null });
   });
 });

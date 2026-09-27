@@ -88,6 +88,7 @@ describe("TaskDetailPanel", () => {
     expect(api.callsOf("updateTask")[0][1]).toMatchObject({
       status: "completed",
       completed: true,
+      completedAt: expect.any(String),
     });
   });
 

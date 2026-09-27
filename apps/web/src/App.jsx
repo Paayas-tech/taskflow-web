@@ -6,6 +6,7 @@ import { ConfigurationErrorScreen } from "./auth/ConfigurationErrorScreen";
 import { Login } from "./auth/Login";
 import { Onboarding } from "./auth/Onboarding";
 import { Recover } from "./auth/Recover";
+import { SPLASH_SESSION_KEY, WelcomeSplash } from "./components/WelcomeSplash";
 import { defaultViewPath, resolveThemeMode } from "./domain/settings";
 import { ArchivedTasksPage } from "./pages/ArchivedTasksPage";
 import { CalendarPage } from "./pages/CalendarPage";
@@ -50,6 +51,22 @@ const isTypingTarget = (target) =>
 
 const LoadingScreen = () => <div className="loading-screen">Loading...</div>;
 
+const hasSeenWelcomeSplash = () => {
+  try {
+    return window.sessionStorage?.getItem(SPLASH_SESSION_KEY) === "true";
+  } catch {
+    return false;
+  }
+};
+
+const rememberWelcomeSplash = () => {
+  try {
+    window.sessionStorage?.setItem(SPLASH_SESSION_KEY, "true");
+  } catch {
+    // Restricted storage should not prevent access to authentication.
+  }
+};
+
 /** The page for a route; every page reads what it renders from the store. */
 function RoutePage({ view }) {
   if (view === "tasks") return <MyTasksPage />;
@@ -70,6 +87,9 @@ export function App() {
   const ui = useStore(selectUi);
 
   const [authEntryMode, setAuthEntryMode] = useState("signin");
+  const [showWelcomeSplash, setShowWelcomeSplash] = useState(
+    () => !hasSeenWelcomeSplash()
+  );
   const [agentOpen, setAgentOpen] = useState(false);
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const defaultRouteApplied = useRef(false);
@@ -104,6 +124,12 @@ export function App() {
   useEffect(() => {
     document.title = `${pageTitle(view, selectedProject)} · TaskFlow`;
   }, [view, selectedProject]);
+
+  useEffect(() => {
+    if (!auth.user) return;
+    rememberWelcomeSplash();
+    setShowWelcomeSplash(false);
+  }, [auth.user]);
 
   useEffect(() => {
     const openSearch = (event) => {
@@ -209,6 +235,17 @@ export function App() {
   }
 
   if (!auth.user) {
+    const authPath = normalizePath(path);
+    if (showWelcomeSplash && (authPath === "/" || authPath === "/login")) {
+      return (
+        <WelcomeSplash
+          onComplete={() => {
+            rememberWelcomeSplash();
+            setShowWelcomeSplash(false);
+          }}
+        />
+      );
+    }
     return (
       <Login
         initialMode={authEntryMode}
