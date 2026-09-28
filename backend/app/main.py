@@ -23,10 +23,14 @@ def csv_setting(name: str, default: str = "") -> list[str]:
     return [value.strip().rstrip("/") for value in os.getenv(name, default).split(",") if value.strip()]
 
 
-ALLOWED_ORIGINS = csv_setting(
-    "ALLOWED_ORIGINS",
-    "http://localhost:5173,https://taskflow.bohaus.in",
-)
+DESKTOP_APP_ORIGIN = "taskflow-app://app"
+ALLOWED_ORIGINS = list(dict.fromkeys([
+    *csv_setting(
+        "ALLOWED_ORIGINS",
+        "http://localhost:5173,https://taskflow.bohaus.in",
+    ),
+    DESKTOP_APP_ORIGIN,
+]))
 CHAT_PROVIDER = os.getenv("CHAT_PROVIDER", "openai").strip().lower()
 OPENAI_API_KEY = (
     os.getenv("GROQ_API_KEY", "").strip()

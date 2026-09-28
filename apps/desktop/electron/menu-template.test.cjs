@@ -22,6 +22,9 @@ test("adds reload and developer tools only in development", () => {
   const menu = createApplicationMenuTemplate({ appName: "TaskFlow", isDevelopment: true, platform: "linux" });
   assert.ok(roles(menu).includes("reload"));
   assert.ok(roles(menu).includes("toggleDevTools"));
+  const viewMenu = menu.find((item) => item.label === "View");
+  const devTools = viewMenu.submenu.find((item) => item.role === "toggleDevTools");
+  assert.equal(devTools.accelerator, "Ctrl+Shift+I");
 });
 
 test("includes the standard macOS application and window menus", () => {

@@ -45,7 +45,14 @@ function createApplicationMenuTemplate({ appName, isDevelopment, platform }) {
       label: "View",
       submenu: [
         ...(isDevelopment
-          ? [{ role: "reload" }, { role: "toggleDevTools" }, { type: "separator" }]
+          ? [
+              { role: "reload" },
+              {
+                role: "toggleDevTools",
+                accelerator: platform === "darwin" ? "Cmd+Alt+I" : "Ctrl+Shift+I",
+              },
+              { type: "separator" },
+            ]
           : []),
         { role: "resetZoom" },
         { role: "zoomIn" },
