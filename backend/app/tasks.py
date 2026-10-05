@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .auth import current_user_id
 from .common import record, require_project, require_task
 from .database import session
+from .email import APP_URL, send_task_assignment_safely
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -253,7 +254,8 @@ async def reorder(items: list[ReorderItem], user: UUID = Depends(current_user_id
 
 
 @router.put("/{task_id}/assignee", status_code=204)
-async def assign(task_id: UUID, body: dict, user: UUID = Depends(current_user_id),
+async def assign(task_id: UUID, body: dict, background_tasks: BackgroundTasks,
+                 user: UUID = Depends(current_user_id),
                  db: AsyncSession = Depends(session)):
     task = await require_task(db, task_id, user, True)
     assignee = body.get("userId")
@@ -267,4 +269,17 @@ async def assign(task_id: UUID, body: dict, user: UUID = Depends(current_user_id
         await db.execute(text(
             "insert into task_assignments(task_id,user_id) values(:task,:user)"
         ), {"task": task_id, "user": assignee})
+        recipient = (await db.execute(text(
+            "select a.email,p.name project_name from auth.users a "
+            "join projects p on p.id=:project "
+            "where a.id=:user and a.deleted_at is null"
+        ), {"project": task["project_id"], "user": assignee})).mappings().first()
+        if recipient:
+            background_tasks.add_task(
+                send_task_assignment_safely,
+                recipient["email"],
+                task_title=task["title"],
+                project_name=recipient["project_name"],
+                task_url=f"{APP_URL}/projects/{task['project_id']}/board?task={task_id}",
+            )
     await db.commit()

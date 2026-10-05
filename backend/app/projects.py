@@ -1,11 +1,12 @@
 from uuid import UUID, uuid4
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from .auth import current_user_id
 from .common import record, require_project
 from .database import session
+from .email import send_project_invitation_safely
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -93,10 +94,20 @@ async def my_invites(user:UUID=Depends(current_user_id),db:AsyncSession=Depends(
     rows=(await db.execute(text("select i.*,p.name project_name,p.color project_color,u.display_name inviter_display_name from project_invitations i join auth.users a on a.id=:u join projects p on p.id=i.project_id left join users u on u.id=i.inviter_id where i.email_normalized=lower(a.email) and i.status='pending' order by i.created_at desc"),{"u":user})).mappings().all(); return [record(r) for r in rows]
 
 @router.post("/{project_id}/invitations",status_code=201)
-async def invite(project_id:UUID,body:InviteBody,user:UUID=Depends(current_user_id),db:AsyncSession=Depends(session)):
-    await require_project(db,project_id,user,True); role=body.role.lower()
+async def invite(project_id:UUID,body:InviteBody,background_tasks:BackgroundTasks,user:UUID=Depends(current_user_id),db:AsyncSession=Depends(session)):
+    project=await require_project(db,project_id,user,True); role=body.role.lower()
     if role not in ("editor","viewer"): raise HTTPException(422,"Invalid role.")
-    row=(await db.execute(text("insert into project_invitations(project_id,email,email_normalized,role,inviter_id,expires_at) values(:p,:e,lower(:e),:r,:u,now()+interval '7 days') returning *"),{"p":project_id,"e":str(body.email).lower(),"r":role,"u":user})).mappings().first(); await db.commit(); return record(row)
+    recipient=str(body.email).lower()
+    inviter=(await db.execute(text("select coalesce(nullif(display_name,''),email) as name from users where id=:u"),{"u":user})).mappings().first()
+    row=(await db.execute(text("insert into project_invitations(project_id,email,email_normalized,role,inviter_id,expires_at) values(:p,:e,lower(:e),:r,:u,now()+interval '7 days') returning *"),{"p":project_id,"e":recipient,"r":role,"u":user})).mappings().first(); await db.commit()
+    background_tasks.add_task(
+        send_project_invitation_safely,
+        recipient,
+        project_name=body.projectName or project["name"],
+        inviter_name=(inviter or {}).get("name") or "A TaskFlow teammate",
+        role=role,
+    )
+    return record(row)
 
 @router.patch("/invitations/{invite_id}")
 async def respond(invite_id:UUID,body:dict,user:UUID=Depends(current_user_id),db:AsyncSession=Depends(session)):

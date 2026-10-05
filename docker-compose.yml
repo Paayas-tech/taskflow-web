@@ -28,6 +28,9 @@ services:
       - "8000"
     ports:
       - "127.0.0.1:8000:8000"
+    networks:
+      - default
+      - taskflow-mail
     volumes:
       - uploads_data:/data/uploads
     restart: unless-stopped
@@ -71,3 +74,8 @@ services:
 volumes:
   postgres_data:
   uploads_data:
+
+networks:
+  taskflow-mail:
+    external: true
+    name: taskflow-mail

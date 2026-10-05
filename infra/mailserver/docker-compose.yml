@@ -1,0 +1,46 @@
+services:
+  postfix:
+    image: boky/postfix:latest
+    container_name: postfix
+    hostname: mail.bohaus.in
+    restart: unless-stopped
+    environment:
+      ALLOWED_SENDER_DOMAINS: bohaus.in
+      DKIM_AUTOGENERATE: "true"
+      DKIM_BACKEND: opendkim
+      DKIM_SELECTOR: mail
+      POSTFIX_myhostname: mail.bohaus.in
+      POSTFIX_mydomain: bohaus.in
+      POSTFIX_myorigin: bohaus.in
+      POSTFIX_mydestination: "mail.bohaus.in, localhost.bohaus.in, localhost"
+      POSTFIX_relayhost: ""
+      POSTFIX_smtp_tls_security_level: may
+      POSTFIX_smtp_tls_loglevel: "1"
+      POSTFIX_smtpd_relay_restrictions: "permit_mynetworks,reject_unauth_destination"
+      POSTFIX_smtpd_recipient_restrictions: "permit_mynetworks,reject_unauth_destination"
+    ports:
+      - "127.0.0.1:1587:587"
+    volumes:
+      - ./dkim:/etc/opendkim/keys
+    healthcheck:
+      test: ["CMD-SHELL", "postfix status >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.50
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - default
+      - taskflow-mail
+
+networks:
+  taskflow-mail:
+    name: taskflow-mail
+    internal: true
