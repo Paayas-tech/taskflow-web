@@ -40,6 +40,84 @@ services:
       - default
       - taskflow-mail
 
+  mailserver:
+    image: ghcr.io/docker-mailserver/docker-mailserver:16.0.1
+    container_name: bohaus-mailserver
+    hostname: mail.bohaus.in
+    restart: unless-stopped
+    stop_grace_period: 1m
+    environment:
+      SSL_TYPE: manual
+      SSL_CERT_PATH: /certs/fullchain.pem
+      SSL_KEY_PATH: /certs/privkey.pem
+      PERMIT_DOCKER: none
+      SPOOF_PROTECTION: "1"
+      ENABLE_CLAMAV: "0"
+      ENABLE_AMAVIS: "1"
+      ENABLE_SPAMASSASSIN: "1"
+      ENABLE_RSPAMD: "0"
+      ENABLE_OPENDKIM: "1"
+      ENABLE_OPENDMARC: "0"
+      ENABLE_POLICYD_SPF: "0"
+      POSTFIX_INET_PROTOCOLS: ipv4
+      POSTFIX_MESSAGE_SIZE_LIMIT: "26214400"
+      LOG_LEVEL: info
+    ports:
+      - "25:25"
+      - "465:465"
+      - "587:587"
+      - "993:993"
+    volumes:
+      - mail_data:/var/mail
+      - mail_state:/var/mail-state
+      - mail_logs:/var/log/mail
+      - ./config:/tmp/docker-mailserver
+      - ./certs:/certs:ro
+    networks:
+      default:
+        aliases:
+          - mail.bohaus.in
+    mem_limit: 1536m
+    cpus: 1.0
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  webmail:
+    image: roundcube/roundcubemail:1.6.13-apache
+    container_name: bohaus-webmail
+    restart: unless-stopped
+    environment:
+      ROUNDCUBEMAIL_DEFAULT_HOST: ssl://mail.bohaus.in
+      ROUNDCUBEMAIL_DEFAULT_PORT: "993"
+      ROUNDCUBEMAIL_SMTP_SERVER: tls://mail.bohaus.in
+      ROUNDCUBEMAIL_SMTP_PORT: "587"
+      ROUNDCUBEMAIL_DB_TYPE: sqlite
+      ROUNDCUBEMAIL_SKIN: elastic
+      ROUNDCUBEMAIL_PLUGINS: archive,zipdownload
+    ports:
+      - "127.0.0.1:9600:80"
+    volumes:
+      - webmail_db:/var/roundcube/db
+      - ./roundcube:/var/roundcube/config:ro
+    depends_on:
+      mailserver:
+        condition: service_healthy
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1/') === false ? 1 : 0);"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mail_data:
+  mail_state:
+  mail_logs:
+  webmail_db:
+
 networks:
   taskflow-mail:
     name: taskflow-mail
