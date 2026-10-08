@@ -38,7 +38,7 @@ def reset_password(connection: psycopg.Connection, email: str, password: str):
     with connection.cursor() as cursor:
         cursor.execute(
             """update auth.users
-               set encrypted_password = %s
+               set encrypted_password = %s, token_version = token_version + 1
                where lower(email) = lower(%s) and deleted_at is null
                returning id, email""",
             (hash_password(_validated_password(password)), normalized_email),

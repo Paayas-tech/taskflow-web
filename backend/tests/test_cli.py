@@ -18,6 +18,7 @@ class PasswordResetTests(unittest.TestCase):
 
         self.assertEqual(row, ("user-123", "person@example.com"))
         parameters = cursor.execute.call_args.args[1]
+        self.assertIn("token_version = token_version + 1", cursor.execute.call_args.args[0])
         self.assertTrue(parameters[0].startswith("$2b$"))
         self.assertTrue(verify_password("Password123!", parameters[0]))
         self.assertEqual(parameters[1], "person@example.com")

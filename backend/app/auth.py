@@ -45,11 +45,11 @@ class ProfilePatch(BaseModel):
     onboardingCompleted: bool | None = None
     password: str | None = Field(default=None, min_length=8, max_length=128)
 
-def token_for(user_id: UUID) -> str:
+def token_for(user_id: UUID, token_version: int = 0) -> str:
     if len(JWT_SECRET) < 32:
         raise HTTPException(status_code=503, detail="JWT_SECRET is not configured securely.")
     now = datetime.now(UTC)
-    return jwt.encode({"sub": str(user_id), "iat": now, "exp": now + timedelta(minutes=JWT_MINUTES)}, JWT_SECRET, algorithm="HS256")
+    return jwt.encode({"sub": str(user_id), "iat": now, "exp": now + timedelta(minutes=JWT_MINUTES), "tv": token_version}, JWT_SECRET, algorithm="HS256")
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
@@ -62,13 +62,22 @@ def verify_password(password: str, password_hash: str | None) -> bool:
     except (TypeError, ValueError):
         return False
 
-async def current_user_id(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)) -> UUID:
+async def current_user_id(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), database: AsyncSession = Depends(session)) -> UUID:
     if not credentials or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Authentication required.")
     try:
-        return UUID(jwt.decode(credentials.credentials, JWT_SECRET, algorithms=["HS256"])["sub"])
-    except (jwt.PyJWTError, KeyError, ValueError) as error:
+        claims = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=["HS256"], options={"require": ["sub", "exp", "iat", "tv"]})
+        user_id = UUID(claims["sub"])
+        if type(claims["tv"]) is not int or claims["tv"] < 0:
+            raise ValueError("Invalid session version")
+    except (jwt.PyJWTError, KeyError, ValueError, TypeError) as error:
         raise HTTPException(status_code=401, detail="Invalid or expired session.") from error
+    version = (await database.execute(text(
+        "select token_version from auth.users where id=:id and deleted_at is null"
+    ), {"id": user_id})).scalar_one_or_none()
+    if version is None or version != claims["tv"]:
+        raise HTTPException(status_code=401, detail="Session revoked. Please sign in again.")
+    return user_id
 
 async def user_payload(database: AsyncSession, user_id: UUID) -> dict:
     row = (await database.execute(text("select a.id,a.email,p.display_name from auth.users a left join public.users p on p.id=a.id where a.id=:id and a.deleted_at is null"), {"id": user_id})).mappings().first()
@@ -78,11 +87,11 @@ async def user_payload(database: AsyncSession, user_id: UUID) -> dict:
 
 @router.post("/login")
 async def login(values: Credentials, database: AsyncSession = Depends(session)):
-    row = (await database.execute(text("select id,encrypted_password from auth.users where lower(email)=lower(:email) and deleted_at is null"), {"email": values.email})).mappings().first()
+    row = (await database.execute(text("select id,encrypted_password,token_version from auth.users where lower(email)=lower(:email) and deleted_at is null"), {"email": values.email})).mappings().first()
     valid = row and verify_password(values.password, row["encrypted_password"])
     if not valid:
         raise HTTPException(status_code=401, detail="Invalid email or password.")
-    return {"accessToken": token_for(row["id"]), "user": await user_payload(database, row["id"])}
+    return {"accessToken": token_for(row["id"], row["token_version"]), "user": await user_payload(database, row["id"])}
 
 @router.post("/register", status_code=201)
 async def register(values: Registration, database: AsyncSession = Depends(session)):
@@ -104,7 +113,9 @@ async def me(user_id: UUID = Depends(current_user_id), database: AsyncSession = 
     return {"user": await user_payload(database, user_id)}
 
 @router.post("/logout", status_code=204)
-async def logout():
+async def logout(user_id: UUID = Depends(current_user_id), database: AsyncSession = Depends(session)):
+    await database.execute(text("update auth.users set token_version=token_version+1 where id=:id"), {"id": user_id})
+    await database.commit()
     return None
 
 @router.patch("/me")
@@ -113,7 +124,7 @@ async def update_me(values: ProfilePatch, user_id: UUID=Depends(current_user_id)
         await database.execute(text("update public.users set display_name=nullif(btrim(:name),'') where id=:id"), {"name": values.displayName, "id": user_id})
     if values.password:
         hashed = hash_password(values.password)
-        await database.execute(text("update auth.users set encrypted_password=:password where id=:id"), {"password": hashed, "id": user_id})
+        await database.execute(text("update auth.users set encrypted_password=:password, token_version=token_version+1 where id=:id"), {"password": hashed, "id": user_id})
     await database.commit()
     return {"user": await user_payload(database, user_id)}
 

@@ -6,6 +6,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/migrations/000_auth_compat.sql:/docker-entrypoint-initdb.d/000_auth_compat.sql:ro
+      - ./backend/migrations/001_token_version.sql:/docker-entrypoint-initdb.d/001_token_version.sql:ro
     restart: unless-stopped
     mem_limit: 768m
     cpus: 1.0

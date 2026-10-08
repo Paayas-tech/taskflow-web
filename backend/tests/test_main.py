@@ -1,4 +1,7 @@
 from uuid import UUID
+from unittest.mock import AsyncMock
+import copy
+import json
 
 import httpx
 import pytest
@@ -93,3 +96,83 @@ def test_chat_accepts_groq_provider(monkeypatch) -> None:
     with authenticated_client() as client:
         client.app.state.http = WorkingClient()
         assert client.post("/api/chat", json={"message": "Hello"}).status_code == 200
+
+
+class ScriptedProvider:
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.requests = []
+
+    async def post(self, *_args, **kwargs):
+        self.requests.append(copy.deepcopy(kwargs["json"]))
+        return next(self.responses)
+
+    async def aclose(self):
+        pass
+
+
+def tool_completion(name, arguments):
+    return httpx.Response(200, json={"choices": [{"message": {
+        "content": None,
+        "tool_calls": [{"id": "call_1", "type": "function", "function": {
+            "name": name, "arguments": arguments,
+        }}],
+    }}]})
+
+
+@pytest.mark.parametrize("name,result", [
+    ("create_task", {"success": True, "task": {"id": "task-1", "title": "Ship release", "status": "todo"}}),
+    ("list_tasks", {"success": True, "tasks": [{"id": "task-1", "title": "Ship release", "status": "todo"}]}),
+])
+def test_chat_executes_authenticated_tools(monkeypatch, name, result):
+    executor = AsyncMock(return_value=result)
+    monkeypatch.setattr(main_module, "execute_tool", executor)
+    monkeypatch.setattr(main_module, "OPENAI_API_KEY", "test-only")
+    provider = ScriptedProvider([
+        tool_completion(name, '{"title":"Ship release"}' if name == "create_task" else '{}'),
+        httpx.Response(200, json={"choices": [{"message": {"content": "Finished."}}]}),
+    ])
+    with authenticated_client() as client:
+        client.app.state.http = provider
+        response = client.post("/api/chat", json={"message": "Ship release"})
+    assert response.status_code == 200
+    assert response.json()["actions"] == [{"name": name, "status": "completed", "result": result}]
+    assert executor.await_args.args[2] == UUID("00000000-0000-0000-0000-000000000101")
+    messages = provider.requests[1]["messages"]
+    assert messages[-2]["tool_calls"][0]["id"] == messages[-1]["tool_call_id"]
+    assert json.loads(messages[-1]["content"]) == result
+
+
+def test_chat_rejects_malformed_tool_arguments(monkeypatch):
+    executor = AsyncMock()
+    monkeypatch.setattr(main_module, "execute_tool", executor)
+    monkeypatch.setattr(main_module, "OPENAI_API_KEY", "test-only")
+    provider = ScriptedProvider([
+        tool_completion("create_task", '{broken'),
+        httpx.Response(200, json={"choices": [{"message": {"content": "Invalid parameters."}}]}),
+    ])
+    with authenticated_client() as client:
+        client.app.state.http = provider
+        response = client.post("/api/chat", json={"message": "Create a task"})
+    assert response.status_code == 200
+    assert response.json()["actions"][0]["status"] == "failed"
+    executor.assert_not_awaited()
+
+
+def test_chat_preserves_committed_action_when_followup_rate_limited(monkeypatch):
+    executor = AsyncMock(return_value={"success": True, "task": {
+        "id": "task-1", "title": "Ship release", "status": "todo",
+    }})
+    monkeypatch.setattr(main_module, "execute_tool", executor)
+    monkeypatch.setattr(main_module, "OPENAI_API_KEY", "test-only")
+    provider = ScriptedProvider([
+        tool_completion("create_task", '{"title":"Ship release"}'),
+        httpx.Response(429, json={"error": {"message": "Rate limited"}}),
+    ])
+    with authenticated_client() as client:
+        client.app.state.http = provider
+        response = client.post("/api/chat", json={"message": "Create Ship release"})
+    assert response.status_code == 200
+    assert response.json()["message"] == 'Created task "Ship release".'
+    assert response.json()["actions"][0]["status"] == "completed"
+    executor.assert_awaited_once()

@@ -87,8 +87,12 @@ def task_dict(row):
     return result
 
 
-async def query_tasks(db, user, where="true", params=None, order="t.created_at desc"):
+async def query_tasks(db, user, where="true", params=None, order="t.created_at desc", limit=None):
     params = {**(params or {}), "u": user}
+    limit_sql = ""
+    if limit is not None:
+        params["row_limit"] = max(1, min(int(limit), 100))
+        limit_sql = "limit :row_limit"
     rows = (await db.execute(text(f"""
         select t.*,a.user_id assignee_id,a.assigned_at
         from tasks t
@@ -98,6 +102,7 @@ async def query_tasks(db, user, where="true", params=None, order="t.created_at d
         where ({where}) and ((t.project_id is null and t.created_by=:u)
           or p.owner_id=:u or m.user_id=:u)
         order by {order}
+        {limit_sql}
     """), params)).mappings().all()
     return [task_dict(row) for row in rows]
 
