@@ -1,11 +1,19 @@
 from uuid import UUID
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 import app.main as main_module
 from app.auth import current_user_id
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def isolate_chat_configuration(monkeypatch):
+    monkeypatch.setattr(main_module, "CHAT_PROVIDER", "openai")
+    yield
+    app.dependency_overrides.clear()
 
 
 def test_health() -> None:
@@ -70,3 +78,18 @@ def test_chat_returns_valid_provider_json(monkeypatch) -> None:
     app.dependency_overrides.clear()
     assert response.status_code == 200
     assert response.json() == {"message": "Ready.", "actions": []}
+
+
+def test_chat_accepts_groq_provider(monkeypatch) -> None:
+    class WorkingClient:
+        async def post(self, *_args, **_kwargs):
+            return httpx.Response(200, json={"choices": [{"message": {"content": "Ready."}}]})
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr(main_module, "CHAT_PROVIDER", "groq")
+    monkeypatch.setattr(main_module, "OPENAI_API_KEY", "test-only")
+    with authenticated_client() as client:
+        client.app.state.http = WorkingClient()
+        assert client.post("/api/chat", json={"message": "Hello"}).status_code == 200

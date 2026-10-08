@@ -1,6 +1,6 @@
 import userEvent from "@testing-library/user-event";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { SPLASH_SESSION_KEY } from "./components/WelcomeSplash";
 import { completeOnboarding, signOut } from "./api/auth";
@@ -50,7 +50,12 @@ const signedOut = async ({ splashSeen = true } = {}) => {
 /** A first-run account: signed in, still behind the onboarding gate. */
 const seedNewAccount = () => seedStore({ user: { onboardingRequired: true } });
 
+beforeEach(() => {
+  window.sessionStorage.setItem(SPLASH_SESSION_KEY, "true");
+});
+
 afterEach(() => {
+  vi.useRealTimers();
   client.configured = true;
   completeOnboarding.mockReset();
   signOut.mockReset();
@@ -61,10 +66,15 @@ afterEach(() => {
 describe("App auth gate", () => {
   it("shows the welcome splash once for a signed-out browsing session", async () => {
     await signedOut({ splashSeen: false });
+    vi.useFakeTimers();
     renderPage(<App />);
 
-    expect(screen.getByRole("region", { name: "Welcome to TaskFlow" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Welcome to Taskflow" })).toBeInTheDocument();
     expect(screen.queryByText("Welcome back")).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(2000));
+    expect(window.sessionStorage.getItem("taskflow_splash_shown")).toBe("true");
+    expect(screen.getByText("Welcome back")).toBeInTheDocument();
   });
 
   it("shows the sign-in screen when nobody is signed in", async () => {

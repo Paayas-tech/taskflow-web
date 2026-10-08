@@ -126,12 +126,6 @@ export function App() {
   }, [view, selectedProject]);
 
   useEffect(() => {
-    if (!auth.user) return;
-    rememberWelcomeSplash();
-    setShowWelcomeSplash(false);
-  }, [auth.user]);
-
-  useEffect(() => {
     const openSearch = (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key?.toLowerCase() === "k") {
         event.preventDefault();
@@ -219,6 +213,17 @@ export function App() {
     return <ConfigurationErrorScreen onRetry={() => window.location.reload()} />;
   }
 
+  if (showWelcomeSplash) {
+    return (
+      <WelcomeSplash
+        onComplete={() => {
+          rememberWelcomeSplash();
+          setShowWelcomeSplash(false);
+        }}
+      />
+    );
+  }
+
   if (auth.status === "booting") return <LoadingScreen />;
 
   if (path === "/recover") {
@@ -235,17 +240,6 @@ export function App() {
   }
 
   if (!auth.user) {
-    const authPath = normalizePath(path);
-    if (showWelcomeSplash && (authPath === "/" || authPath === "/login")) {
-      return (
-        <WelcomeSplash
-          onComplete={() => {
-            rememberWelcomeSplash();
-            setShowWelcomeSplash(false);
-          }}
-        />
-      );
-    }
     return (
       <Login
         initialMode={authEntryMode}

@@ -125,7 +125,7 @@ async def table_exists(db: AsyncSession, table_name: str) -> bool:
 
 @router.get("")
 async def list_tasks(projectId: UUID | None = None, assignedTo: UUID | None = None,
-                     personal: bool = False, user: UUID = Depends(current_user_id),
+                     personal: bool = False, mine: bool = False, user: UUID = Depends(current_user_id),
                      db: AsyncSession = Depends(session)):
     if projectId:
         return await query_tasks(db, user, "t.project_id=:p", {"p": projectId}, "t.position nulls last,t.created_at desc")
@@ -133,6 +133,10 @@ async def list_tasks(projectId: UUID | None = None, assignedTo: UUID | None = No
         return await query_tasks(db, user, "a.user_id=:a", {"a": assignedTo}, "t.due_date nulls last")
     if personal:
         return await query_tasks(db, user, "t.project_id is null")
+    if mine:
+        return await query_tasks(db, user,
+            "t.archived_at is null and ((t.project_id is null and t.created_by=:u) or a.user_id=:u)",
+            order="t.completed_at desc nulls last,t.due_date nulls last,t.created_at desc")
     return await query_tasks(db, user)
 
 
@@ -174,6 +178,14 @@ async def update(task_id: UUID, body: dict, user: UUID = Depends(current_user_id
             body.get("completedAt") or datetime.now(timezone.utc).isoformat()
             if body["status"] == "done" else None
         )
+        # Mobile and drawer clients may submit only a status. Keep the stored
+        # Kanban column aligned so a reload cannot put a completed task in To Do.
+        if task["project_id"] and "columnId" not in body:
+            target_column = (await db.execute(text(
+                "select id from project_columns where project_id=:project and category=:status "
+                "order by position,id limit 1"
+            ), {"project": task["project_id"], "status": body["status"]})).scalar_one_or_none()
+            body["columnId"] = target_column
     column = await validate_column(db, task, body.get("columnId")) if "columnId" in body else None
     if column and column["category"] != "custom" and "status" in body:
         if column["category"] != body["status"]:

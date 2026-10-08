@@ -9,10 +9,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.112.3",
-    "@taskflow/api-client": "workspace:*",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "@taskflow/domain": "workspace:*",
     "expo": "~57.0.21",
+    "expo-document-picker": "~57.0.3",
     "expo-router": "~57.0.20",
     "expo-secure-store": "~57.0.3",
     "react": "19.2.3",
@@ -20,10 +20,10 @@
     "react-native": "0.86.3",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "5.9.1",
-    "react-native-worklets": "0.10.1",
-    "react-native-url-polyfill": "4.0.0"
+    "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
+    "@expo/ngrok": "^4.1.3",
     "@react-native/metro-config": "0.86.3",
     "@types/react": "~19.2.2",
     "typescript": "~5.9.3"

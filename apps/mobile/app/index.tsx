@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Redirect, type Href } from "expo-router";
 import {
   ActivityIndicator,
@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../src/auth/AuthProvider";
 import { colors, elevation, radii, spacing, typography } from "../src/ui/theme";
+import { WelcomeSplash } from "../src/ui/WelcomeSplash";
 
 export default function LoginScreen() {
   const { authenticated, loading: authLoading, login: signIn } = useAuth();
@@ -18,6 +19,8 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(true);
+  const finishWelcome = useCallback(() => setShowWelcome(false), []);
 
   const login = async () => {
     setLoading(true);
@@ -38,6 +41,8 @@ export default function LoginScreen() {
   if (authenticated) {
     return <Redirect href={"/(tabs)" as Href} />;
   }
+
+  if (showWelcome) return <WelcomeSplash onComplete={finishWelcome} />;
 
   return (
     <SafeAreaView style={styles.page}>

@@ -29,6 +29,19 @@ const rowStatus = (status: string | null): TaskStatus => {
 const databaseStatus = (status: TaskStatus): "todo" | "in_progress" | "done" =>
   status === "completed" ? "done" : status === "in-progress" ? "in_progress" : "todo";
 
+export const friendlyAgentError = (value: unknown): Error => {
+  const message = value instanceof Error ? value.message : String(value || "");
+  if (/invalid api key|api key|not configured|unauthorized|\b401\b|\b403\b/i.test(message)) {
+    return new Error(
+      "AI Assistant is not configured for this app. Ask an administrator to update the server API key."
+    );
+  }
+  if (/rate.?limit|\b429\b/i.test(message)) {
+    return new Error("AI Assistant is temporarily busy. Please wait a moment and try again.");
+  }
+  return new Error(message || "AI Assistant is unavailable right now.");
+};
+
 const authUser = (user: { id: string; email?: string; user_metadata?: Record<string, unknown> }): User => ({
   id: user.id,
   email: user.email ?? "",
@@ -130,7 +143,21 @@ export const createTaskFlowApi = (options: CreateTaskFlowApiOptions) => {
       const { data, error } = await supabase.functions.invoke<AgentResponse>("agent-chat", {
         body: { message: prompt, conversationHistory, context },
       });
-      if (error) throw error;
+      if (error) {
+        let providerDetail = "";
+        try {
+          const response = (error as unknown as { context?: { clone?: () => { json: () => Promise<unknown> } } }).context?.clone?.();
+          const payload = await response?.json();
+          if (payload && typeof payload === "object") {
+            const detail = (payload as { detail?: unknown; error?: unknown }).detail
+              ?? (payload as { detail?: unknown; error?: unknown }).error;
+            if (typeof detail === "string") providerDetail = detail;
+          }
+        } catch {
+          // The transport error still carries enough information for fallback.
+        }
+        throw friendlyAgentError(providerDetail ? new Error(providerDetail) : error);
+      }
       if (!data || typeof data.message !== "string" || !Array.isArray(data.actions)) {
         throw new Error("TaskFlow Agent returned an invalid response.");
       }
@@ -193,16 +220,27 @@ export const createTaskFlowApi = (options: CreateTaskFlowApiOptions) => {
       return (data ?? []).map((row) => taskFromRow(row as unknown as Record<string, unknown>));
     },
 
-    async completeTask(taskId: string): Promise<Task> {
+    async setTaskCompletion(taskId: string, completed: boolean): Promise<Task> {
       const { data, error } = await supabase
         .from("tasks")
-        .update({ status: "done", completed_at: new Date().toISOString() })
+        .update({
+          status: completed ? "done" : "todo",
+          completed_at: completed ? new Date().toISOString() : null,
+        })
         .eq("id", taskId)
         .select(TASK_SELECT)
         .maybeSingle();
       if (error) throw error;
-      if (!data) throw new Error("This task cannot be completed or is no longer available.");
+      if (!data) throw new Error("This task cannot be updated or is no longer available.");
       return taskFromRow(data as unknown as Record<string, unknown>);
+    },
+
+    async completeTask(taskId: string): Promise<Task> {
+      return this.setTaskCompletion(taskId, true);
+    },
+
+    async reopenTask(taskId: string): Promise<Task> {
+      return this.setTaskCompletion(taskId, false);
     },
 
     async createTask(input: CreateTaskInput): Promise<Task> {

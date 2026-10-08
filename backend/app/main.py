@@ -152,9 +152,9 @@ async def chat(
     _user_id=Depends(current_user_id),
 ) -> ChatResponse:
     try:
-        if CHAT_PROVIDER == "openai":
+        if CHAT_PROVIDER in {"openai", "groq"}:
             return await call_openai_compatible(request, body)
-        raise HTTPException(status_code=503, detail="CHAT_PROVIDER must be 'openai'.")
+        raise HTTPException(status_code=503, detail="CHAT_PROVIDER must be 'openai' or 'groq'.")
     except httpx.TimeoutException as error:
         raise HTTPException(status_code=504, detail="The upstream agent timed out.") from error
     except httpx.RequestError as error:

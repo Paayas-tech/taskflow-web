@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../ui";
 
-export const SPLASH_SESSION_KEY = "taskflow.hasSeenSplash";
+export const SPLASH_SESSION_KEY = "taskflow_splash_shown";
 
 const messages = [
   "Orchestrating engineering workflows…",
@@ -9,8 +9,8 @@ const messages = [
   "Turning plans into progress…",
 ];
 
-/** A short, session-scoped welcome shown only before the signed-out auth gate. */
-export function WelcomeSplash({ duration = 1800, fadeDuration = 400, onComplete }) {
+/** A short, session-scoped welcome shown on the first app launch in this session. */
+export function WelcomeSplash({ duration = 1600, fadeDuration = 400, onComplete }) {
   const [leaving, setLeaving] = useState(false);
   const [messageIndex, setMessageIndex] = useState(0);
   const completed = useRef(false);
@@ -36,7 +36,7 @@ export function WelcomeSplash({ duration = 1800, fadeDuration = 400, onComplete 
   return (
     <section
       className={`welcome-splash${leaving ? " is-leaving" : ""}`}
-      aria-label="Welcome to TaskFlow"
+      aria-label="Welcome to Taskflow"
       aria-busy={!leaving}
     >
       <div className="welcome-splash-glow" aria-hidden="true" />
@@ -44,7 +44,7 @@ export function WelcomeSplash({ duration = 1800, fadeDuration = 400, onComplete 
         <span className="welcome-splash-mark" aria-hidden="true">
           <Icon name="check" size={32} />
         </span>
-        <h1>TaskFlow</h1>
+        <h1>Taskflow</h1>
         <p key={messageIndex} className="welcome-splash-message">
           {messages[messageIndex]}
         </p>

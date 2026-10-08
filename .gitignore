@@ -55,3 +55,8 @@ demo_video/
 !apps/mobile/
 !apps/mobile/.env.example
 apps/mobile/.expo/
+infra/mailserver/config/
+infra/mailserver/certs/
+infra/mailserver/dkim/
+infra/mailserver/roundcube/
+infra/mailserver/*credentials*

@@ -1,120 +1,34 @@
-import { useCallback, useState } from "react";
-import { Redirect, Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { useFocusEffect, useLocalSearchParams } from "expo-router";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { Project, Task } from "@taskflow/domain";
-import { useAuth } from "../../src/auth/AuthProvider";
 import { useAsyncResource } from "../../src/hooks/useAsyncResource";
 import { getApi } from "../../src/lib/api";
-import { colors, elevation, radii, spacing, typography } from "../../src/ui/theme";
+import { AppHeader } from "../../src/ui/AppHeader";
+import { TaskDetailModal } from "../../src/ui/TaskDetailModal";
+import { radii, spacing, typography } from "../../src/ui/theme";
+import { useTheme } from "../../src/ui/ThemeProvider";
 
-interface ProjectData { project: Project | null; tasks: Task[]; }
+type ProjectData = { project: Project | null; tasks: Task[]; memberCount: number };
+type ViewMode = "board" | "list";
+const groups = [{ key: "todo", label: "To do" }, { key: "in-progress", label: "In progress" }, { key: "completed", label: "Done" }] as const;
 
 export default function ProjectDetailsScreen() {
-  const router = useRouter();
-  const { authenticated, loading: authLoading } = useAuth();
-  const params = useLocalSearchParams<{ projectId?: string | string[] }>();
-  const projectId = Array.isArray(params.projectId) ? params.projectId[0] : params.projectId;
-  const loader = useCallback(async (): Promise<ProjectData> => {
-    if (!projectId) throw new Error("This project link is invalid.");
-    const [project, tasks] = await Promise.all([getApi().getProject(projectId), getApi().getProjectTasks(projectId)]);
-    return { project, tasks };
-  }, [projectId]);
-  const { data, error, loading, refreshing, reload, setData } = useAsyncResource<ProjectData>(loader, { project: null, tasks: [] }, "Unable to load this project.");
-  const [completingId, setCompletingId] = useState<string | null>(null);
-  const [actionError, setActionError] = useState("");
-
-  useFocusEffect(useCallback(() => {
-    if (authenticated) void reload();
-  }, [authenticated, reload]));
-
-  const complete = async (task: Task) => {
-    if (completingId) return;
-    const previous = data;
-    setCompletingId(task.id);
-    setActionError("");
-    setData((current) => ({ ...current, tasks: current.tasks.filter((item) => item.id !== task.id) }));
-    try {
-      await getApi().completeTask(task.id);
-    } catch (value) {
-      setData(previous);
-      setActionError(value instanceof Error ? value.message : "Unable to complete this task.");
-    } finally {
-      setCompletingId(null);
-    }
-  };
-
-  if (authLoading) return <SafeAreaView style={styles.page}><LoadingState /></SafeAreaView>;
-  if (!authenticated) return <Redirect href="/" />;
-
-  return (
-    <SafeAreaView style={styles.page}>
-      <Stack.Screen options={{ headerShown: false }} />
-      <View style={styles.header}>
-        <Pressable accessibilityLabel="Back to projects" accessibilityRole="button" hitSlop={12} onPress={router.back} style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable>
-        <View style={styles.headerCopy}><Text style={styles.eyebrow}>PROJECT</Text><Text style={styles.heading}>{data.project?.name ?? "Details"}</Text></View>
-      </View>
-      {loading && !data.project ? <LoadingState /> : null}
-      {!loading && error && !data.project ? <StateMessage title="Couldn’t load project" detail={error} action={() => void reload()} /> : null}
-      {data.project ? (
-        <FlatList
-          data={data.tasks}
-          keyExtractor={(task) => task.id}
-          refreshing={refreshing}
-          onRefresh={() => void reload(true)}
-          contentContainerStyle={styles.list}
-          ListHeaderComponent={<ProjectSummary project={data.project} taskCount={data.tasks.length} error={actionError || error} />}
-          ListEmptyComponent={<View style={styles.emptyCard}><Text style={styles.emptyTitle}>All clear</Text><Text style={styles.muted}>There are no active tasks in this project.</Text></View>}
-          renderItem={({ item }) => (
-            <View style={styles.taskCard}>
-              <Pressable accessibilityLabel={`Complete ${item.title}`} accessibilityRole="button" disabled={completingId !== null} hitSlop={8} onPress={() => void complete(item)} style={styles.complete}>{completingId === item.id ? <ActivityIndicator color={colors.primary} size="small" /> : null}</Pressable>
-              <View style={styles.taskCopy}><Text style={styles.taskTitle}>{item.title}</Text><Text style={styles.meta}>{item.status} • {item.priority} priority</Text></View>
-            </View>
-          )}
-        />
-      ) : null}
-    </SafeAreaView>
-  );
+  const { colors } = useTheme(); const params = useLocalSearchParams<{ projectId?: string | string[] }>(); const projectId = Array.isArray(params.projectId) ? params.projectId[0] : params.projectId;
+  const loader = useCallback(async (): Promise<ProjectData> => { if (!projectId) throw new Error("This project link is invalid."); const [project, tasks, members] = await Promise.all([getApi().getProject(projectId), getApi().getProjectTasks(projectId), getApi().getProjectMembers(projectId)]); return { project, tasks, memberCount: members.length }; }, [projectId]);
+  const { data, error, loading, refreshing, reload, setData } = useAsyncResource<ProjectData>(loader, { project: null, tasks: [], memberCount: 0 }, "Unable to load this project.");
+  const [mode, setMode] = useState<ViewMode>("board"); const [selected, setSelected] = useState<Task | null>(null); const [busy, setBusy] = useState(false);
+  useFocusEffect(useCallback(() => { void reload(); }, [reload]));
+  const byStatus = useMemo(() => Object.fromEntries(groups.map((group) => [group.key, data.tasks.filter((task) => task.status === group.key)])), [data.tasks]);
+  const move = async (task: Task, next: "todo" | "in_progress" | "done") => { setBusy(true); try { const saved = await getApi().setTaskStatus(task.id, next); setData((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === task.id ? saved : item) })); setSelected(saved); } finally { setBusy(false); } };
+  return <SafeAreaView style={[styles.page, { backgroundColor: colors.background }]}><AppHeader back title={data.project?.name || "Project"} subtitle={`${data.tasks.length} tasks · ${data.project?.status || "active"}`} />
+    <View style={[styles.toolbar, { borderBottomColor: colors.border }]}><View style={[styles.toggle, { backgroundColor: colors.subtle }]}>{(["board", "list"] as ViewMode[]).map((value) => <Pressable key={value} onPress={() => setMode(value)} style={[styles.toggleButton, mode === value && { backgroundColor: colors.surface }]}><Text style={[styles.toggleText, { color: mode === value ? colors.text : colors.muted }]}>{value === "board" ? "Board" : "List"}</Text></Pressable>)}</View><Text style={[styles.members, { color: colors.muted }]}>{data.memberCount} {data.memberCount === 1 ? "member" : "members"}</Text></View>
+    {data.project?.description ? <Text style={[styles.description, { color: colors.muted }]}>{data.project.description}</Text> : null}{error ? <Text style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
+    {loading && !data.project ? <View style={styles.center}><ActivityIndicator color={colors.primary} /></View> : mode === "board" ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.board} refreshControl={undefined}>{groups.map((group) => <View key={group.key} style={[styles.column, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.columnHeader}><Text style={[styles.columnTitle, { color: colors.text }]}>{group.label}</Text><Text style={[styles.count, { color: colors.muted }]}>{byStatus[group.key]?.length || 0}</Text></View>{(byStatus[group.key] || []).map((task) => <TaskCard key={task.id} task={task} colors={colors} onPress={() => setSelected(task)} />)}{!byStatus[group.key]?.length ? <Text style={[styles.empty, { color: colors.faint }]}>No tasks</Text> : null}</View>)}</ScrollView> : <ScrollView contentContainerStyle={styles.list}>{groups.flatMap((group) => byStatus[group.key] || []).map((task) => <TaskCard key={task.id} task={task} colors={colors} onPress={() => setSelected(task)} />)}</ScrollView>}
+    {refreshing ? <ActivityIndicator style={styles.refresh} color={colors.primary} /> : null}
+    <TaskDetailModal task={selected} busy={busy} onClose={() => setSelected(null)} onUpdated={(saved) => { setSelected(saved); setData((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === saved.id ? saved : item) })); }} onToggleComplete={(task) => void move(task, task.status === "completed" ? "todo" : "done")} />
+  </SafeAreaView>;
 }
-
-function ProjectSummary({ project, taskCount, error }: { project: Project; taskCount: number; error: string }) {
-  return <><View style={styles.projectCard}><View style={styles.projectTitleRow}><View style={[styles.projectColor, { backgroundColor: project.color || colors.primary }]} /><Text style={styles.projectName}>{project.name}</Text></View><View style={styles.statusPill}><Text style={styles.statusText}>{project.status}</Text></View>{project.description ? <Text style={styles.description}>{project.description}</Text> : <Text style={styles.muted}>No description added.</Text>}{project.dueDate ? <Text style={styles.due}>Due {project.dueDate}</Text> : null}</View>{error ? <Text style={styles.inlineError}>{error}</Text> : null}<View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Active tasks</Text><Text style={styles.taskCount}>{taskCount}</Text></View></>;
-}
-function LoadingState() { return <View style={styles.center}><ActivityIndicator color={colors.primary} size="large" /><Text style={styles.muted}>Loading project…</Text></View>; }
-function StateMessage({ title, detail, action }: { title: string; detail: string; action: () => void }) { return <View style={styles.center}><Text style={styles.stateTitle}>{title}</Text><Text style={styles.stateDetail}>{detail}</Text><Pressable accessibilityRole="button" onPress={action} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Try again</Text></Pressable></View>; }
-
-const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.background },
-  header: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.sm },
-  backButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: radii.pill, backgroundColor: colors.surface },
-  backText: { marginTop: -2, fontSize: 28, lineHeight: 30, color: colors.primary },
-  headerCopy: { flex: 1 },
-  eyebrow: { ...typography.caption, letterSpacing: 1, color: colors.primary },
-  heading: { ...typography.screenTitle, color: colors.text },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm, padding: spacing.xl },
-  list: { padding: spacing.lg, paddingTop: spacing.xs, paddingBottom: 40, gap: spacing.sm },
-  projectCard: { ...elevation.card, padding: spacing.md, borderRadius: radii.md, backgroundColor: colors.surface },
-  projectTitleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  projectColor: { width: 15, height: 15, borderRadius: radii.pill },
-  projectName: { ...typography.sectionTitle, flex: 1, color: colors.text },
-  statusPill: { alignSelf: "flex-start", marginTop: spacing.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.xxs, borderRadius: radii.pill, backgroundColor: colors.primarySoft },
-  statusText: { ...typography.caption, color: colors.primary, textTransform: "capitalize" },
-  description: { ...typography.body, marginTop: spacing.sm, color: colors.muted },
-  due: { ...typography.metadata, marginTop: spacing.sm, fontWeight: "600", color: colors.text },
-  inlineError: { marginTop: spacing.sm, padding: spacing.md, borderRadius: radii.sm, color: colors.danger, backgroundColor: "#FEF3F2" },
-  sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.md, marginBottom: spacing.xs, paddingHorizontal: spacing.xs },
-  sectionTitle: { ...typography.sectionTitle, color: colors.text },
-  taskCount: { ...typography.caption, minWidth: 28, paddingVertical: spacing.xxs, textAlign: "center", borderRadius: radii.pill, overflow: "hidden", color: colors.primary, backgroundColor: colors.primarySoft },
-  taskCard: { ...elevation.card, minHeight: 58, flexDirection: "row", alignItems: "center", gap: spacing.sm, padding: spacing.md, borderRadius: radii.sm, backgroundColor: colors.surface },
-  complete: { width: 24, height: 24, alignItems: "center", justifyContent: "center", borderRadius: radii.pill, borderWidth: 2, borderColor: colors.primary },
-  taskCopy: { flex: 1 },
-  taskTitle: { ...typography.cardTitle, color: colors.text },
-  meta: { ...typography.metadata, marginTop: spacing.xxs, color: colors.muted, textTransform: "capitalize" },
-  emptyCard: { alignItems: "center", gap: spacing.xs, padding: spacing.xl, borderRadius: radii.md, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  emptyTitle: { ...typography.sectionTitle, color: colors.text },
-  muted: { ...typography.body, color: colors.muted, textAlign: "center" },
-  stateTitle: { ...typography.sectionTitle, color: colors.text },
-  stateDetail: { ...typography.body, color: colors.danger, textAlign: "center" },
-  primaryButton: { minHeight: 48, justifyContent: "center", marginTop: spacing.sm, paddingHorizontal: spacing.lg, borderRadius: radii.sm, backgroundColor: colors.primary },
-  primaryButtonText: { ...typography.button, color: "white" },
-});
+function TaskCard({ task, colors, onPress }: { task: Task; colors: any; onPress: () => void }) { return <Pressable onPress={onPress} style={[styles.task, { borderBottomColor: colors.border }]}><Text style={[styles.taskTitle, { color: colors.text }]}>{task.title}</Text><View style={styles.taskMeta}><Text style={[styles.meta, { color: colors.muted }]}>{task.priority} priority</Text>{task.dueDate ? <Text style={[styles.meta, { color: colors.muted }]}>{task.dueDate}</Text> : null}</View></Pressable>; }
+const styles = StyleSheet.create({ page: { flex: 1 }, toolbar: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth }, toggle: { flexDirection: "row", padding: 3, borderRadius: radii.sm }, toggleButton: { minWidth: 58, paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: 5 }, toggleText: { ...typography.caption, textAlign: "center" }, members: { ...typography.caption }, description: { ...typography.metadata, paddingHorizontal: spacing.lg, paddingTop: spacing.md }, error: { ...typography.metadata, padding: spacing.md }, center: { flex: 1, alignItems: "center", justifyContent: "center" }, board: { alignItems: "flex-start", gap: spacing.md, padding: spacing.md, paddingBottom: 40 }, column: { width: 286, minHeight: 180, paddingHorizontal: spacing.md, borderWidth: StyleSheet.hairlineWidth, borderRadius: radii.md }, columnHeader: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, columnTitle: { ...typography.cardTitle }, count: { ...typography.caption }, list: { padding: spacing.lg, paddingBottom: 50 }, task: { minHeight: 64, justifyContent: "center", paddingVertical: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth }, taskTitle: { ...typography.cardTitle }, taskMeta: { flexDirection: "row", justifyContent: "space-between", marginTop: spacing.xs }, meta: { ...typography.metadata, textTransform: "capitalize" }, empty: { ...typography.metadata, paddingVertical: spacing.lg, textAlign: "center" }, refresh: { position: "absolute", right: spacing.md, bottom: spacing.md } });
