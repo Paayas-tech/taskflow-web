@@ -20,13 +20,19 @@ Real-time state tracking across To Do, In Progress, and Done swimlanes with cust
 Context-aware assistant integrated via `POST /api/chat`, executing structured tool calls (`create_task`, `list_tasks`) to query and mutate PostgreSQL directly.
 ![TaskFlow AI Assistant](docs/images/ai-assistant.png)
 
-### 3. Project Overview & Health Metrics
+### 3. Multi-Tenant Workspace & Role-Based Access Control
+Project member management and invitation lifecycle featuring role hierarchy (`Owner`, `Editor`, `Viewer`) enforced via PostgreSQL Row-Level Security.
+![TaskFlow Workspace & Access Control](docs/images/workspace-collaboration.png)
+
+### 4. Project Overview & Health Metrics
 Workspace-level progress monitoring, overdue task thresholds, and activity tracking.
 ![TaskFlow Overview](docs/images/project-overview.png)
 
-### 4. Filtered Task Management
+### 5. Filtered Task Management
 Fast client-side sorting and multi-parameter filtering by project, priority tag, and due date.
 ![TaskFlow Task List](docs/images/task-filtering.png)
+
+
 
 ## Routes
 
