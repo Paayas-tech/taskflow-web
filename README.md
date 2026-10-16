@@ -10,6 +10,24 @@ optimistically against a thin Supabase `api/` layer; see
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full data flow and
 store shape.
 
+## 🖥️ Application Walkthrough
+
+### 1. Agile Kanban Workspace
+Real-time state tracking across To Do, In Progress, and Done swimlanes with custom priority indicators and workspace filtering.
+![TaskFlow Kanban Board](docs/images/board-view.png)
+
+### 2. Conversational AI Assistant (Tool Calling)
+Context-aware assistant integrated via `POST /api/chat`, executing structured tool calls (`create_task`, `list_tasks`) to query and mutate PostgreSQL directly.
+![TaskFlow AI Assistant](docs/images/ai-assistant.png)
+
+### 3. Project Overview & Health Metrics
+Workspace-level progress monitoring, overdue task thresholds, and activity tracking.
+![TaskFlow Overview](docs/images/project-overview.png)
+
+### 4. Filtered Task Management
+Fast client-side sorting and multi-parameter filtering by project, priority tag, and due date.
+![TaskFlow Task List](docs/images/task-filtering.png)
+
 ## Routes
 
 The app is a single-page application with a sidebar shell and no top bar. Every
